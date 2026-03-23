@@ -1,0 +1,269 @@
+{% extends 'pagina/base.html' %}
+{% load static %}
+
+{% block title %}Historial de Importaciones{% endblock %}
+
+{% block content %}
+<div class="seccion">
+    <div class="seccion-content" style="max-width: 1400px; text-align: left;">
+        <h1 class="seccion-titulo mb-4">
+            <i class="fas fa-history"></i> Historial de Importaciones
+        </h1>
+        
+        <!-- Estadísticas -->
+        <div class="row g-3 mb-4">
+            <div class="col-12 col-sm-6 col-md-3">
+                <div class="card text-white mb-3" style="background: rgba(33, 150, 243, 0.2) !important; border: 1px solid rgba(33, 150, 243, 0.5);">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="fas fa-list"></i> Total</h5>
+                        <h2 class="card-text">{{ total_importaciones }}</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-md-3">
+                <div class="card text-white mb-3" style="background: rgba(76, 175, 80, 0.2) !important; border: 1px solid rgba(76, 175, 80, 0.5);">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="fas fa-check-circle"></i> Completadas</h5>
+                        <h2 class="card-text">{{ completadas }}</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-md-3">
+                <div class="card text-white mb-3" style="background: rgba(255, 152, 0, 0.2) !important; border: 1px solid rgba(255, 152, 0, 0.5);">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="fas fa-exclamation-triangle"></i> Parciales</h5>
+                        <h2 class="card-text">{{ parciales }}</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-md-3">
+                <div class="card text-white mb-3" style="background: rgba(244, 67, 54, 0.2) !important; border: 1px solid rgba(244, 67, 54, 0.5);">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="fas fa-times-circle"></i> Fallidas</h5>
+                        <h2 class="card-text">{{ fallidas }}</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabla de importaciones (Desktop) -->
+        <div class="table-responsive">
+            <table class="table table-dark table-hover d-none d-md-table">
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Archivo</th>
+                        <th>Usuario</th>
+                        <th>Total Registros</th>
+                        <th>Nuevos</th>
+                        <th>Actualizados</th>
+                        <th>Resueltos</th>
+                        <th>Estado</th>
+                        <th>Observaciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for importacion in importaciones %}
+                    <tr>
+                        <td>{{ importacion.created_at|date:"d/m/Y H:i" }}</td>
+                        <td>
+                            <small>{{ importacion.nombre_archivo|truncatechars:30 }}</small>
+                        </td>
+                        <td>{{ importacion.usuario.nombre_completo }}</td>
+                        <td>{{ importacion.total_registros }}</td>
+                        <td>
+                            <span class="badge bg-success">{{ importacion.registros_nuevos }}</span>
+                        </td>
+                        <td>
+                            <span class="badge bg-info">{{ importacion.registros_actualizados }}</span>
+                        </td>
+                        <td>
+                            <span class="badge bg-primary">{{ importacion.registros_resueltos }}</span>
+                        </td>
+                        <td>
+                            {% if importacion.estado == 'COMPLETADA' %}
+                                <span class="badge bg-success">{{ importacion.get_estado_display }}</span>
+                            {% elif importacion.estado == 'PARCIAL' %}
+                                <span class="badge bg-warning">{{ importacion.get_estado_display }}</span>
+                            {% else %}
+                                <span class="badge bg-danger">{{ importacion.get_estado_display }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if importacion.observaciones %}
+                                <div class="observaciones-container">
+                                    <div class="observaciones-preview">
+                                        <small style="color: rgba(255, 182, 193, 0.9);">
+                                            {{ importacion.observaciones|truncatewords:10 }}
+                                        </small>
+                                        <button type="button" class="btn btn-sm btn-link p-0 ms-2 expand-observaciones-btn" 
+                                                data-bs-toggle="collapse" 
+                                                data-bs-target="#observaciones{{ importacion.id }}"
+                                                aria-expanded="false"
+                                                style="color: #4CA150; text-decoration: none; font-size: 0.85rem;">
+                                            <i class="fas fa-chevron-down"></i> Ver más
+                                        </button>
+                                    </div>
+                                    <div class="collapse" id="observaciones{{ importacion.id }}">
+                                        <div class="mt-2 p-2" style="background: rgba(244, 67, 54, 0.1); border-left: 3px solid rgba(244, 67, 54, 0.5); border-radius: 4px;">
+                                            <small style="color: rgba(255, 182, 193, 0.9); white-space: pre-wrap; word-wrap: break-word;">
+                                                {{ importacion.observaciones }}
+                                            </small>
+                                        </div>
+                                    </div>
+                                </div>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="text-center">
+                            <div class="py-4">
+                                <i class="fas fa-inbox" style="font-size: 3em; color: rgba(200, 230, 212, 0.3); margin-bottom: 15px;"></i>
+                                <p style="color: rgba(200, 230, 212, 0.7);">No hay importaciones registradas</p>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            
+            {# Vista móvil: Cards #}
+            <div class="d-md-none">
+                {% for importacion in importaciones %}
+                <div class="card bg-dark text-white mb-3" style="border: 1px solid rgba(200, 230, 212, 0.2);">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h5 class="card-title mb-0" style="color: #c8e6d4;">
+                                <i class="fas fa-file"></i> {{ importacion.nombre_archivo|truncatechars:25 }}
+                            </h5>
+                            {% if importacion.estado == 'COMPLETADA' %}
+                                <span class="badge bg-success">{{ importacion.get_estado_display }}</span>
+                            {% elif importacion.estado == 'PARCIAL' %}
+                                <span class="badge bg-warning">{{ importacion.get_estado_display }}</span>
+                            {% else %}
+                                <span class="badge bg-danger">{{ importacion.get_estado_display }}</span>
+                            {% endif %}
+                        </div>
+                        <p class="card-text mb-2" style="font-size: 0.9rem;">
+                            <i class="fas fa-calendar-alt me-2" style="color: #a0c4a8;"></i> {{ importacion.created_at|date:"d/m/Y H:i" }}
+                        </p>
+                        <p class="card-text mb-2" style="font-size: 0.9rem;">
+                            <i class="fas fa-user me-2" style="color: #a0c4a8;"></i> {{ importacion.usuario.nombre_completo }}
+                        </p>
+                        <div class="row g-2 mb-2">
+                            <div class="col-6">
+                                <small style="color: #a0c4a8;">Total:</small>
+                                <strong>{{ importacion.total_registros }}</strong>
+                            </div>
+                            <div class="col-6">
+                                <small style="color: #a0c4a8;">Nuevos:</small>
+                                <span class="badge bg-success">{{ importacion.registros_nuevos }}</span>
+                            </div>
+                            <div class="col-6">
+                                <small style="color: #a0c4a8;">Actualizados:</small>
+                                <span class="badge bg-info">{{ importacion.registros_actualizados }}</span>
+                            </div>
+                            <div class="col-6">
+                                <small style="color: #a0c4a8;">Resueltos:</small>
+                                <span class="badge bg-primary">{{ importacion.registros_resueltos }}</span>
+                            </div>
+                        </div>
+                        {% if importacion.observaciones %}
+                        <div class="mt-2">
+                            <button type="button" class="btn btn-sm btn-link p-0 expand-observaciones-btn-mobile" 
+                                    data-bs-toggle="collapse" 
+                                    data-bs-target="#observacionesMobile{{ importacion.id }}"
+                                    aria-expanded="false"
+                                    style="color: #4CA150; text-decoration: none; font-size: 0.85rem;">
+                                <i class="fas fa-chevron-down"></i> <strong>Ver Observaciones</strong>
+                            </button>
+                            <div class="collapse mt-2" id="observacionesMobile{{ importacion.id }}">
+                                <div class="p-2" style="background: rgba(244, 67, 54, 0.1); border-left: 3px solid rgba(244, 67, 54, 0.5); border-radius: 4px;">
+                                    <small style="color: rgba(255, 182, 193, 0.9); white-space: pre-wrap; word-wrap: break-word;">
+                                        <i class="fas fa-exclamation-circle"></i> <strong>Observaciones:</strong><br>
+                                        {{ importacion.observaciones }}
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% empty %}
+                <div class="alert alert-info text-center">
+                    <i class="fas fa-inbox" style="font-size: 3em; color: rgba(200, 230, 212, 0.3); margin-bottom: 15px;"></i>
+                    <p style="color: rgba(200, 230, 212, 0.7);">No hay importaciones registradas</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Actualizar iconos de los botones de expandir/colapsar
+    document.querySelectorAll('.expand-observaciones-btn, .expand-observaciones-btn-mobile').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const targetId = btn.getAttribute('data-bs-target');
+            const collapseElement = document.querySelector(targetId);
+            const icon = btn.querySelector('i');
+            
+            if (collapseElement) {
+                collapseElement.addEventListener('shown.bs.collapse', function() {
+                    icon.classList.remove('fa-chevron-down');
+                    icon.classList.add('fa-chevron-up');
+                    if (btn.textContent.includes('Ver más')) {
+                        btn.innerHTML = '<i class="fas fa-chevron-up"></i> Ver menos';
+                    } else if (btn.textContent.includes('Ver Observaciones')) {
+                        btn.innerHTML = '<i class="fas fa-chevron-up"></i> <strong>Ocultar Observaciones</strong>';
+                    }
+                });
+                
+                collapseElement.addEventListener('hidden.bs.collapse', function() {
+                    icon.classList.remove('fa-chevron-up');
+                    icon.classList.add('fa-chevron-down');
+                    if (btn.textContent.includes('Ver menos')) {
+                        btn.innerHTML = '<i class="fas fa-chevron-down"></i> Ver más';
+                    } else if (btn.textContent.includes('Ocultar Observaciones')) {
+                        btn.innerHTML = '<i class="fas fa-chevron-down"></i> <strong>Ver Observaciones</strong>';
+                    }
+                });
+            }
+        });
+    });
+});
+</script>
+
+<style>
+.observaciones-container {
+    max-width: 500px;
+}
+
+.observaciones-preview {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.expand-observaciones-btn,
+.expand-observaciones-btn-mobile {
+    transition: all 0.3s ease;
+}
+
+.expand-observaciones-btn:hover,
+.expand-observaciones-btn-mobile:hover {
+    color: #66BB6A !important;
+    text-decoration: underline !important;
+}
+
+.expand-observaciones-btn i,
+.expand-observaciones-btn-mobile i {
+    transition: transform 0.3s ease;
+}
+</style>
+{% endblock %}
+

@@ -1,0 +1,592 @@
+{% extends 'pagina/base.html' %}
+{% load static %}
+{% load notas_filters %}
+
+{% block title %}Seguimiento de Notas{% endblock %}
+
+{% block content %}
+<div class="seccion">
+    <div class="seccion-content" style="max-width: 1400px; text-align: left;">
+        <h1 class="seccion-titulo mb-4">
+            <i class="fas fa-search"></i> Seguimiento de Notas
+        </h1>
+        
+        <!-- Filtros -->
+        <div class="card bg-dark text-white mb-4" style="border: 1px solid rgba(200, 230, 212, 0.2);">
+            <div class="card-header" style="border-bottom: 1px solid rgba(200, 230, 212, 0.2);">
+                <h5 class="mb-0" style="color: #c8e6d4;">
+                    <i class="fas fa-filter"></i> Filtros
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="get" class="row g-3">
+                    <div class="col-12 col-md-4">
+                        <label for="busqueda" class="form-label">Buscar</label>
+                        <input type="text" class="form-control" id="busqueda" name="busqueda" 
+                               value="{{ busqueda }}" placeholder="Serie-Folio, Cliente...">
+                    </div>
+                    <div class="col-12 col-md-2">
+                        <label for="estado" class="form-label">Estado</label>
+                        <select class="form-select" id="estado" name="estado">
+                            <option value="">Todos</option>
+                            <option value="PENDIENTE" {% if estado_filtro == 'PENDIENTE' %}selected{% endif %}>Pendiente</option>
+                            <option value="RESUELTA" {% if estado_filtro == 'RESUELTA' %}selected{% endif %}>Resuelta</option>
+                            <option value="CANCELADA" {% if estado_filtro == 'CANCELADA' %}selected{% endif %}>Cancelada</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-2">
+                        <label for="empresa" class="form-label">Empresa</label>
+                        <select class="form-select" id="empresa" name="empresa">
+                            <option value="">Todas</option>
+                            <option value="DISTRIBUIDORA" {% if empresa_filtro == 'DISTRIBUIDORA' %}selected{% endif %}>Distribuidora</option>
+                            <option value="RODRIGO" {% if empresa_filtro == 'RODRIGO' %}selected{% endif %}>Rodrigo</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-2">
+                        <label for="ruta" class="form-label">Ruta</label>
+                        <select class="form-select" id="ruta" name="ruta">
+                            <option value="">Todas</option>
+                            {% for ruta in rutas %}
+                            <option value="{{ ruta.id }}" {% if ruta_filtro == ruta.id|stringformat:"s" %}selected{% endif %}>
+                                {{ ruta.codigo }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-2">
+                        <label for="dias_operador" class="form-label">Diferencia Días</label>
+                        <div class="input-group">
+                            <select class="form-select" id="dias_operador" name="dias_operador" style="max-width: 100px;">
+                                <option value="mayor" {% if dias_operador == 'mayor' %}selected{% endif %}>Mayor a</option>
+                                <option value="menor" {% if dias_operador == 'menor' %}selected{% endif %}>Menor a</option>
+                            </select>
+                            <input type="number" class="form-control" id="dias" name="dias" 
+                                   value="{{ dias_filtro }}" placeholder="Días" min="0">
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-2">
+                        <label for="ordenar_por" class="form-label">Ordenar por</label>
+                        <select class="form-select" id="ordenar_por" name="ordenar_por">
+                            <option value="fecha_nota_desc" {% if ordenar_por == 'fecha_nota_desc' %}selected{% endif %}>Fecha Nota (de más recientes a más antiguas)</option>
+                            <option value="fecha_nota_asc" {% if ordenar_por == 'fecha_nota_asc' %}selected{% endif %}>Fecha Nota (de más antiguas a más recientes)</option>
+                            <option value="diferencia_dias_desc" {% if ordenar_por == 'diferencia_dias_desc' %}selected{% endif %}>Diferencia Días (de mayor a menor)</option>
+                            <option value="diferencia_dias_asc" {% if ordenar_por == 'diferencia_dias_asc' %}selected{% endif %}>Diferencia Días (de menor a mayor)</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-2">
+                        <label class="form-label">&nbsp;</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="requiere_atencion" name="requiere_atencion" value="1" {% if requiere_atencion_filtro %}checked{% endif %}>
+                            <label class="form-check-label" for="requiere_atencion" style="color: #c8e6d4;">
+                                <i class="fas fa-exclamation-circle"></i> Solo que requieren atención
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-2 d-flex align-items-end">
+                        <button type="submit" class="btn btn-success w-100">
+                            <i class="fas fa-search"></i> Filtrar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Lista de Notas -->
+        <div class="card bg-dark text-white" style="border: 1px solid rgba(200, 230, 212, 0.2);">
+            <div class="card-header" style="border-bottom: 1px solid rgba(200, 230, 212, 0.2);">
+                <h5 class="mb-0" style="color: #c8e6d4;">
+                    <i class="fas fa-list"></i> Notas ({{ total_notas }})
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if notas %}
+                <!-- Vista de Tabla (Desktop) -->
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover d-none d-md-table">
+                        <thead>
+                            <tr>
+                                <th>Serie-Folio</th>
+                                <th>Empresa</th>
+                                <th>Fecha Nota</th>
+                                <th>Cliente</th>
+                                <th>Ruta</th>
+                                <th>Usuario/Vendedor PV</th>
+                                <th>Monto</th>
+                                <th>Abono</th>
+                                <th>Saldo</th>
+                                <th>Estado</th>
+                                <th>Fecha Corriente</th>
+                                <th>Diferencia Días</th>
+                                <th>Requiere Atención</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for nota in notas %}
+                            <tr>
+                                <td>
+                                    <strong style="color: #4CA150;">{{ nota.serie_folio }}</strong>
+                                    {% if nota.requiere_atencion %}
+                                    <span class="badge bg-warning ms-2" title="Esta nota tiene comentarios o información pendiente de revisar">
+                                        <i class="fas fa-exclamation-circle"></i> Requiere Atención
+                                    </span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge {% if nota.empresa == 'DISTRIBUIDORA' %}bg-info{% else %}bg-secondary{% endif %}">
+                                        {{ nota.get_empresa_display }}
+                                    </span>
+                                </td>
+                                <td>{{ nota.fecha_nota|date:"d/m/Y" }}</td>
+                                <td>{{ nota.cliente|truncatechars:25 }}</td>
+                                <td>
+                                    <span class="badge" style="background: rgba(76, 161, 80, 0.3); color: #c8e6d4;">
+                                        <i class="fas fa-route"></i> {{ nota.ruta.codigo }}
+                                    </span>
+                                </td>
+                                <td>
+                                    {% if nota.usuario_vendedor_pv %}
+                                        <small style="color: rgba(200, 230, 212, 0.8);">{{ nota.usuario_vendedor_pv }}</small>
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td>${{ nota.monto|floatformat:2 }}</td>
+                                <td>${{ nota.abono|floatformat:2 }}</td>
+                                <td>
+                                    <strong style="color: {% if nota.saldo > 0 %}#ff9800{% else %}#4CA150{% endif %};">
+                                        ${{ nota.saldo|floatformat:2 }}
+                                    </strong>
+                                </td>
+                                <td>
+                                    {% if nota.estado == 'PENDIENTE' %}
+                                        <span class="badge bg-warning">{{ nota.get_estado_display }}</span>
+                                    {% elif nota.estado == 'RESUELTA' %}
+                                        <span class="badge bg-success">{{ nota.get_estado_display }}</span>
+                                    {% elif nota.estado == 'CANCELADA' %}
+                                        <span class="badge bg-secondary">{{ nota.get_estado_display }}</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">{{ nota.get_estado_display }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ nota.fecha_corriente|date:"d/m/Y" }}</td>
+                                <td>
+                                    {% with dias=nota.fecha_corriente|diferencia_dias:nota.fecha_nota %}
+                                    {% with dias_abs=dias|abs_value %}
+                                    <span class="badge {% if dias_abs > 30 %}bg-danger{% elif dias_abs > 15 %}bg-warning{% else %}bg-info{% endif %}" title="Diferencia entre Fecha Nota y Fecha Corriente">
+                                        {{ dias }} días
+                                    </span>
+                                    {% endwith %}
+                                    {% endwith %}
+                                </td>
+                                <td>
+                                    {% if nota.requiere_atencion %}
+                                    <span class="badge bg-warning" title="Esta nota tiene comentarios o información pendiente de revisar">
+                                        <i class="fas fa-exclamation-circle"></i> Sí
+                                    </span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">No</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <a href="{% url 'detalle_nota' nota.id %}" class="btn btn-sm btn-primary">
+                                        <i class="fas fa-eye"></i> Ver Detalle
+                                    </a>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="13" class="text-center">
+                                    <div class="py-4">
+                                        <i class="fas fa-inbox" style="font-size: 3em; color: rgba(200, 230, 212, 0.3); margin-bottom: 15px;"></i>
+                                        <p style="color: rgba(200, 230, 212, 0.7);">No se encontraron notas de crédito</p>
+                                        {% if estado_filtro or empresa_filtro or ruta_filtro or busqueda %}
+                                        <p style="color: rgba(200, 230, 212, 0.5); font-size: 0.9em;">
+                                            Intenta ajustar los filtros de búsqueda.
+                                        </p>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                {# Vista móvil: Cards #}
+                <div class="d-md-none">
+                    {% for nota in notas %}
+                    <div class="card bg-dark text-white mb-3" style="border: 1px solid rgba(200, 230, 212, 0.2);">
+                        <div class="card-body" style="font-size: 0.85rem;">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <div class="card-title mb-0" style="color: #4CA150; font-size: 1rem; font-weight: 600;">
+                                    <i class="fas fa-file-invoice"></i> {{ nota.serie_folio }}
+                                </div>
+                                <span class="badge {% if nota.empresa == 'DISTRIBUIDORA' %}bg-info{% else %}bg-secondary{% endif %}" style="font-size: 0.75rem;">
+                                    {{ nota.get_empresa_display }}
+                                </span>
+                            </div>
+                            <p class="card-text mb-2" style="font-size: 0.85rem; line-height: 1.5;">
+                                <i class="fas fa-user me-2" style="color: #a0c4a8; font-size: 0.8rem;"></i> <strong style="font-size: 0.85rem;">Cliente:</strong> <span style="font-size: 0.85rem;">{{ nota.cliente|truncatechars:30 }}</span>
+                            </p>
+                            <p class="card-text mb-2" style="font-size: 0.85rem; line-height: 1.5;">
+                                <i class="fas fa-calendar-alt me-2" style="color: #a0c4a8; font-size: 0.8rem;"></i> <strong style="font-size: 0.85rem;">Fecha:</strong> <span style="font-size: 0.85rem;">{{ nota.fecha_nota|date:"d/m/Y" }}</span>
+                            </p>
+                            <p class="card-text mb-2" style="font-size: 0.85rem; line-height: 1.5;">
+                                <i class="fas fa-route me-2" style="color: #a0c4a8; font-size: 0.8rem;"></i> <strong style="font-size: 0.85rem;">Ruta:</strong> 
+                                <span class="badge" style="background: rgba(76, 161, 80, 0.3); color: #c8e6d4; font-size: 0.75rem;">
+                                    {{ nota.ruta.codigo }}
+                                </span>
+                            </p>
+                            {% if nota.usuario_vendedor_pv %}
+                            <p class="card-text mb-2" style="font-size: 0.85rem; line-height: 1.5;">
+                                <i class="fas fa-user-tag me-2" style="color: #a0c4a8; font-size: 0.8rem;"></i> <strong style="font-size: 0.85rem;">Vendedor PV:</strong> <span style="font-size: 0.85rem;">{{ nota.usuario_vendedor_pv }}</span>
+                            </p>
+                            {% endif %}
+                            <div class="row g-2 mb-2">
+                                <div class="col-4">
+                                    <small style="color: #a0c4a8; font-size: 0.75rem;">Monto:</small>
+                                    <div style="font-size: 0.9rem;"><strong>${{ nota.monto|floatformat:2 }}</strong></div>
+                                </div>
+                                <div class="col-4">
+                                    <small style="color: #a0c4a8; font-size: 0.75rem;">Abono:</small>
+                                    <div style="font-size: 0.9rem;"><strong>${{ nota.abono|floatformat:2 }}</strong></div>
+                                </div>
+                                <div class="col-4">
+                                    <small style="color: #a0c4a8; font-size: 0.75rem;">Saldo:</small>
+                                    <div style="font-size: 0.9rem;"><strong style="color: {% if nota.saldo > 0 %}#ff9800{% else %}#4CA150{% endif %};">
+                                        ${{ nota.saldo|floatformat:2 }}
+                                    </strong></div>
+                                </div>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="badge 
+                                    {% if nota.estado == 'PENDIENTE' %}bg-warning
+                                    {% elif nota.estado == 'RESUELTA' %}bg-success
+                                    {% elif nota.estado == 'CANCELADA' %}bg-secondary
+                                    {% else %}bg-secondary{% endif %}" style="font-size: 0.75rem;">
+                                    {{ nota.get_estado_display }}
+                                </span>
+                                <small class="text-muted" style="color: rgba(200, 230, 212, 0.5); font-size: 0.75rem;">
+                                    Fecha Corriente: {{ nota.fecha_corriente|date:"d/m/Y" }}
+                                </small>
+                            </div>
+                            {% with dias=nota.fecha_corriente|diferencia_dias:nota.fecha_nota %}
+                            {% with dias_abs=dias|abs_value %}
+                            <div class="mb-2">
+                                <small style="color: #a0c4a8; font-size: 0.75rem;">Diferencia Días:</small>
+                                <span class="badge {% if dias_abs > 30 %}bg-danger{% elif dias_abs > 15 %}bg-warning{% else %}bg-info{% endif %}" style="font-size: 0.75rem;">
+                                    {{ dias }} días
+                                </span>
+                            </div>
+                            {% endwith %}
+                            {% endwith %}
+                            <div class="mb-2">
+                                <small style="color: #a0c4a8; font-size: 0.75rem;">Requiere Atención:</small>
+                                {% if nota.requiere_atencion %}
+                                <span class="badge bg-warning" title="Esta nota tiene comentarios o información pendiente de revisar" style="font-size: 0.75rem;">
+                                    <i class="fas fa-exclamation-circle"></i> Sí
+                                </span>
+                                {% else %}
+                                <span class="badge bg-secondary" style="font-size: 0.75rem;">No</span>
+                                {% endif %}
+                            </div>
+                            <a href="{% url 'detalle_nota' nota.id %}" class="btn btn-sm btn-primary w-100">
+                                <i class="fas fa-eye"></i> Ver Detalle
+                            </a>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="alert alert-info text-center">
+                        <i class="fas fa-inbox" style="font-size: 3em; color: rgba(200, 230, 212, 0.3); margin-bottom: 15px;"></i>
+                        <p style="color: rgba(200, 230, 212, 0.7);">No se encontraron notas de crédito</p>
+                        {% if estado_filtro or empresa_filtro or ruta_filtro or busqueda %}
+                        <p style="color: rgba(200, 230, 212, 0.5); font-size: 0.9em;">
+                            Intenta ajustar los filtros de búsqueda.
+                        </p>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i> No se encontraron notas con los filtros seleccionados.
+                </div>
+                {% endif %}
+                
+                <!-- Indicadores de carga -->
+                <div id="loading-indicator" style="display: none; text-align: center; padding: 20px;">
+                    <div class="spinner-border text-success" role="status">
+                        <span class="visually-hidden">Cargando...</span>
+                    </div>
+                    <p style="color: rgba(200, 230, 212, 0.7); margin-top: 10px;">Cargando más notas...</p>
+                </div>
+                
+                <div id="no-more-notas" style="display: none; text-align: center; padding: 20px;">
+                    <p style="color: rgba(200, 230, 212, 0.7);">
+                        <i class="fas fa-check-circle"></i> No hay más notas para mostrar
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    let currentPage = 1;
+    let isLoading = false;
+    let hasMore = {{ has_more|yesno:"true,false" }};
+    const notasContainer = document.querySelector('.table-responsive tbody') || document.querySelector('.d-md-none');
+    const loadingIndicator = document.getElementById('loading-indicator');
+    const noMoreNotas = document.getElementById('no-more-notas');
+    
+    // Obtener parámetros de filtro actuales
+    function getFilterParams() {
+        const urlParams = new URLSearchParams(window.location.search);
+        return {
+            estado: urlParams.get('estado') || '',
+            empresa: urlParams.get('empresa') || '',
+            ruta: urlParams.get('ruta') || '',
+            busqueda: urlParams.get('busqueda') || '',
+            dias: urlParams.get('dias') || '',
+            dias_operador: urlParams.get('dias_operador') || 'mayor',
+            ordenar_por: urlParams.get('ordenar_por') || 'fecha_nota_desc',
+            requiere_atencion: document.getElementById('requiere_atencion')?.checked ? '1' : ''
+        };
+    }
+    
+    // Cargar más notas
+    function loadMoreNotas() {
+        if (isLoading || !hasMore) return;
+        
+        isLoading = true;
+        if (loadingIndicator) loadingIndicator.style.display = 'block';
+        currentPage++;
+        
+        const params = getFilterParams();
+        params.page = currentPage;
+        params.ajax = '1';
+        
+        const queryString = new URLSearchParams(params).toString();
+        
+        fetch(`{% url 'seguimiento' %}?${queryString}`, {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.notas && data.notas.length > 0) {
+                renderNotas(data.notas);
+                hasMore = data.has_more;
+                
+                if (!hasMore && noMoreNotas) {
+                    noMoreNotas.style.display = 'block';
+                }
+            } else {
+                hasMore = false;
+                if (noMoreNotas) noMoreNotas.style.display = 'block';
+            }
+            isLoading = false;
+            if (loadingIndicator) loadingIndicator.style.display = 'none';
+        })
+        .catch(error => {
+            console.error('Error cargando notas:', error);
+            isLoading = false;
+            if (loadingIndicator) loadingIndicator.style.display = 'none';
+        });
+    }
+    
+    // Renderizar nuevas notas
+    function renderNotas(notas) {
+        const isMobile = window.innerWidth < 768;
+        
+        notas.forEach(function(nota) {
+            if (isMobile) {
+                renderNotaCard(nota);
+            } else {
+                renderNotaRow(nota);
+            }
+        });
+    }
+    
+    // Renderizar fila de tabla (desktop)
+    function renderNotaRow(nota) {
+        const tbody = document.querySelector('.table-responsive tbody');
+        if (!tbody) return;
+        
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>
+                <strong style="color: #4CA150;">${nota.serie_folio}</strong>
+                ${nota.requiere_atencion ? 
+                    '<span class="badge bg-warning ms-2" title="Esta nota tiene comentarios o información pendiente de revisar"><i class="fas fa-exclamation-circle"></i> Requiere Atención</span>' : 
+                    ''}
+            </td>
+            <td>
+                <span class="badge ${nota.empresa_value === 'DISTRIBUIDORA' ? 'bg-info' : 'bg-secondary'}">
+                    ${nota.empresa}
+                </span>
+            </td>
+            <td>${nota.fecha_nota}</td>
+            <td>${nota.cliente.length > 25 ? nota.cliente.substring(0, 25) + '...' : nota.cliente}</td>
+            <td>
+                <span class="badge" style="background: rgba(76, 161, 80, 0.3); color: #c8e6d4;">
+                    <i class="fas fa-route"></i> ${nota.ruta_codigo}
+                </span>
+            </td>
+            <td>
+                ${nota.usuario_vendedor_pv ? `<small style="color: rgba(200, 230, 212, 0.8);">${nota.usuario_vendedor_pv}</small>` : '<span class="text-muted">-</span>'}
+            </td>
+            <td>$${parseFloat(nota.monto).toFixed(2)}</td>
+            <td>$${parseFloat(nota.abono).toFixed(2)}</td>
+            <td>
+                <strong style="color: ${parseFloat(nota.saldo) > 0 ? '#ff9800' : '#4CA150'};">
+                    $${parseFloat(nota.saldo).toFixed(2)}
+                </strong>
+            </td>
+            <td>
+                ${getEstadoBadge(nota.estado_value, nota.estado)}
+            </td>
+            <td>${nota.fecha_corriente}</td>
+            <td>
+                ${renderDiferenciaDias(nota.diferencia_dias)}
+            </td>
+            <td>
+                ${nota.requiere_atencion ? 
+                    '<span class="badge bg-warning" title="Esta nota tiene comentarios o información pendiente de revisar"><i class="fas fa-exclamation-circle"></i> Sí</span>' : 
+                    '<span class="badge bg-secondary">No</span>'}
+            </td>
+            <td>
+                <a href="/seguimiento/nota/${nota.id}/" class="btn btn-sm btn-primary">
+                    <i class="fas fa-eye"></i> Ver Detalle
+                </a>
+            </td>
+        `;
+        tbody.appendChild(row);
+    }
+    
+    // Función para renderizar diferencia de días
+    function renderDiferenciaDias(dias) {
+        if (dias === undefined || dias === null) return '<span class="badge bg-secondary" style="font-size: 0.75rem;">-</span>';
+        const diasAbs = Math.abs(dias);
+        let badgeClass = 'bg-info';
+        if (diasAbs > 30) badgeClass = 'bg-danger';
+        else if (diasAbs > 15) badgeClass = 'bg-warning';
+        return `<span class="badge ${badgeClass}" title="Diferencia entre Fecha Nota y Fecha Corriente" style="font-size: 0.75rem;">${dias} días</span>`;
+    }
+    
+    // Renderizar card (móvil)
+    function renderNotaCard(nota) {
+        const container = document.querySelector('.d-md-none');
+        if (!container) return;
+        
+        const card = document.createElement('div');
+        card.className = 'card bg-dark text-white mb-3';
+        card.style.border = '1px solid rgba(200, 230, 212, 0.2)';
+        card.innerHTML = `
+            <div class="card-body" style="font-size: 0.85rem;">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="card-title mb-0" style="color: #4CA150; font-size: 1rem; font-weight: 600;">
+                        <i class="fas fa-file-invoice"></i> ${nota.serie_folio}
+                        ${nota.requiere_atencion ? 
+                            '<span class="badge bg-warning ms-2" title="Esta nota tiene comentarios o información pendiente de revisar" style="font-size: 0.75rem;"><i class="fas fa-exclamation-circle"></i> Requiere Atención</span>' : 
+                            ''}
+                    </div>
+                    <span class="badge ${nota.empresa_value === 'DISTRIBUIDORA' ? 'bg-info' : 'bg-secondary'}" style="font-size: 0.75rem;">
+                        ${nota.empresa}
+                    </span>
+                </div>
+                <p class="card-text mb-2" style="font-size: 0.85rem; line-height: 1.5;">
+                    <i class="fas fa-user me-2" style="color: #a0c4a8; font-size: 0.8rem;"></i> <strong style="font-size: 0.85rem;">Cliente:</strong> <span style="font-size: 0.85rem;">${nota.cliente.length > 30 ? nota.cliente.substring(0, 30) + '...' : nota.cliente}</span>
+                </p>
+                <p class="card-text mb-2" style="font-size: 0.85rem; line-height: 1.5;">
+                    <i class="fas fa-calendar-alt me-2" style="color: #a0c4a8; font-size: 0.8rem;"></i> <strong style="font-size: 0.85rem;">Fecha:</strong> <span style="font-size: 0.85rem;">${nota.fecha_nota}</span>
+                </p>
+                <p class="card-text mb-2" style="font-size: 0.85rem; line-height: 1.5;">
+                    <i class="fas fa-route me-2" style="color: #a0c4a8; font-size: 0.8rem;"></i> <strong style="font-size: 0.85rem;">Ruta:</strong> 
+                    <span class="badge" style="background: rgba(76, 161, 80, 0.3); color: #c8e6d4; font-size: 0.75rem;">
+                        ${nota.ruta_codigo}
+                    </span>
+                </p>
+                ${nota.usuario_vendedor_pv ? `
+                <p class="card-text mb-2" style="font-size: 0.85rem; line-height: 1.5;">
+                    <i class="fas fa-user-tag me-2" style="color: #a0c4a8; font-size: 0.8rem;"></i> <strong style="font-size: 0.85rem;">Vendedor PV:</strong> <span style="font-size: 0.85rem;">${nota.usuario_vendedor_pv}</span>
+                </p>
+                ` : ''}
+                <div class="row g-2 mb-2">
+                    <div class="col-4">
+                        <small style="color: #a0c4a8; font-size: 0.75rem;">Monto:</small>
+                        <div style="font-size: 0.9rem;"><strong>$${parseFloat(nota.monto).toFixed(2)}</strong></div>
+                    </div>
+                    <div class="col-4">
+                        <small style="color: #a0c4a8; font-size: 0.75rem;">Abono:</small>
+                        <div style="font-size: 0.9rem;"><strong>$${parseFloat(nota.abono).toFixed(2)}</strong></div>
+                    </div>
+                    <div class="col-4">
+                        <small style="color: #a0c4a8; font-size: 0.75rem;">Saldo:</small>
+                        <div style="font-size: 0.9rem;"><strong style="color: ${parseFloat(nota.saldo) > 0 ? '#ff9800' : '#4CA150'};">
+                            $${parseFloat(nota.saldo).toFixed(2)}
+                        </strong></div>
+                    </div>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    ${getEstadoBadge(nota.estado_value, nota.estado)}
+                    <small class="text-muted" style="color: rgba(200, 230, 212, 0.5); font-size: 0.75rem;">
+                        Fecha Corriente: ${nota.fecha_corriente}
+                    </small>
+                </div>
+                ${nota.diferencia_dias !== undefined ? `
+                <div class="mb-2">
+                    <small style="color: #a0c4a8; font-size: 0.75rem;">Diferencia Días:</small>
+                    ${renderDiferenciaDias(nota.diferencia_dias)}
+                </div>
+                ` : ''}
+                <div class="mb-2">
+                    <small style="color: #a0c4a8; font-size: 0.75rem;">Requiere Atención:</small>
+                    ${nota.requiere_atencion ? 
+                        '<span class="badge bg-warning" title="Esta nota tiene comentarios o información pendiente de revisar" style="font-size: 0.75rem;"><i class="fas fa-exclamation-circle"></i> Sí</span>' : 
+                        '<span class="badge bg-secondary" style="font-size: 0.75rem;">No</span>'}
+                </div>
+                <a href="/seguimiento/nota/${nota.id}/" class="btn btn-sm btn-primary w-100">
+                    <i class="fas fa-eye"></i> Ver Detalle
+                </a>
+            </div>
+        `;
+        container.appendChild(card);
+    }
+    
+    // Obtener badge de estado
+    function getEstadoBadge(estadoValue, estadoDisplay) {
+        const badges = {
+            'PENDIENTE': '<span class="badge bg-warning" style="font-size: 0.75rem;">' + estadoDisplay + '</span>',
+            'RESUELTA': '<span class="badge bg-success" style="font-size: 0.75rem;">' + estadoDisplay + '</span>',
+            'CANCELADA': '<span class="badge bg-secondary" style="font-size: 0.75rem;">' + estadoDisplay + '</span>'
+        };
+        return badges[estadoValue] || '<span class="badge bg-secondary" style="font-size: 0.75rem;">' + estadoDisplay + '</span>';
+    }
+    
+    // Detectar scroll para cargar más
+    let scrollTimeout;
+    window.addEventListener('scroll', function() {
+        clearTimeout(scrollTimeout);
+        scrollTimeout = setTimeout(function() {
+            const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+            const windowHeight = window.innerHeight;
+            const documentHeight = document.documentElement.scrollHeight;
+            
+            if (scrollTop + windowHeight >= documentHeight - 100) {
+                loadMoreNotas();
+            }
+        }, 100);
+    });
+    
+    // Si no hay más notas inicialmente, mostrar el mensaje
+    if (!hasMore && {{ notas.count }} > 0) {
+        if (noMoreNotas) noMoreNotas.style.display = 'block';
+    }
+});
+</script>
+{% endblock %}
+

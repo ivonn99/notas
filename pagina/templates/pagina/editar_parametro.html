@@ -1,0 +1,81 @@
+{% extends 'pagina/base.html' %}
+{% load static %}
+
+{% block title %}{{ titulo }}{% endblock %}
+
+{% block content %}
+<div class="seccion">
+    <div class="seccion-content" style="max-width: 800px; text-align: left;">
+        <h1 class="seccion-titulo mb-4">{{ titulo }}</h1>
+        
+        <form method="post">
+            {% csrf_token %}
+            <div class="mb-3">
+                <label for="{{ form.clave.id_for_label }}" class="form-label">
+                    <i class="fas fa-key"></i> {{ form.clave.label }}
+                </label>
+                <div class="input-group">
+                    <span class="input-group-text" style="background: #2a2a2a; border: 1px solid rgba(200, 230, 212, 0.3); color: #c8e6d4;">
+                        <i class="fas fa-hashtag"></i>
+                    </span>
+                    {{ form.clave }}
+                </div>
+                {% if form.clave.errors %}
+                    <div class="text-danger mt-1">{{ form.clave.errors }}</div>
+                {% endif %}
+                {% if form.clave.help_text %}
+                    <small class="form-text" style="color: rgba(200, 230, 212, 0.7); margin-top: 5px; display: block;">{{ form.clave.help_text }}</small>
+                {% endif %}
+            </div>
+            <div class="mb-3">
+                <label for="{{ form.valor.id_for_label }}" class="form-label">{{ form.valor.label }}</label>
+                {{ form.valor }}
+                {% if form.valor.errors %}
+                    <div class="text-danger mt-1">{{ form.valor.errors }}</div>
+                {% endif %}
+                {% if form.valor.help_text %}
+                    <small class="form-text" style="color: rgba(200, 230, 212, 0.7);">{{ form.valor.help_text }}</small>
+                {% endif %}
+            </div>
+            <div class="mb-3">
+                <label for="{{ form.descripcion.id_for_label }}" class="form-label">{{ form.descripcion.label }}</label>
+                {{ form.descripcion }}
+                {% if form.descripcion.errors %}
+                    <div class="text-danger mt-1">{{ form.descripcion.errors }}</div>
+                {% endif %}
+                {% if form.descripcion.help_text %}
+                    <small class="form-text" style="color: rgba(200, 230, 212, 0.7);">{{ form.descripcion.help_text }}</small>
+                {% endif %}
+            </div>
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> Guardar Cambios
+                </button>
+                <a href="{% url 'parametros' %}" class="btn btn-secondary">
+                    <i class="fas fa-times"></i> Cancelar
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+    .form-control, .form-select {
+        background: #2a2a2a;
+        border: 1px solid rgba(200, 230, 212, 0.3);
+        color: #ffffff;
+    }
+    .form-control:focus, .form-select:focus {
+        background: #2a2a2a;
+        border-color: #4CA150;
+        color: #ffffff;
+    }
+    .form-control:disabled {
+        background: #1a1a1a;
+        border-color: rgba(200, 230, 212, 0.2);
+        color: rgba(255, 255, 255, 0.6);
+        cursor: not-allowed;
+    }
+</style>
+{% endblock %}
+

@@ -1,0 +1,16 @@
+{% comment %}
+Componente modular: Header de página (100% responsive)
+Uso: {% include 'pagina/includes/page_header.html' with titulo="Título" icono="fa-icon" %}
+{% endcomment %}
+<div class="page-header mb-3 mb-md-4">
+    <h1 class="seccion-titulo mb-2 mb-md-3" style="font-size: 1.5rem; line-height: 1.3;">
+        {% if icono %}
+        <i class="fas {{ icono }}"></i>
+        {% endif %}
+        <span class="ms-1 ms-md-2">{{ titulo }}</span>
+    </h1>
+    {% if descripcion %}
+    <p class="text-muted mb-0" style="font-size: 0.9rem;">{{ descripcion }}</p>
+    {% endif %}
+</div>
+

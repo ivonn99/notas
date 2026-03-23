@@ -1,0 +1,18 @@
+{% comment %}
+Componente modular: Botón de acción (100% responsive, táctil)
+Uso: {% include 'pagina/includes/action_button.html' with texto="Agregar" icono="fa-plus" color="success" modal_target="#modal" %}
+{% endcomment %}
+<div class="mb-3 mb-md-4">
+    <button type="button" 
+            class="btn btn-{{ color|default:'success' }} w-100 w-md-auto" 
+            style="min-height: 44px; font-size: 1rem; padding: 0.75rem 1.5rem;"
+            {% if modal_target %}data-bs-toggle="modal" data-bs-target="{{ modal_target }}"{% endif %}
+            {% if onclick %}onclick="{{ onclick }}"{% endif %}
+            {% if url %}onclick="window.location.href='{{ url }}'"{% endif %}>
+        {% if icono %}
+        <i class="fas {{ icono }} me-2"></i>
+        {% endif %}
+        <span>{{ texto }}</span>
+    </button>
+</div>
+

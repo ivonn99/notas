@@ -1,0 +1,212 @@
+{% extends 'pagina/base.html' %}
+{% load static %}
+
+{% block title %}Logs del Sistema{% endblock %}
+
+{% csrf_token %}
+
+{% block content %}
+<div class="seccion">
+    <div class="seccion-content" style="max-width: 1400px; text-align: left;">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="seccion-titulo mb-0">Logs del Sistema</h1>
+            <div class="d-flex gap-2 align-items-center">
+                <form method="get" class="d-flex gap-2">
+                    <input type="text" name="filtro" class="form-control" placeholder="Filtrar logs..." 
+                           value="{{ filtro }}" style="width: 300px;">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-search"></i> Filtrar
+                    </button>
+                    {% if filtro %}
+                    <a href="{% url 'logs_sistema' %}" class="btn btn-secondary">
+                        <i class="fas fa-times"></i> Limpiar
+                    </a>
+                    {% endif %}
+                </form>
+                <button type="button" class="btn btn-success" onclick="location.reload()">
+                    <i class="fas fa-sync-alt"></i> Actualizar
+                </button>
+            </div>
+        </div>
+
+        <div class="card bg-dark text-white mb-3" style="border: 1px solid rgba(200, 230, 212, 0.2); background: rgba(33, 150, 243, 0.1) !important;">
+            <div class="card-body py-2">
+                <small style="color: #c8e6d4;">
+                    <i class="fas fa-info-circle"></i> 
+                    Mostrando las últimas <strong style="color: #4CA150;">{{ showing_lines }}</strong> líneas de un total de <strong style="color: #4CA150;">{{ total_lines }}</strong> líneas.
+                    {% if filtro %}
+                    <br>Filtrado por: <strong style="color: #4CA150;">{{ filtro }}</strong>
+                    {% endif %}
+                </small>
+            </div>
+        </div>
+
+        <div class="logs-container" style="background: #1a1a1a; border: 1px solid rgba(200, 230, 212, 0.2); border-radius: 8px; padding: 20px; max-height: 70vh; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 13px;">
+            {% if logs %}
+                {% for log in logs %}
+                    <div class="log-line mb-1" style="
+                        {% if 'ERROR' in log or 'error' in log %}color: #ff6b6b;
+                        {% elif 'WARNING' in log or 'warning' in log %}color: #ffa726;
+                        {% elif 'INFO' in log and 'TOGGLE_ACTIVO' in log %}color: #4caf50;
+                        {% elif 'INFO' in log and 'USUARIOS' in log %}color: #42a5f5;
+                        {% elif 'INFO' in log %}color: #66bb6a;
+                        {% elif 'DEBUG' in log %}color: #ab47bc;
+                        {% else %}color: #c8e6d4;
+                        {% endif %}
+                        padding: 4px 8px;
+                        border-left: 3px solid 
+                        {% if 'ERROR' in log or 'error' in log %}#f44336
+                        {% elif 'WARNING' in log or 'warning' in log %}#ff9800
+                        {% elif 'INFO' in log and 'TOGGLE_ACTIVO' in log %}#4CA150
+                        {% elif 'INFO' in log and 'USUARIOS' in log %}#2196F3
+                        {% elif 'INFO' in log %}#4CA150
+                        {% elif 'DEBUG' in log %}#9c27b0
+                        {% else %}rgba(200, 230, 212, 0.3)
+                        {% endif %};
+                        background: rgba(0, 0, 0, 0.2);
+                        border-radius: 4px;
+                        white-space: pre-wrap;
+                        word-wrap: break-word;
+                    ">
+                        {{ log|safe }}
+                    </div>
+                {% endfor %}
+            {% else %}
+                <div class="text-center text-muted" style="color: rgba(200, 230, 212, 0.7);">
+                    <i class="fas fa-inbox" style="font-size: 48px; margin-bottom: 20px; display: block;"></i>
+                    <p>No hay logs disponibles</p>
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="mt-3 d-flex justify-content-between align-items-center">
+            <small class="text-muted" style="color: rgba(200, 230, 212, 0.7);">
+                <i class="fas fa-info-circle"></i> Los logs se actualizan automáticamente. Usa el botón "Actualizar" para refrescar.
+            </small>
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="limpiarLogs()">
+                <i class="fas fa-trash"></i> Limpiar Archivo de Logs
+            </button>
+        </div>
+    </div>
+</div>
+
+<style>
+    .logs-container {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(200, 230, 212, 0.3) #1a1a1a;
+    }
+    
+    .logs-container::-webkit-scrollbar {
+        width: 8px;
+    }
+    
+    .logs-container::-webkit-scrollbar-track {
+        background: #1a1a1a;
+    }
+    
+    .logs-container::-webkit-scrollbar-thumb {
+        background: rgba(200, 230, 212, 0.3);
+        border-radius: 4px;
+    }
+    
+    .logs-container::-webkit-scrollbar-thumb:hover {
+        background: rgba(200, 230, 212, 0.5);
+    }
+    
+    .log-line:hover {
+        background: rgba(200, 230, 212, 0.1) !important;
+    }
+    
+    .form-control {
+        background: #2a2a2a;
+        border: 1px solid rgba(200, 230, 212, 0.3);
+        color: #ffffff;
+    }
+    
+    .form-control:focus {
+        background: #2a2a2a;
+        border-color: #4CA150;
+        color: #ffffff;
+    }
+</style>
+
+<script>
+    function limpiarLogs() {
+        Swal.fire({
+            title: '¿Estás seguro?',
+            text: 'Esto eliminará todo el contenido del archivo de logs. Esta acción no se puede deshacer.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#f44336',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Sí, limpiar',
+            cancelButtonText: 'Cancelar',
+            background: '#1a1a1a',
+            color: '#ffffff',
+            customClass: {
+                popup: 'swal-dark',
+                title: 'swal-title-dark',
+                content: 'swal-content-dark',
+                confirmButton: 'swal-button-dark',
+                cancelButton: 'swal-button-cancel-dark'
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                // Hacer una petición para limpiar los logs
+                const csrftoken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || 
+                                 document.cookie.match(/csrftoken=([^;]+)/)?.[1];
+                fetch('{% url "logs_sistema" %}?limpiar=1', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': csrftoken,
+                        'Content-Type': 'application/json',
+                    },
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Logs limpiados',
+                            text: 'El archivo de logs ha sido limpiado exitosamente.',
+                            confirmButtonColor: '#4CA150',
+                            background: '#1a1a1a',
+                            color: '#ffffff',
+                        }).then(() => {
+                            location.reload();
+                        });
+                    } else {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Error',
+                            text: data.message || 'Error al limpiar los logs.',
+                            confirmButtonColor: '#f44336',
+                            background: '#1a1a1a',
+                            color: '#ffffff',
+                        });
+                    }
+                })
+                .catch(error => {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error',
+                        text: 'Error al limpiar los logs.',
+                        confirmButtonColor: '#f44336',
+                        background: '#1a1a1a',
+                        color: '#ffffff',
+                    });
+                });
+            }
+        });
+    }
+
+    // Auto-refresh cada 5 segundos
+    setInterval(function() {
+        // Solo actualizar si no hay filtro activo
+        {% if not filtro %}
+        location.reload();
+        {% endif %}
+    }, 5000);
+</script>
+{% endblock %}
+

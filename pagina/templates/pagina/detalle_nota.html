@@ -1,0 +1,262 @@
+{% extends 'pagina/base.html' %}
+{% load static %}
+
+{% block title %}{{ titulo }}{% endblock %}
+
+{% block content %}
+<div class="seccion">
+    <div class="seccion-content" style="max-width: 1400px; text-align: left;">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="seccion-titulo mb-0">
+                <i class="fas fa-file-invoice-dollar"></i> Detalle de Nota
+            </h1>
+            <a href="{% url 'seguimiento' %}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Volver
+            </a>
+        </div>
+
+        <div class="row g-4">
+            <!-- Información Principal -->
+            <div class="col-12 col-lg-8">
+                <!-- Datos de la Nota -->
+                <div class="card bg-dark text-white mb-4" style="border: 1px solid rgba(200, 230, 212, 0.2);">
+                    <div class="card-header" style="border-bottom: 1px solid rgba(200, 230, 212, 0.2);">
+                        <h5 class="mb-0" style="color: #c8e6d4;">
+                            <i class="fas fa-info-circle"></i> Información de la Nota
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-12 col-md-6">
+                                <strong>Serie-Folio:</strong>
+                                <div class="text-white">{{ nota.serie_folio }}</div>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <strong>Empresa:</strong>
+                                <div class="text-white">{{ nota.get_empresa_display }}</div>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <strong>Cliente:</strong>
+                                <div class="text-white">{{ nota.cliente }}</div>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <strong>Ruta:</strong>
+                                <div class="text-white">{{ nota.ruta.codigo }} - {{ nota.ruta.nombre }}</div>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <strong>Monto:</strong>
+                                <div class="text-white">${{ nota.monto|floatformat:2 }}</div>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <strong>Abono:</strong>
+                                <div class="text-white">${{ nota.abono|floatformat:2 }}</div>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <strong>Saldo:</strong>
+                                <div class="text-white" style="color: {% if nota.saldo > 0 %}#ff9800{% else %}#4CA150{% endif %};">
+                                    <strong>${{ nota.saldo|floatformat:2 }}</strong>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <strong>Estado Actual:</strong>
+                                <div>
+                                    {% if nota.estado == 'PENDIENTE' %}
+                                        <span class="badge bg-warning">{{ nota.get_estado_display }}</span>
+                                    {% elif nota.estado == 'RESUELTA' %}
+                                        <span class="badge bg-success">{{ nota.get_estado_display }}</span>
+                                    {% elif nota.estado == 'CANCELADA' %}
+                                        <span class="badge bg-secondary">{{ nota.get_estado_display }}</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <strong>Fecha Nota:</strong>
+                                <div class="text-white">{{ nota.fecha_nota|date:"d/m/Y" }}</div>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <strong>Fecha Corriente:</strong>
+                                <div class="text-white">{{ nota.fecha_corriente|date:"d/m/Y" }}</div>
+                            </div>
+                            {% if nota.usuario %}
+                            <div class="col-12 col-md-6">
+                                <strong>Vendedor Asignado:</strong>
+                                <div class="text-white">{{ nota.usuario.nombre_completo }}</div>
+                            </div>
+                            {% endif %}
+                            {% if nota.usuario_vendedor_pv %}
+                            <div class="col-12 col-md-6">
+                                <strong>Usuario/Vendedor (PV):</strong>
+                                <div class="text-white">{{ nota.usuario_vendedor_pv }}</div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Historial de Cambios -->
+                <div class="card bg-dark text-white mb-4" style="border: 1px solid rgba(200, 230, 212, 0.2);">
+                    <div class="card-header" style="border-bottom: 1px solid rgba(200, 230, 212, 0.2);">
+                        <h5 class="mb-0" style="color: #c8e6d4;">
+                            <i class="fas fa-history"></i> Historial de Cambios
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        {% if historial %}
+                        <div class="list-group">
+                            {% for registro in historial %}
+                            <div class="list-group-item bg-dark text-white mb-2" style="border: 1px solid rgba(200, 230, 212, 0.2);">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div class="flex-grow-1">
+                                        <strong>{{ registro.campo_modificado }}</strong>
+                                        <div class="mt-1">
+                                            <small class="text-muted">De:</small> {{ registro.valor_anterior|default:"-" }}
+                                            <small class="text-muted ms-2">A:</small> {{ registro.valor_nuevo|default:"-" }}
+                                        </div>
+                                        {% if registro.observacion %}
+                                        <div class="mt-2 text-info">
+                                            <i class="fas fa-comment"></i> {{ registro.observacion }}
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                    <div class="text-end">
+                                        <small class="text-muted">{{ registro.usuario.nombre_completo }}</small><br>
+                                        <small class="text-muted">{{ registro.created_at|date:"d/m/Y H:i" }}</small>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <div class="alert alert-info">
+                            No hay historial de cambios registrado.
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Comentarios y Aclaraciones -->
+                <div class="card bg-dark text-white mb-4" style="border: 1px solid rgba(200, 230, 212, 0.2);">
+                    <div class="card-header" style="border-bottom: 1px solid rgba(200, 230, 212, 0.2);">
+                        <h5 class="mb-0" style="color: #c8e6d4;">
+                            <i class="fas fa-comments"></i> Comentarios y Aclaraciones
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        {% if aclaraciones %}
+                        <div class="list-group mb-3">
+                            {% for aclaracion in aclaraciones %}
+                            <div class="list-group-item bg-dark text-white mb-2 {% if not aclaracion.leida and user.rol != 'VENDEDOR' %}border-warning{% endif %}" style="border: 1px solid {% if not aclaracion.leida and user.rol != 'VENDEDOR' %}rgba(255, 193, 7, 0.5){% else %}rgba(200, 230, 212, 0.2){% endif %};">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div class="flex-grow-1">
+                                        <div class="d-flex align-items-center gap-2 mb-2">
+                                            <span class="badge bg-info">{{ aclaracion.get_tipo_display }}</span>
+                                            {% if not aclaracion.leida and user.rol != 'VENDEDOR' %}
+                                            <span class="badge bg-warning">
+                                                <i class="fas fa-exclamation-circle"></i> Nuevo
+                                            </span>
+                                            {% endif %}
+                                        </div>
+                                        <div>{{ aclaracion.comentario }}</div>
+                                    </div>
+                                    <div class="text-end">
+                                        <small class="text-muted">{{ aclaracion.usuario.nombre_completo }}</small><br>
+                                        <small class="text-muted">{{ aclaracion.created_at|date:"d/m/Y H:i" }}</small>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <div class="alert alert-info mb-3">
+                            No hay comentarios registrados.
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Acciones -->
+            <div class="col-12 col-lg-4">
+                <!-- Cambiar Estado (Solo CREDITO y ADMIN) -->
+                {% if user.rol != 'VENDEDOR' %}
+                <div class="card bg-dark text-white mb-4" style="border: 1px solid rgba(200, 230, 212, 0.2);">
+                    <div class="card-header" style="border-bottom: 1px solid rgba(200, 230, 212, 0.2);">
+                        <h5 class="mb-0" style="color: #c8e6d4;">
+                            <i class="fas fa-exchange-alt"></i> Cambiar Estado
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <form method="post" action="{% url 'detalle_nota' nota.id %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="cambiar_estado" value="1">
+                            <div class="mb-3">
+                                <label for="{{ form_cambiar_estado.estado.id_for_label }}" class="form-label">
+                                    Nuevo Estado
+                                </label>
+                                {{ form_cambiar_estado.estado }}
+                            </div>
+                            <div class="mb-3">
+                                <label for="{{ form_cambiar_estado.comentario.id_for_label }}" class="form-label">
+                                    Comentario (requerido)
+                                </label>
+                                {{ form_cambiar_estado.comentario }}
+                                <small class="form-text text-muted">{{ form_cambiar_estado.comentario.help_text }}</small>
+                            </div>
+                            <button type="submit" class="btn btn-success w-100">
+                                <i class="fas fa-save"></i> Cambiar Estado
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                {% else %}
+                <!-- Información para VENDEDOR -->
+                <div class="card bg-dark text-white mb-4" style="border: 1px solid rgba(200, 230, 212, 0.2);">
+                    <div class="card-header" style="border-bottom: 1px solid rgba(200, 230, 212, 0.2);">
+                        <h5 class="mb-0" style="color: #c8e6d4;">
+                            <i class="fas fa-info-circle"></i> Información
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info mb-0">
+                            Como vendedor, puedes agregar comentarios y aclaraciones, pero no puedes cambiar el estado de las notas. 
+                            Solo el personal de crédito y administradores pueden modificar los estados.
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Agregar Comentario -->
+                <div class="card bg-dark text-white mb-4" style="border: 1px solid rgba(200, 230, 212, 0.2);">
+                    <div class="card-header" style="border-bottom: 1px solid rgba(200, 230, 212, 0.2);">
+                        <h5 class="mb-0" style="color: #c8e6d4;">
+                            <i class="fas fa-comment"></i> Agregar Comentario
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <form method="post" action="{% url 'detalle_nota' nota.id %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="agregar_comentario" value="1">
+                            <div class="mb-3">
+                                <label for="{{ form_comentario.tipo.id_for_label }}" class="form-label">
+                                    Tipo
+                                </label>
+                                {{ form_comentario.tipo }}
+                            </div>
+                            <div class="mb-3">
+                                <label for="{{ form_comentario.comentario.id_for_label }}" class="form-label">
+                                    Comentario
+                                </label>
+                                {{ form_comentario.comentario }}
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100">
+                                <i class="fas fa-paper-plane"></i> Agregar Comentario
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
