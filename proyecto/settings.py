@@ -4,6 +4,8 @@ Django settings for proyecto project.
 
 from pathlib import Path
 import os
+import sys
+from importlib.util import find_spec
 from dotenv import load_dotenv
 
 # Cargar variables de entorno
@@ -29,6 +31,26 @@ ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_env.split(',') if host.s
 csrf_origins_env = os.getenv('CSRF_TRUSTED_ORIGINS', '')
 CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_origins_env.split(',') if origin.strip()]
 
+# En producción, exige clave secreta real y al menos un host permitido explícito.
+if not DEBUG:
+    if not os.getenv('SECRET_KEY'):
+        raise ValueError('SECRET_KEY es obligatoria en producción (DEBUG=False).')
+    if SECRET_KEY == 'django-insecure-dev-key-change-in-production':
+        raise ValueError('SECRET_KEY insegura en producción. Define una clave fuerte en variables de entorno.')
+    if not ALLOWED_HOSTS or '*' in ALLOWED_HOSTS:
+        raise ValueError("ALLOWED_HOSTS no puede estar vacío ni contener '*' en producción.")
+
+    # Endurecimiento básico para despliegue detrás de proxy HTTPS (Render).
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', '31536000'))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+
 
 # Application definition
 
@@ -52,7 +74,6 @@ LOGOUT_REDIRECT_URL = '/login/'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -60,6 +81,8 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+if find_spec('whitenoise') is not None:
+    MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
 
 ROOT_URLCONF = 'proyecto.urls'
 
@@ -126,11 +149,23 @@ elif NEON_DB_HOST and NEON_DB_NAME and NEON_DB_USER and NEON_DB_PASSWORD:
         }
     }
 else:
-    # Opción 3: Fallback a SQLite local para desarrollo
+    if DEBUG:
+        # Opción 3: Fallback a SQLite local para desarrollo
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.sqlite3',
+                'NAME': BASE_DIR / 'db.sqlite3',
+            }
+        }
+    else:
+        raise ValueError('Configura NEON_DATABASE_URL (o variables NEON_DB_*) en producción.')
+
+# En pruebas automatizadas, usar SQLite local para evitar conflictos con Neon.
+if 'test' in sys.argv:
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
+            'NAME': BASE_DIR / 'test_db.sqlite3',
         }
     }
 

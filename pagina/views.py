@@ -3,6 +3,7 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.views.decorators.csrf import csrf_protect
+from django.http import JsonResponse
 from datetime import datetime
 import logging
 import time
@@ -65,6 +66,11 @@ def logout_view(request):
     logout(request)
     messages.success(request, 'Has cerrado sesión correctamente.')
     return redirect('login')
+
+
+def healthz(request):
+    """Health check básico para monitoreo."""
+    return JsonResponse({'status': 'ok'})
 
 
 @login_required
