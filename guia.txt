@@ -1,0 +1,241 @@
+# Archivo del proyecto — Sistema Notas de Crédito (Django)
+
+Documento de referencia **antes de eliminar el repositorio local**. Resume qué hacía la app, rutas, roles, base de datos Neon y estructura de plantillas.
+
+> **Seguridad:** no guardes contraseñas reales en este archivo. Las credenciales viven en **Neon** y en tu archivo **`.env`** (local / Render). Si alguna clave se compartió en chat o por error, **rótala** en el panel de Neon.
+
+---
+
+## 1. Qué era el sistema
+
+- **Framework:** Django 4.2 (`proyecto/` + app `pagina/`).
+- **Nombre comercial en UI:** DMH — Distribuidora de Medicamentos Homeopáticos.
+- **Función:** gestión de **notas de crédito**, usuarios por **rol**, **rutas**, **importación** de reportes (CSV/TSV/Excel con pandas/openpyxl), **seguimiento** y **comentarios** en notas.
+- **Autenticación:** sesión Django (`login` / `logout`), usuario personalizado `pagina.Usuario` (tabla `usuarios`).
+- **Autorización:** decorador `rol_requerido` en `pagina/decorators.py`; `is_superuser` de Django tiene acceso total.
+
+### Roles (`Usuario.rol`)
+
+| Código     | Etiqueta              |
+|-----------|------------------------|
+| `VENDEDOR` | Vendedor               |
+| `CREDITO`  | Crédito y Cobranza     |
+| `ADMIN`    | Administrador        |
+
+---
+
+## 2. Mapa de la aplicación — sección por sección
+
+Rutas definidas en `pagina/urls.py` (prefijo raíz `''` en `proyecto/urls.py`).
+
+### 2.1 Público / salud
+
+| Ruta            | Vista           | Qué hace |
+|-----------------|-----------------|----------|
+| `GET /healthz/` | `healthz`       | JSON `{"status":"ok"}` (monitoreo). |
+
+### 2.2 Autenticación
+
+| Ruta            | Vista          | Qué hace |
+|-----------------|----------------|----------|
+| `GET/POST /login/`  | `login_view` | Formulario login; valida usuario/contraseña; redirige a inicio o `?next=`. |
+| `GET /logout/` (o flujo logout) | `logout_view` | Cierra sesión. |
+
+**Notas de comportamiento (código actual):**
+
+- Búsqueda de usuario **sin distinguir mayúsculas/minúsculas** (`username__iexact`).
+- Contraseñas: hash estándar Django (`pbkdf2_sha256`, etc.) en campo `password` de `usuarios`.
+
+### 2.3 Dashboard (cualquier usuario logueado)
+
+| Ruta | Vista              | Plantilla principal   | Qué hace |
+|------|--------------------|-------------------------|----------|
+| `GET /` | `pagina_principal` | `pagina/pagina.html` | Panel de bienvenida / resumen textual. |
+
+### 2.4 Notas de crédito (logueado)
+
+| Ruta | Vista | Plantilla | Qué hace |
+|------|--------|-----------|----------|
+| `GET /notas-credito/` | `todas_las_notas` | `pagina/todas_las_notas.html` | Listado con filtros, scroll infinito / AJAX (`ajax=1` o header `X-Requested-With`). **VENDEDOR:** solo notas de sus rutas asignadas. |
+
+**Endpoints AJAX bajo la misma ruta:** paginación y filtros (estado, empresa, ruta, búsqueda, días, orden).
+
+### 2.5 Crédito y cobranza
+
+| Ruta | Vista | Roles | Plantilla | Qué hace |
+|------|--------|-------|-----------|----------|
+| `GET /alertas/` | `alertas` | `CREDITO`, `ADMIN` | `pagina/pagina.html` | Página de alertas (contenido genérico / placeholder en contexto). |
+
+### 2.6 Seguimiento
+
+| Ruta | Vista | Roles | Plantilla | Qué hace |
+|------|--------|-------|-----------|----------|
+| `GET /seguimiento/` | `seguimiento` | `CREDITO`, `ADMIN`, `VENDEDOR` | `pagina/seguimiento.html` | Lista notas con filtros; AJAX para más páginas. Vendedor: solo sus rutas. |
+| `GET/POST /seguimiento/nota/<id>/` | `detalle_nota` | Mismos roles | `pagina/detalle_nota.html` | Detalle, historial, comentarios/aclaraciones. **Cambio de estado:** solo `CREDITO` y `ADMIN`. Vendedor puede comentar. Marca aclaraciones leídas para crédito/admin. |
+
+### 2.7 Configuración (solo `ADMIN`)
+
+| Ruta | Vista | Plantilla | Qué hace |
+|------|--------|-----------|----------|
+| `GET/POST /importar-reporte/` | `importar_reporte` | `pagina/importar_reporte.html` | Subida de archivo; procesamiento; progreso en sesión; registra `Importacion`. |
+| `GET .../descargar-muestra/` | `descargar_archivo_muestra` | — | Descarga CSV/Excel de muestra. |
+| `GET .../ultimas-importaciones/` | `ultimas_importaciones_ajax` | fragmento | HTML parcial. |
+| `GET .../progreso/` | `importacion_progreso_ajax` | JSON | Progreso de importación. |
+| `GET /historial-importaciones/` | `historial_importaciones` | `pagina/historial_importaciones.html` | Lista de importaciones. |
+| `GET/POST /usuarios/` | `usuarios` | `pagina/usuarios.html` | CRUD usuarios (crear, eliminar, toggle activo). |
+| `GET/POST /usuarios/editar/<id>/` | `editar_usuario` | `pagina/editar_usuario.html` | Editar usuario. |
+| `GET/POST /usuarios/asignar-rutas/<id>/` | `asignar_rutas_usuario` | `pagina/asignar_rutas.html` | Asignar rutas (M2M). |
+| `GET/POST /rutas/` | `rutas` | `pagina/rutas.html` | Listado rutas. |
+| `GET/POST /rutas/editar/<id>/` | `editar_ruta` | `pagina/editar_ruta.html` | Editar ruta. |
+| `GET/POST /parametros/` | `parametros` | `pagina/parametros.html` | Parámetros sistema. |
+| `GET/POST /parametros/editar/<id>/` | `editar_parametro` | `pagina/editar_parametro.html` | Editar parámetro. |
+| `GET /logs-sistema/` | `logs_sistema` | `pagina/logs_sistema.html` | Lee archivo `logs/django.log` (si existe). |
+
+### 2.8 Mi cuenta (logueado)
+
+| Ruta | Vista | Plantilla | Qué hace |
+|------|--------|-----------|----------|
+| `GET/POST /perfil/` | `perfil` | `pagina/perfil.html` | Datos usuario, rutas asignadas, cambio de contraseña (`CambiarPasswordForm`). |
+| `GET /notificaciones/` | `notificaciones` | `pagina/pagina.html` | Placeholder de notificaciones. |
+
+### 2.9 Menú lateral (`base.html`) — visibilidad
+
+- **Todos:** Página principal, Todas las notas, Seguimiento (solo si rol permite), Mi cuenta, Perfil, Notificaciones, Cerrar sesión.
+- **CREDITO + ADMIN:** bloque Alertas.
+- **CREDITO + ADMIN + VENDEDOR:** bloque Seguimiento (enlace).
+- **Solo ADMIN:** Importar reporte, Historial importaciones, Usuarios, Rutas, Parámetros, Logs.
+
+---
+
+## 3. Neon / conexión a base de datos
+
+### 3.1 Dónde se configura en Django
+
+Archivo: `proyecto/settings.py`.
+
+- **Opción A (recomendada):** variable de entorno **`NEON_DATABASE_URL`** — cadena `postgresql://...` (parseada con `dj-database-url`).
+- **Opción B:** variables sueltas: `NEON_DB_HOST`, `NEON_DB_NAME`, `NEON_DB_USER`, `NEON_DB_PASSWORD`, `NEON_DB_PORT` (SSL `require`).
+- **Sin Neon en entorno y `DEBUG=True`:** SQLite local `db.sqlite3` en la raíz del proyecto.
+- **Sin Neon y `DEBUG=False`:** el settings endurecido exige configurar Neon (no usar SQLite en prod).
+
+### 3.2 Dónde están las “contraseñas” (sin escribirlas aquí)
+
+| Secreto | Uso | Dónde obtenerlo / guardarlo |
+|---------|-----|-----------------------------|
+| Contraseña de BD Neon | Conexión PostgreSQL | Panel Neon → proyecto → **Connection string** o **Reset password** del rol de BD. |
+| `NEON_DATABASE_URL` | URL completa con usuario y password | Copiar de Neon; pegar en `.env`, Render, etc. **No commitear.** |
+| `SECRET_KEY` | Firmas de sesión Django | Generar con Django; guardar solo en env. |
+| Usuario/contraseña de **login de la app** | Acceso web | Tabla `usuarios` (campo `password` = hash Django). Cambiar con admin Django o `createsuperuser` / formularios. |
+
+**Después de borrar el proyecto:** conserva en un gestor de secretos:
+
+1. URL o variables de Neon.  
+2. `SECRET_KEY` de producción si sigues usando la misma BD con otro stack.  
+3. Lista de usuarios administrativos (sin contraseñas en claro).
+
+---
+
+## 4. Estructura de tablas (modelos Django → PostgreSQL)
+
+Nombres de tabla = `db_table` en `pagina/models.py`.
+
+### 4.1 `usuarios` (`Usuario` — extiende `AbstractUser`)
+
+Campos propios destacados: `nombre_completo`, `rol`, `activo`, `created_at`.  
+Incluye campos estándar Django: `username`, `password`, `email`, `first_name`, `last_name`, `is_superuser`, `is_staff`, `is_active`, `date_joined`, etc.  
+Relación M2M con `rutas` vía `usuario_rutas`.
+
+### 4.2 `rutas` (`Ruta`)
+
+`codigo` (único), `nombre`, `descripcion`, `activa`, `created_at`.
+
+### 4.3 `usuario_rutas` (`UsuarioRuta`)
+
+`usuario_id`, `ruta_id`, `created_at`; único `(usuario, ruta)`.
+
+### 4.4 `notas_credito` (`NotaCredito`)
+
+Campos principales: `serie_folio`, `fecha_nota`, `cliente`, `empresa` (`DISTRIBUIDORA` | `RODRIGO`), `ruta_id`, `usuario_id` (vendedor asignado, opcional), `usuario_vendedor_pv`, `monto`, `abono`, `saldo` (recalculado en `save`: `monto - abono`), `estado` (`PENDIENTE` | `RESUELTA` | `CANCELADA`), `resuelta_automaticamente`, `requiere_atencion`, `fecha_corriente`, `fecha_ultima_actualizacion`, `fecha_resolucion`, `created_at`.  
+**Unicidad:** `(empresa, serie_folio)`.
+
+### 4.5 `historial_notas` (`HistorialNota`)
+
+Auditoría de cambios por nota: `nota_id`, `usuario_id`, `campo_modificado`, `valor_anterior`, `valor_nuevo`, `observacion`, `created_at`.
+
+### 4.6 `aclaraciones` (`Aclaracion`)
+
+Comentarios en nota: `nota_id`, `usuario_id`, `comentario`, `tipo` (`COMENTARIO` | `ACLARACION` | `SEGUIMIENTO`), `leida`, `created_at`.
+
+### 4.7 `documentos` (`Documento`)
+
+Adjuntos: `nota_id`, `usuario_id`, `nombre_archivo`, `ruta_archivo`, `tipo_mime`, `tamanio`, `created_at`.
+
+### 4.8 `alertas` (`Alerta`)
+
+`nota_id`, `tipo`, `descripcion`, `leida`, `usuario_asignado_id`, `created_at`.
+
+### 4.9 `importaciones` (`Importacion`)
+
+Log de importaciones: `usuario_id`, `nombre_archivo`, contadores, `estado` (`COMPLETADA` | `FALLIDA` | `PARCIAL`), `observaciones`, `created_at`.
+
+### 4.10 `parametros` (`Parametro`)
+
+`clave` (única), `valor`, `descripcion`, `updated_at`.
+
+### 4.11 Tablas estándar Django
+
+Además existen (migraciones Django): por ejemplo `django_session`, `django_migrations`, `django_content_type`, `auth_permission`, tablas de grupos si se usan, etc. El usuario de login **no** está en `auth_user` sino en **`usuarios`** (`AUTH_USER_MODEL = 'pagina.Usuario'`).
+
+---
+
+## 5. Estructura de plantillas y estáticos
+
+### 5.1 Plantillas (`pagina/templates/pagina/`)
+
+| Archivo | Uso |
+|---------|-----|
+| `base.html` | Layout: navbar, sidebar, mensajes, Bootstrap, `main.js`. |
+| `login.html` | Login (no extiende `base` típicamente). |
+| `pagina.html` | Página genérica de contenido (alertas, notificaciones, etc.). |
+| `todas_las_notas.html` | Listado notas + infinite scroll. |
+| `seguimiento.html` | Seguimiento. |
+| `detalle_nota.html` | Detalle nota, formularios estado y comentarios. |
+| `importar_reporte.html` | Importación + progreso (JS asociado en estáticos). |
+| `historial_importaciones.html` | Historial. |
+| `usuarios.html`, `editar_usuario.html`, `asignar_rutas.html` | Administración usuarios. |
+| `rutas.html`, `editar_ruta.html` | Rutas. |
+| `parametros.html`, `editar_parametro.html` | Parámetros. |
+| `logs_sistema.html` | Logs. |
+| `perfil.html` | Perfil y cambio de contraseña. |
+| `includes/` | Parciales: `action_button`, `alert_messages`, `data_table`, `page_container`, `page_header`, `stats_cards`. |
+| `ultimas_importaciones_fragment.html` | Fragmento AJAX. |
+
+### 5.2 Estáticos (`static/`)
+
+- `css/style.css` — estilos principales (sidebar, tema oscuro, responsive).  
+- `js/main.js` — menú hamburguesa / sidebar.  
+- `js/importar_progreso.js` — progreso de importación.
+
+---
+
+## 6. Otros componentes en el mismo repo (no Django)
+
+| Carpeta | Descripción breve |
+|---------|-------------------|
+| `js-app/` | App **Node + Express + EJS** que replica parte del flujo contra la misma BD; variables `DATABASE_URL` / `NEON_DATABASE_URL`; contraseñas verificadas como hash Django. |
+
+Si migras a **Next.js** u otro front, este documento sigue siendo la referencia del **dominio y la BD** que alimentaba Django.
+
+---
+
+## 7. Checklist antes de eliminar el proyecto
+
+- [ ] Exportar o respaldar **Neon** (dump SQL o backup del proveedor).  
+- [ ] Guardar **`.env`** (sin subirlo a git) o secretos en vault.  
+- [ ] Anotar URL de producción (Render u otro) si aún la usas.  
+- [ ] Clonar o zip del repo si quieres histórico: `https://github.com/ivonn99/notas`  
+- [ ] Rotar credenciales si estuvieron expuestas.
+
+---
+
+*Generado como archivo de proyecto para conservar conocimiento operativo tras dar de baja el código local.*

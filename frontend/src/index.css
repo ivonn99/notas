@@ -1,0 +1,394 @@
+/**
+ * Capa fina encima de Bootstrap: solo lo que no cubran utilidades.
+ * Preferir clases de Bootstrap en los componentes.
+ */
+:root {
+  --nc-green: #2f7d32;
+  --nc-green-2: #3f8b43;
+  --nc-olive: #6b8e23;
+  --nc-sidebar-bg: #eef6ef;
+  --nc-topbar-bg: #f7fbf7;
+  --nc-surface: #ffffff;
+  --nc-text: #1f2a1f;
+  --nc-muted: #5f6f5f;
+  /* Altura aproximada del topbar (sidebar/overlay móvil debajo del header) */
+  --nc-topbar-height: 3.25rem;
+  /* Sustituye el azul por defecto de Bootstrap (login, enlaces, text-primary, etc.) */
+  --bs-primary: var(--nc-green);
+  --bs-primary-rgb: 47, 125, 50;
+  --bs-link-color: var(--nc-green);
+  --bs-link-hover-color: var(--nc-green-2);
+  --bs-link-color-rgb: 47, 125, 50;
+  --bs-link-hover-color-rgb: 63, 139, 67;
+  /* Anillo de foco (inputs, acordeón, paginación, etc.) — antes azul Bootstrap */
+  --bs-focus-ring-color: rgba(47, 125, 50, 0.3);
+  --nc-focus-border: #6fb876;
+}
+
+[data-theme='dark'] {
+  --nc-green: #6ca96f;
+  --nc-green-2: #7fbb82;
+  --nc-olive: #95b352;
+  --nc-sidebar-bg: #1d241e;
+  --nc-topbar-bg: #151b16;
+  --nc-surface: #111612;
+  --nc-text: #dce8dc;
+  --nc-muted: #9db19d;
+  --bs-primary-rgb: 108, 169, 111;
+  --bs-link-color-rgb: 108, 169, 111;
+  --bs-link-hover-color-rgb: 127, 187, 130;
+  --bs-focus-ring-color: rgba(108, 169, 111, 0.38);
+  --nc-focus-border: #8fd092;
+  color-scheme: dark;
+}
+
+/* thead.table-light fija gris claro (#f8f9fa); en oscuro debe seguir el tema Bootstrap */
+[data-bs-theme='dark'] thead.table-light,
+[data-theme='dark'] thead.table-light {
+  --bs-table-color: var(--bs-body-color);
+  --bs-table-bg: var(--bs-tertiary-bg);
+  --bs-table-border-color: var(--bs-border-color);
+  --bs-table-striped-bg: rgba(var(--bs-emphasis-color-rgb), 0.08);
+  --bs-table-striped-color: var(--bs-body-color);
+  --bs-table-hover-bg: rgba(var(--bs-emphasis-color-rgb), 0.12);
+  --bs-table-hover-color: var(--bs-body-color);
+  --bs-table-active-bg: rgba(var(--bs-emphasis-color-rgb), 0.14);
+  --bs-table-active-color: var(--bs-body-color);
+}
+
+/*
+ * Fondo degradado verde (todas las pantallas; fijo en claro/oscuro).
+ * Va en `html` para cubrir login, rutas públicas y app con MainLayout.
+ */
+html {
+  min-height: 100%;
+  min-height: 100svh;
+  background-color: #2a7a45;
+  background-image:
+    radial-gradient(ellipse 110% 95% at 50% 38%, rgba(129, 199, 132, 0.55), rgba(67, 160, 71, 0.35) 38%, rgba(46, 125, 50, 0.2) 58%, transparent 72%),
+    radial-gradient(ellipse 85% 75% at 18% 18%, rgba(102, 187, 106, 0.5), rgba(56, 142, 60, 0.22) 48%, transparent 65%),
+    radial-gradient(ellipse 80% 72% at 88% 78%, rgba(76, 175, 80, 0.48), rgba(39, 112, 48, 0.25) 52%, transparent 68%),
+    linear-gradient(
+      152deg,
+      #07140e 0%,
+      #0f2a1c 10%,
+      #1b5c36 26%,
+      #2d8f4f 44%,
+      #3fa060 56%,
+      #2d8548 68%,
+      #185c32 82%,
+      #061208 100%
+    );
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+body,
+#root {
+  min-height: 100%;
+  min-height: 100svh;
+  background: transparent;
+  color: var(--nc-text);
+}
+
+.app-shell {
+  background: transparent;
+}
+
+/* Cuerpo bajo el topbar: el sidebar no empuja la barra (hamburguesa fija a la izquierda del viewport) */
+.app-shell-body {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.app-shell .app-main {
+  position: relative;
+  z-index: 1;
+  transition: padding-left 0.2s ease;
+}
+
+.app-shell .app-sidebar {
+  width: 16.5rem;
+  background: var(--nc-sidebar-bg);
+  color: var(--nc-text);
+  transition: width 0.2s ease, transform 0.2s ease;
+  z-index: 1045;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Bootstrap usa text-body / text-muted con variables; sin data-bs-theme quedan oscuros sobre sidebar oscuro */
+.app-shell .app-sidebar .text-body,
+.app-shell .app-sidebar .fw-bold,
+.app-shell .app-sidebar .fw-semibold:not(.nav-link) {
+  color: var(--nc-text) !important;
+}
+
+.app-shell .app-sidebar .text-body-secondary,
+.app-shell .app-sidebar .text-muted {
+  color: var(--nc-muted) !important;
+}
+
+.app-shell .app-sidebar hr {
+  border-color: color-mix(in srgb, var(--nc-text) 22%, transparent);
+  opacity: 1;
+}
+
+.app-shell .app-topbar {
+  position: relative;
+  z-index: 1060;
+  min-height: var(--nc-topbar-height);
+  box-sizing: border-box;
+  background: var(--nc-topbar-bg);
+  color: var(--nc-text);
+}
+
+.app-shell .app-topbar .fw-semibold {
+  color: var(--nc-text) !important;
+}
+
+.app-shell .app-topbar .small.text-body-secondary {
+  color: var(--nc-muted) !important;
+}
+
+.app-shell .nav-link.active {
+  background: var(--nc-green);
+  color: #fff !important;
+}
+
+.app-shell .nav-link {
+  color: var(--nc-text);
+}
+
+.app-shell .nav-link:hover {
+  background: color-mix(in srgb, var(--nc-green) 12%, transparent);
+}
+
+/* Bootstrap compila .btn-primary con hex fijo; lo redefinimos en todo el sitio (no solo .app-shell). */
+.btn-primary {
+  --bs-btn-bg: var(--nc-green);
+  --bs-btn-border-color: var(--nc-green);
+  --bs-btn-hover-bg: var(--nc-green-2);
+  --bs-btn-hover-border-color: var(--nc-green-2);
+  --bs-btn-active-bg: var(--nc-green-2);
+  --bs-btn-active-border-color: var(--nc-green-2);
+  --bs-btn-disabled-bg: var(--nc-green);
+  --bs-btn-disabled-border-color: var(--nc-green);
+  --bs-btn-focus-shadow-rgb: 47, 125, 50;
+}
+
+.btn-outline-primary {
+  --bs-btn-color: var(--nc-green);
+  --bs-btn-border-color: var(--nc-green);
+  --bs-btn-hover-color: #fff;
+  --bs-btn-hover-bg: var(--nc-green);
+  --bs-btn-hover-border-color: var(--nc-green);
+  --bs-btn-active-color: #fff;
+  --bs-btn-active-bg: var(--nc-green-2);
+  --bs-btn-active-border-color: var(--nc-green-2);
+  --bs-btn-disabled-color: var(--nc-green);
+  --bs-btn-disabled-border-color: var(--nc-green);
+  --bs-btn-focus-shadow-rgb: 47, 125, 50;
+}
+
+/* Refuerzo: en celdas de tabla, ningún botón de acción debe verse azul. */
+.table .btn-primary {
+  color: #fff !important;
+  background-color: var(--nc-green) !important;
+  border-color: var(--nc-green) !important;
+}
+
+.table .btn-primary:hover,
+.table .btn-primary:focus,
+.table .btn-primary:active {
+  background-color: var(--nc-green-2) !important;
+  border-color: var(--nc-green-2) !important;
+}
+
+.table .btn-outline-primary {
+  color: var(--nc-green) !important;
+  border-color: var(--nc-green) !important;
+}
+
+.table .btn-outline-primary:hover,
+.table .btn-outline-primary:focus,
+.table .btn-outline-primary:active {
+  color: #fff !important;
+  background-color: var(--nc-green) !important;
+  border-color: var(--nc-green) !important;
+}
+
+[data-theme='dark'] .btn-primary {
+  --bs-btn-focus-shadow-rgb: 108, 169, 111;
+}
+
+[data-theme='dark'] .btn-outline-primary {
+  --bs-btn-focus-shadow-rgb: 108, 169, 111;
+}
+
+/* Resplandores / bordes de foco: Bootstrap usa #86b7fe + rgba(13,110,253) — pasamos a verde */
+.form-control:focus,
+.form-select:focus,
+.form-check-input:focus {
+  border-color: var(--nc-focus-border);
+  box-shadow: 0 0 0 0.25rem var(--bs-focus-ring-color);
+}
+
+.form-check-input:checked,
+.form-check-input[type='checkbox']:indeterminate {
+  background-color: var(--nc-green);
+  border-color: var(--nc-green);
+}
+
+.form-switch .form-check-input:focus {
+  --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%236fb876'/%3e%3c/svg%3e");
+}
+
+.form-range:focus::-webkit-slider-thumb {
+  box-shadow: 0 0 0 1px #fff, 0 0 0 0.25rem var(--bs-focus-ring-color);
+}
+
+.form-range:focus::-moz-range-thumb {
+  box-shadow: 0 0 0 1px #fff, 0 0 0 0.25rem var(--bs-focus-ring-color);
+}
+
+.form-range::-webkit-slider-thumb {
+  background-color: var(--nc-green);
+}
+
+.form-range::-webkit-slider-thumb:active {
+  background-color: color-mix(in srgb, var(--nc-green) 55%, white);
+}
+
+.form-range::-moz-range-thumb {
+  background-color: var(--nc-green);
+}
+
+.form-range::-moz-range-thumb:active {
+  background-color: color-mix(in srgb, var(--nc-green) 55%, white);
+}
+
+.nav-link:focus-visible {
+  box-shadow: 0 0 0 0.25rem var(--bs-focus-ring-color);
+}
+
+.accordion {
+  --bs-accordion-btn-focus-box-shadow: 0 0 0 0.25rem var(--bs-focus-ring-color);
+}
+
+.pagination {
+  --bs-pagination-focus-box-shadow: 0 0 0 0.25rem var(--bs-focus-ring-color);
+  --bs-pagination-active-bg: var(--nc-green);
+  --bs-pagination-active-border-color: var(--nc-green);
+}
+
+.btn-close {
+  --bs-btn-close-focus-shadow: 0 0 0 0.25rem var(--bs-focus-ring-color);
+}
+
+.app-shell .badge.text-bg-warning {
+  background-color: var(--nc-olive) !important;
+  color: #fff !important;
+}
+
+.app-shell .badge.text-bg-info {
+  background-color: var(--nc-green) !important;
+  color: #fff !important;
+}
+
+/* SweetAlert2 adaptado al tema claro/oscuro de la app */
+html[data-theme='light'] .swal2-popup,
+html[data-theme='dark'] .swal2-popup {
+  background: var(--nc-surface);
+  color: var(--nc-text);
+}
+
+html[data-theme='light'] .swal2-title,
+html[data-theme='dark'] .swal2-title,
+html[data-theme='light'] .swal2-html-container,
+html[data-theme='dark'] .swal2-html-container,
+html[data-theme='light'] .swal2-input-label,
+html[data-theme='dark'] .swal2-input-label {
+  color: var(--nc-text) !important;
+}
+
+html[data-theme='light'] .swal2-input,
+html[data-theme='dark'] .swal2-input {
+  background: color-mix(in srgb, var(--nc-surface) 92%, var(--nc-sidebar-bg));
+  color: var(--nc-text);
+  border-color: color-mix(in srgb, var(--nc-text) 24%, transparent);
+}
+
+html[data-theme='light'] .swal2-input:focus,
+html[data-theme='dark'] .swal2-input:focus {
+  border-color: var(--nc-focus-border);
+  box-shadow: 0 0 0 0.25rem var(--bs-focus-ring-color);
+}
+
+html[data-theme='light'] .swal2-confirm,
+html[data-theme='dark'] .swal2-confirm {
+  background-color: var(--nc-green) !important;
+}
+
+html[data-theme='light'] .swal2-confirm:hover,
+html[data-theme='dark'] .swal2-confirm:hover {
+  background-color: var(--nc-green-2) !important;
+}
+
+.sidebar-overlay {
+  position: fixed;
+  top: var(--nc-topbar-height);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.32);
+  border: 0;
+  z-index: 1040;
+}
+
+/*
+ * Escritorio: el sidebar está dentro de .app-shell-body, que va *debajo* del
+ * .app-topbar en el DOM. Con position absolute + top/left/bottom en el cuerpo,
+ * el menú lateral nunca cubre el navbar ni la hamburguesa (solo el área de contenido).
+ */
+@media (min-width: 992px) {
+  .app-shell-body .app-sidebar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+  }
+
+  .app-shell:not(.is-sidebar-collapsed) .app-main {
+    padding-left: 16.5rem;
+  }
+
+  .app-shell .app-sidebar.is-collapsed {
+    width: 0 !important;
+    min-width: 0;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    margin: 0;
+    border: none !important;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+@media (max-width: 991.98px) {
+  .app-shell .app-sidebar {
+    position: fixed;
+    top: var(--nc-topbar-height);
+    bottom: 0;
+    left: 0;
+    transform: translateX(-100%);
+    box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+  }
+
+  .app-shell .app-sidebar.is-open {
+    transform: translateX(0);
+    box-shadow: 0 0.75rem 2rem rgba(0, 0, 0, 0.3);
+  }
+}

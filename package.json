@@ -1,0 +1,13 @@
+{
+  "name": "notas-de-credito",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c cyan,magenta \"npm run dev --prefix api\" \"wait-on -t 120000 http://127.0.0.1:3001/api/health && npm run dev --prefix frontend\"",
+    "dev:api": "npm run dev --prefix api",
+    "dev:web": "npm run dev --prefix frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "wait-on": "^8.0.1"
+  }
+}

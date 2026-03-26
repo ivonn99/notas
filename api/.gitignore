@@ -1,0 +1,6 @@
+node_modules/
+.env
+.env.local
+logs/
+# Baileys session files (QR/auth state)
+.baileys_auth/
