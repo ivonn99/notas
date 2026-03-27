@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Swal from 'sweetalert2'
 
 import {
@@ -13,6 +13,7 @@ import {
 
 const TAB_AUTOMATIZADA = 'automatizada'
 const TAB_MANUAL = 'manual'
+const WA_STATUS_POLL_MS = 1000
 
 /** Enlace wa.me si hay teléfono guardado (heurística MX: 10 dígitos → prefijo 52). */
 function waMeUrl(telefono) {
@@ -306,7 +307,11 @@ export default function WhatsappCobranzaPage() {
     try {
       const s = await fetchWhatsappStatus()
       setWaStatus(s?.status || null)
-      if (['qr', 'connecting', 'disconnected'].includes(String(s?.status?.status || ''))) {
+      if (s?.status?.isConnected) {
+        setWaQr('')
+      } else if (
+        ['qr', 'connecting', 'disconnected'].includes(String(s?.status?.status || ''))
+      ) {
         try {
           const qr = await fetchWhatsappQr()
           setWaQr(qr?.qrDataUrl || '')
@@ -415,6 +420,19 @@ export default function WhatsappCobranzaPage() {
       setWaLoading(false)
     }
   }, [waTestPhone, waTestMessage])
+
+  useEffect(() => {
+    void cargarEstadoWhatsapp()
+  }, [cargarEstadoWhatsapp])
+
+  useEffect(() => {
+    const s = String(waStatus?.status || '').toLowerCase()
+    if (!['qr', 'connecting'].includes(s) && !waQr) return undefined
+    const t = setInterval(() => {
+      void cargarEstadoWhatsapp()
+    }, WA_STATUS_POLL_MS)
+    return () => clearInterval(t)
+  }, [waStatus?.status, waQr, cargarEstadoWhatsapp])
 
   return (
     <section className="container-fluid px-0">

@@ -1,3 +1,10 @@
 api/.env
 api/node_modules/
 node_modules/
+
+# Baileys (sesión local; nunca subir)
+**/.baileys_auth/
+
+# Builds y despliegue
+frontend/dist/
+.netlify/

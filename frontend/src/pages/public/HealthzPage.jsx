@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { fetchDbPing } from '../../services/api.js'
+import { apiUrl } from '../../utils/apiUrl.js'
 
 export default function HealthzPage() {
   const [loading, setLoading] = useState(true)
@@ -18,8 +19,8 @@ export default function HealthzPage() {
       setError('')
       try {
         const [r1, r2] = await Promise.all([
-          fetch('/api/health', { credentials: 'include' }),
-          fetch('/api/healthz', { credentials: 'include' }),
+          fetch(apiUrl('/api/health'), { credentials: 'include' }),
+          fetch(apiUrl('/api/healthz'), { credentials: 'include' }),
         ])
         const j1 = await r1.json().catch(() => ({}))
         const j2 = await r2.json().catch(() => ({}))

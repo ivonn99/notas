@@ -1,3 +1,5 @@
+import { apiUrl } from '../utils/apiUrl.js'
+
 function jsonOrEmpty(text) {
   if (!text) return {}
   try {
@@ -18,9 +20,9 @@ function buildQuery(params = {}) {
   return q.toString()
 }
 
-async function request(url, options = {}) {
+async function request(path, options = {}) {
   const isFormData = options?.body instanceof FormData
-  const res = await fetch(url, {
+  const res = await fetch(apiUrl(path), {
     credentials: 'include',
     headers: isFormData ? undefined : { 'Content-Type': 'application/json' },
     ...options,

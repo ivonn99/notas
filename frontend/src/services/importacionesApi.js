@@ -1,3 +1,4 @@
+import { apiUrl } from '../utils/apiUrl.js'
 import { http } from './http.js'
 
 export const importacionesApi = {
@@ -8,7 +9,7 @@ export const importacionesApi = {
     const fd = new FormData()
     fd.append('file', file)
     if (mapping) fd.append('mapping', JSON.stringify(mapping))
-    const res = await fetch('/api/importaciones/preview', {
+    const res = await fetch(apiUrl('/api/importaciones/preview'), {
       method: 'POST',
       credentials: 'include',
       body: fd,
@@ -24,12 +25,12 @@ export const importacionesApi = {
     return data
   },
   downloadErroresTxt: async (id) => {
-    const res = await fetch(`/api/importaciones/${id}/errores-txt`, { credentials: 'include' })
+    const res = await fetch(apiUrl(`/api/importaciones/${id}/errores-txt`), { credentials: 'include' })
     if (!res.ok) throw new Error(`Error HTTP ${res.status}`)
     return res.text()
   },
   downloadMuestra: async () => {
-    const res = await fetch('/api/importaciones/muestra', { credentials: 'include' })
+    const res = await fetch(apiUrl('/api/importaciones/muestra'), { credentials: 'include' })
     if (!res.ok) throw new Error(`Error HTTP ${res.status}`)
     return res.text()
   },
@@ -37,7 +38,7 @@ export const importacionesApi = {
     const fd = new FormData()
     fd.append('file', file)
     if (mapping) fd.append('mapping', JSON.stringify(mapping))
-    const res = await fetch('/api/importaciones/upload', {
+    const res = await fetch(apiUrl('/api/importaciones/upload'), {
       method: 'POST',
       credentials: 'include',
       body: fd,

@@ -1,3 +1,5 @@
+import { apiUrl } from '../utils/apiUrl.js'
+
 const jsonHeaders = { 'Content-Type': 'application/json' }
 
 function parseBody(text) {
@@ -29,7 +31,7 @@ function loginErrorMessage(status, data) {
 }
 
 export async function authLogin(username, password) {
-  const res = await fetch('/api/auth/login', {
+  const res = await fetch(apiUrl('/api/auth/login'), {
     method: 'POST',
     credentials: 'include',
     headers: jsonHeaders,
@@ -44,11 +46,11 @@ export async function authLogin(username, password) {
 }
 
 export async function authLogout() {
-  await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+  await fetch(apiUrl('/api/auth/logout'), { method: 'POST', credentials: 'include' })
 }
 
 export async function authMe() {
-  const res = await fetch('/api/auth/me', { credentials: 'include' })
+  const res = await fetch(apiUrl('/api/auth/me'), { credentials: 'include' })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) return null
   return data.user

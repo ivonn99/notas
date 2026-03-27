@@ -1,3 +1,5 @@
+import { apiUrl } from '../utils/apiUrl.js'
+
 function toQuery(params) {
   const q = new URLSearchParams()
   Object.entries(params).forEach(([k, v]) => {
@@ -13,7 +15,7 @@ export async function fetchNotasCredito(params = {}) {
   const query = toQuery(params)
   const url = query ? `/api/notas-credito?${query}` : '/api/notas-credito'
 
-  const res = await fetch(url, { credentials: 'include' })
+  const res = await fetch(apiUrl(url), { credentials: 'include' })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
     throw new Error(data.error || `Error HTTP ${res.status} al cargar notas`)

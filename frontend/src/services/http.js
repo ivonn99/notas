@@ -1,3 +1,5 @@
+import { apiUrl } from '../utils/apiUrl.js'
+
 function parseJson(text) {
   if (!text) return {}
   try {
@@ -8,7 +10,7 @@ function parseJson(text) {
 }
 
 export async function http(path, options = {}) {
-  const res = await fetch(path, {
+  const res = await fetch(apiUrl(path), {
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     ...options,

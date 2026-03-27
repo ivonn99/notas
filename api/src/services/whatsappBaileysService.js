@@ -9,6 +9,37 @@ import makeWASocket, {
 
 const DEFAULT_SESSION_DIR = path.resolve(process.cwd(), '.baileys_auth')
 
+function nowIso() {
+  return new Date().toISOString()
+}
+
+function safeString(value) {
+  try {
+    return String(value ?? '')
+  } catch {
+    return ''
+  }
+}
+
+function maskPhoneForLog(phoneRaw) {
+  const digits = safeString(phoneRaw).replace(/\D/g, '')
+  if (!digits) return ''
+  if (digits.length <= 4) return digits
+  return `${'*'.repeat(Math.max(0, digits.length - 4))}${digits.slice(-4)}`
+}
+
+function logInfo(event, detail = {}) {
+  console.log(`[whatsapp][${nowIso()}][info] ${event}`, detail)
+}
+
+function logWarn(event, detail = {}) {
+  console.warn(`[whatsapp][${nowIso()}][warn] ${event}`, detail)
+}
+
+function logError(event, detail = {}) {
+  console.error(`[whatsapp][${nowIso()}][error] ${event}`, detail)
+}
+
 function normalizePhone(phoneRaw) {
   const digits = String(phoneRaw ?? '').replace(/\D/g, '')
   if (!digits) return ''
@@ -53,17 +84,26 @@ class WhatsappBaileysService {
 
   _scheduleReconnect(ms = 2500) {
     if (this.reconnectTimer) return
+    logWarn('reconnect.scheduled', { inMs: ms })
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null
       try {
+        logInfo('reconnect.attempt')
         await this.connect()
+        logInfo('reconnect.success')
       } catch {
+        logWarn('reconnect.failed.retrying')
         this._scheduleReconnect(4000)
       }
     }, ms)
   }
 
   async connect() {
+    logInfo('connect.requested', {
+      hasSocket: Boolean(this.sock),
+      isConnected: Boolean(this.state.isConnected),
+      isConnecting: Boolean(this.connectingPromise),
+    })
     if (this.connectingPromise) return this.connectingPromise
     if (this.sock && this.state.isConnected) return this.getStatus()
 
@@ -71,11 +111,13 @@ class WhatsappBaileysService {
       try {
         const sessionDir = process.env.WHATSAPP_SESSION_DIR?.trim() || DEFAULT_SESSION_DIR
         fs.mkdirSync(sessionDir, { recursive: true })
+        logInfo('connect.session_dir.ready', { sessionDir })
 
         const { state, saveCreds } = await useMultiFileAuthState(sessionDir)
         this.saveCreds = saveCreds
 
         const { version } = await fetchLatestBaileysVersion()
+        logInfo('connect.baileys_version', { version })
         const sock = makeWASocket({
           version,
           auth: state,
@@ -96,13 +138,19 @@ class WhatsappBaileysService {
           try {
             await this.saveCreds?.()
           } catch {
-            // no-op
+            logWarn('creds.update.save_failed')
           }
         })
 
         sock.ev.on('connection.update', (update) => {
           const { connection, lastDisconnect, qr } = update
+          logInfo('connection.update', {
+            connection: safeString(connection || ''),
+            hasQr: Boolean(qr),
+            hasLastDisconnect: Boolean(lastDisconnect),
+          })
           if (qr) {
+            logInfo('connection.qr.received')
             this._updateState({
               qr,
               status: 'qr',
@@ -111,6 +159,7 @@ class WhatsappBaileysService {
           }
 
           if (connection === 'open') {
+            logInfo('connection.open', { me: sock?.user?.id || null })
             this._updateState({
               status: 'connected',
               isConnected: true,
@@ -123,6 +172,11 @@ class WhatsappBaileysService {
           if (connection === 'close') {
             const statusCode = lastDisconnect?.error?.output?.statusCode
             const loggedOut = statusCode === DisconnectReason.loggedOut
+            logWarn('connection.close', {
+              statusCode: statusCode ?? null,
+              loggedOut,
+              reason: safeString(lastDisconnect?.error?.message || 'Conexión cerrada'),
+            })
             this._updateState({
               status: loggedOut ? 'logged_out' : 'disconnected',
               isConnected: false,
@@ -136,7 +190,11 @@ class WhatsappBaileysService {
           }
         })
 
+        logInfo('connect.ready')
         return this.getStatus()
+      } catch (e) {
+        logError('connect.failed', { message: safeString(e?.message || e) })
+        throw e
       } finally {
         this.connectingPromise = null
       }
@@ -154,18 +212,22 @@ class WhatsappBaileysService {
   }
 
   async disconnect({ clearSession = false } = {}) {
+    logInfo('disconnect.requested', { clearSession })
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
+      logInfo('disconnect.reconnect_timer_cleared')
     }
     if (this.sock) {
       try {
         await this.sock.logout()
+        logInfo('disconnect.logout.ok')
       } catch {
         try {
           this.sock.end(new Error('manual disconnect'))
+          logWarn('disconnect.logout.failed.socket_end_used')
         } catch {
-          // no-op
+          logWarn('disconnect.socket_end.failed')
         }
       }
       this.sock = null
@@ -175,8 +237,9 @@ class WhatsappBaileysService {
       const sessionDir = process.env.WHATSAPP_SESSION_DIR?.trim() || DEFAULT_SESSION_DIR
       try {
         fs.rmSync(sessionDir, { recursive: true, force: true })
+        logInfo('disconnect.session_cleared', { sessionDir })
       } catch {
-        // no-op
+        logWarn('disconnect.session_clear_failed', { sessionDir })
       }
     }
 
@@ -187,21 +250,30 @@ class WhatsappBaileysService {
       me: null,
       lastError: '',
     })
+    logInfo('disconnect.done')
     return this.getStatus()
   }
 
   async sendText({ phone, message }) {
     if (!this.sock || !this.state.isConnected) {
+      logWarn('send.blocked.not_connected')
       throw new Error('WhatsApp no está conectado. Escanea QR primero.')
     }
     const normalized = normalizePhone(phone)
     if (!normalized) {
+      logWarn('send.blocked.invalid_phone', { to: maskPhoneForLog(phone) })
       throw new Error('Número de teléfono inválido')
     }
     const text = String(message ?? '').trim()
     if (!text) {
+      logWarn('send.blocked.empty_message', { to: maskPhoneForLog(phone) })
       throw new Error('Mensaje vacío')
     }
+    logInfo('send.requested', {
+      to: maskPhoneForLog(phone),
+      normalized: maskPhoneForLog(normalized),
+      textLength: text.length,
+    })
     const candidates = buildCandidateJids(normalized)
     let jid = candidates[0]
     try {
@@ -210,13 +282,18 @@ class WhatsappBaileysService {
         const check = await this.sock.onWhatsApp(c)
         if (Array.isArray(check) && check[0]?.exists) {
           jid = c
+          logInfo('send.jid.resolved', { jid })
           break
         }
       }
     } catch {
-      // Si falla la validación, intentamos de todos modos con el primer candidato.
+      logWarn('send.jid.validation_failed', { fallbackJid: jid })
     }
     const response = await this.sock.sendMessage(jid, { text })
+    logInfo('send.done', {
+      jid,
+      messageId: response?.key?.id || null,
+    })
     return {
       jid,
       id: response?.key?.id || null,

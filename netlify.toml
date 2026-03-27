@@ -1,0 +1,15 @@
+# Sitio estático: solo el frontend. El API debe estar en otro host (Render, Railway, etc.)
+# y configurarse en Netlify como variable de entorno de build:
+#   VITE_API_URL = https://tu-servicio-api.example.com
+#
+# El backend debe permitir CORS con credenciales para el dominio de Netlify.
+
+[build]
+  base = "frontend"
+  command = "npm ci && npm run build"
+  publish = "dist"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

@@ -1,18 +1,10 @@
-/**
- * Base del API. En desarrollo, rutas relativas `/api` pasan por el proxy de Vite → `api` (puerto 3001).
- * En producción, define `VITE_API_URL` (p. ej. https://tu-servicio.onrender.com) sin barra final.
- */
-function apiOrigin() {
-  const raw = import.meta.env.VITE_API_URL
-  return typeof raw === 'string' ? raw.replace(/\/$/, '') : ''
-}
+import { apiUrl } from '../utils/apiUrl.js'
 
 /**
  * @returns {Promise<{ ok: boolean, status: number, data: object, hint?: string }>}
  */
 export async function fetchDbPing() {
-  const prefix = apiOrigin()
-  const url = `${prefix}/api/db/ping`
+  const url = apiUrl('/api/db/ping')
   const res = await fetch(url)
   const ct = (res.headers.get('content-type') || '').toLowerCase()
 
