@@ -12,6 +12,7 @@ import Swal from 'sweetalert2'
 import { ROUTES } from '../../../constants/routes.js'
 import { useAuth } from '../../../contexts/AuthContext.jsx'
 import { adminApi } from '../../../services/adminApi.js'
+import { useDomainSyncStore } from '../../../stores/domainSyncStore.js'
 
 function IconButton({ as: Comp = 'button', children, label, className = '', ...props }) {
   return (
@@ -29,6 +30,7 @@ function IconButton({ as: Comp = 'button', children, label, className = '', ...p
 
 export default function UsuariosPage() {
   const { user: authUser } = useAuth()
+  const emitUsuariosChanged = useDomainSyncStore((s) => s.emitUsuariosChanged)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [ok, setOk] = useState('')
@@ -65,6 +67,7 @@ export default function UsuariosPage() {
     setOk('')
     try {
       await adminApi.createUsuario(newUser)
+      emitUsuariosChanged()
       setOk('Usuario creado')
       setNewUser({
         username: '',
@@ -129,6 +132,7 @@ export default function UsuariosPage() {
     setOk('')
     try {
       await adminApi.deleteUsuario(usuarioId)
+      emitUsuariosChanged()
       setOk(`Usuario #${usuarioId} desactivado`)
       await load()
     } catch (e) {
@@ -154,6 +158,7 @@ export default function UsuariosPage() {
     setOk('')
     try {
       await adminApi.eliminarUsuarioPermanente(usuarioId)
+      emitUsuariosChanged()
       setOk(`Usuario ${username || '#' + usuarioId} eliminado`)
       await load()
     } catch (e) {

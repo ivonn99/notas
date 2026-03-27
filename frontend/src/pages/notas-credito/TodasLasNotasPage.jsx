@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ROUTES } from '../../constants/routes.js'
+import { useDomainSyncStore } from '../../stores/domainSyncStore.js'
 import { fetchNotasCredito } from '../../services/notasApi.js'
+import { useListCacheStore } from '../../stores/listCacheStore.js'
+import { useListFiltersStore } from '../../stores/listFiltersStore.js'
 import { estadoBadgeClass } from '../../utils/estadoBadge.js'
 
 const PAGE_SIZE = 20
@@ -39,15 +42,24 @@ function formatFechaNota(value) {
   return `${day}/${month}/${year}`
 }
 
+function mergeCachedPages(entry, upToPage) {
+  if (!entry?.pages) return []
+  const ids = new Set()
+  const merged = []
+  for (let p = 1; p <= upToPage; p += 1) {
+    const rows = entry.pages[p] || []
+    for (const row of rows) {
+      if (ids.has(row.id)) continue
+      ids.add(row.id)
+      merged.push(row)
+    }
+  }
+  return merged
+}
+
 export default function TodasLasNotasPage() {
-  const [empresaActiva, setEmpresaActiva] = useState('DISTRIBUIDORA')
-  const [filtros, setFiltros] = useState({
-    estado: '',
-    ruta: '',
-    q: '',
-  })
-  const [dias, setDias] = useState('')
-  const [sort, setSort] = useState('fecha_corriente_desc')
+  const notasFilters = useListFiltersStore((s) => s.notas)
+  const setNotasFilters = useListFiltersStore((s) => s.setNotasFilters)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -55,39 +67,70 @@ export default function TodasLasNotasPage() {
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
   const [refreshNonce, setRefreshNonce] = useState(0)
+  const getCacheEntry = useListCacheStore((s) => s.getEntry)
+  const setCachePage = useListCacheStore((s) => s.setPage)
+  const clearCacheEntry = useListCacheStore((s) => s.clearEntry)
+  const clearScreenCache = useListCacheStore((s) => s.clearScreen)
+  const notasVersion = useDomainSyncStore((s) => s.notasVersion)
+  const didMountSyncRef = useRef(false)
 
   const baseParams = useMemo(
     () => ({
       pageSize: PAGE_SIZE,
-      empresa: empresaActiva,
-      estado: filtros.estado,
-      ruta: filtros.ruta,
-      q: filtros.q,
-      sort,
-      ...(dias ? { dias } : {}),
+      empresa: notasFilters.empresaActiva,
+      estado: notasFilters.estado,
+      ruta: notasFilters.ruta,
+      q: notasFilters.q,
+      sort: notasFilters.sort,
+      ...(notasFilters.dias ? { dias: notasFilters.dias } : {}),
     }),
-    [empresaActiva, filtros.estado, filtros.ruta, filtros.q, sort, dias],
+    [
+      notasFilters.empresaActiva,
+      notasFilters.estado,
+      notasFilters.ruta,
+      notasFilters.q,
+      notasFilters.sort,
+      notasFilters.dias,
+    ],
   )
+  const cacheKey = useMemo(() => JSON.stringify(baseParams), [baseParams])
+
+  useEffect(() => {
+    if (!didMountSyncRef.current) {
+      didMountSyncRef.current = true
+      return
+    }
+    clearScreenCache('notas')
+    setItems([])
+    setPage(1)
+    setRefreshNonce((n) => n + 1)
+  }, [notasVersion, clearScreenCache])
 
   useEffect(() => {
     let cancel = false
     ;(async () => {
+      const cached = getCacheEntry('notas', cacheKey)
+      if (cached?.pages?.[page]) {
+        if (cancel) return
+        setTotal(cached.total ?? 0)
+        setTotalPages(cached.totalPages ?? 1)
+        setItems(mergeCachedPages(cached, page))
+        setLoading(false)
+        setError('')
+        return
+      }
+
       setLoading(true)
       setError('')
       try {
         const data = await fetchNotasCredito({ ...baseParams, page })
         if (cancel) return
+        setCachePage('notas', cacheKey, page, data)
+        const nextCached = getCacheEntry('notas', cacheKey)
+        const merged = nextCached ? mergeCachedPages(nextCached, page) : data.items || []
         setTotal(data.total ?? 0)
         setTotalPages(data.totalPages ?? 1)
-        if (page === 1) {
-          setItems(data.items || [])
-        } else {
-          setItems((prev) => {
-            const seen = new Set(prev.map((x) => x.id))
-            const added = (data.items || []).filter((x) => !seen.has(x.id))
-            return [...prev, ...added]
-          })
-        }
+        setItems(merged)
       } catch (e) {
         if (!cancel) setError(e?.message || 'No se pudo cargar notas')
       } finally {
@@ -97,21 +140,21 @@ export default function TodasLasNotasPage() {
     return () => {
       cancel = true
     }
-  }, [baseParams, page, refreshNonce])
+  }, [baseParams, page, refreshNonce, getCacheEntry, cacheKey, setCachePage])
 
   function updateFiltro(name, value) {
     setPage(1)
-    setFiltros((prev) => ({ ...prev, [name]: value }))
+    setNotasFilters({ [name]: value })
   }
 
   function updateDias(value) {
     setPage(1)
-    setDias(value)
+    setNotasFilters({ dias: value })
   }
 
   function updateSort(value) {
     setPage(1)
-    setSort(value)
+    setNotasFilters({ sort: value })
   }
 
   const canLoadMore = !loading && page < totalPages
@@ -124,9 +167,9 @@ export default function TodasLasNotasPage() {
         <li className="nav-item">
           <button
             type="button"
-            className={`nav-link${empresaActiva === 'DISTRIBUIDORA' ? ' active' : ''}`}
+            className={`nav-link${notasFilters.empresaActiva === 'DISTRIBUIDORA' ? ' active' : ''}`}
             onClick={() => {
-              setEmpresaActiva('DISTRIBUIDORA')
+              setNotasFilters({ empresaActiva: 'DISTRIBUIDORA' })
               setPage(1)
             }}
           >
@@ -136,9 +179,9 @@ export default function TodasLasNotasPage() {
         <li className="nav-item">
           <button
             type="button"
-            className={`nav-link${empresaActiva === 'RODRIGO' ? ' active' : ''}`}
+            className={`nav-link${notasFilters.empresaActiva === 'RODRIGO' ? ' active' : ''}`}
             onClick={() => {
-              setEmpresaActiva('RODRIGO')
+              setNotasFilters({ empresaActiva: 'RODRIGO' })
               setPage(1)
             }}
           >
@@ -154,7 +197,7 @@ export default function TodasLasNotasPage() {
               <label className="form-label mb-1">Últimos días</label>
               <select
                 className="form-select"
-                value={dias}
+                value={notasFilters.dias}
                 onChange={(e) => updateDias(e.target.value)}
               >
                 <option value="">Sin límite</option>
@@ -168,7 +211,7 @@ export default function TodasLasNotasPage() {
               <label className="form-label mb-1">Orden</label>
               <select
                 className="form-select"
-                value={sort}
+                value={notasFilters.sort}
                 onChange={(e) => updateSort(e.target.value)}
               >
                 {SORT_OPTIONS.map((o) => (
@@ -182,7 +225,7 @@ export default function TodasLasNotasPage() {
               <label className="form-label mb-1">Estado</label>
               <select
                 className="form-select"
-                value={filtros.estado}
+                value={notasFilters.estado}
                 onChange={(e) => updateFiltro('estado', e.target.value)}
               >
                 <option value="">Todos</option>
@@ -195,7 +238,7 @@ export default function TodasLasNotasPage() {
               <label className="form-label mb-1">Ruta (código)</label>
               <input
                 className="form-control"
-                value={filtros.ruta}
+                value={notasFilters.ruta}
                 onChange={(e) => updateFiltro('ruta', e.target.value)}
                 placeholder="Ej: R01"
               />
@@ -204,7 +247,7 @@ export default function TodasLasNotasPage() {
               <label className="form-label mb-1">Buscar</label>
               <input
                 className="form-control"
-                value={filtros.q}
+                value={notasFilters.q}
                 onChange={(e) => updateFiltro('q', e.target.value)}
                 placeholder="serie, cliente o vendedor"
               />
@@ -303,6 +346,7 @@ export default function TodasLasNotasPage() {
               disabled={loading}
               onClick={() => {
                 setPage(1)
+                clearCacheEntry('notas', cacheKey)
                 setRefreshNonce((n) => n + 1)
               }}
             >

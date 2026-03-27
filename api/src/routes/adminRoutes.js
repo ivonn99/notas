@@ -14,6 +14,17 @@ function parseId(value) {
   return Number.isFinite(id) && id > 0 ? id : null
 }
 
+function normalizeEmail(emailRaw, usernameRaw) {
+  const email = String(emailRaw ?? '').trim().toLowerCase()
+  if (email) return email
+  const user = String(usernameRaw ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return `${user || 'usuario'}@local.test`
+}
+
 router.get('/usuarios', async (_req, res, next) => {
   try {
     const pool = getPool()
@@ -40,7 +51,7 @@ router.post('/usuarios', async (req, res, next) => {
     const username = String(req.body?.username ?? '').trim()
     const password = String(req.body?.password ?? '')
     const nombreCompleto = String(req.body?.nombre_completo ?? '').trim()
-    const email = String(req.body?.email ?? '').trim()
+    const email = normalizeEmail(req.body?.email, username)
     const telefono = String(req.body?.telefono ?? '').trim()
     const rol = String(req.body?.rol ?? 'VENDEDOR').trim().toUpperCase()
 
@@ -59,25 +70,28 @@ router.post('/usuarios', async (req, res, next) => {
     if (dup.rowCount > 0) {
       return res.status(409).json({ ok: false, error: 'Ya existe un usuario con ese username' })
     }
-
-    const nextIdR = await pool.query(
-      'SELECT COALESCE(MAX(id), 0)::bigint + 1 AS next_id FROM usuarios',
+    const dupEmail = await pool.query(
+      'SELECT id FROM usuarios WHERE LOWER(email) = LOWER($1) LIMIT 1',
+      [email],
     )
-    const nextId = nextIdR.rows[0].next_id
+    if (dupEmail.rowCount > 0) {
+      return res.status(409).json({ ok: false, error: 'Ya existe un usuario con ese email' })
+    }
+
     const encoded = encodeDjangoPassword(password)
 
     const ins = await pool.query(
       `
       INSERT INTO usuarios (
-        id, password, last_login, is_superuser, username, first_name, last_name, email,
+        password, last_login, is_superuser, username, first_name, last_name, email,
         is_staff, is_active, date_joined, nombre_completo, rol, activo, created_at, telefono
       ) VALUES (
-        $1, $2, NULL, false, $3, '', '', $4,
-        false, true, NOW(), $5, $6, true, NOW(), NULLIF($7, '')
+        $1, NULL, false, $2, '', '', $3,
+        false, true, NOW(), $4, $5, true, NOW(), NULLIF($6, '')
       )
       RETURNING id, username, nombre_completo, email, telefono, rol, activo, is_active
     `,
-      [nextId, encoded, username, email, nombreCompleto || username, rol, telefono],
+      [encoded, username, email, nombreCompleto || username, rol, telefono],
     )
 
     await logAudit({
@@ -128,7 +142,7 @@ router.put('/usuarios/:id', async (req, res, next) => {
 
     const username = String(req.body?.username ?? '').trim()
     const nombreCompleto = String(req.body?.nombre_completo ?? '').trim()
-    const email = String(req.body?.email ?? '').trim()
+    const email = normalizeEmail(req.body?.email, username)
     const telefono = String(req.body?.telefono ?? '').trim()
     const rol = String(req.body?.rol ?? '').trim().toUpperCase()
     const activo = Boolean(req.body?.activo)
@@ -149,6 +163,13 @@ router.put('/usuarios/:id', async (req, res, next) => {
     )
     if (dup.rowCount > 0) {
       return res.status(409).json({ ok: false, error: 'Ya existe un usuario con ese username' })
+    }
+    const dupEmail = await pool.query(
+      'SELECT id FROM usuarios WHERE LOWER(email) = LOWER($1) AND id <> $2 LIMIT 1',
+      [email, id],
+    )
+    if (dupEmail.rowCount > 0) {
+      return res.status(409).json({ ok: false, error: 'Ya existe un usuario con ese email' })
     }
 
     const r = await pool.query(
@@ -548,7 +569,17 @@ router.get('/notas/sin-asignar-vendedor', async (req, res, next) => {
 
     const pool = getPool()
     const params = []
-    const where = ['n.usuario_id IS NULL']
+    const where = [
+      `NOT EXISTS (
+        SELECT 1
+        FROM usuario_rutas ur
+        JOIN usuarios u ON u.id = ur.usuario_id
+        WHERE ur.ruta_id = n.ruta_id
+          AND u.rol = 'VENDEDOR'
+          AND u.activo = true
+          AND u.is_active = true
+      )`,
+    ]
     if (empresa) {
       params.push(empresa)
       where.push(`n.empresa = $${params.length}`)

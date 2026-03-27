@@ -1,57 +1,22 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { authLogin, authLogout, authMe } from '../services/authApi.js'
-
-const AuthContext = createContext(null)
+/* eslint-disable react-refresh/only-export-components */
+import { useEffect } from 'react'
+import { useAuthStore } from '../stores/authStore.js'
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null)
-  const [loading, setLoading] = useState(true)
-
-  const reload = useCallback(async () => {
-    setLoading(true)
-    try {
-      const u = await authMe()
-      setUser(u)
-    } catch {
-      setUser(null)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  const ensureInit = useAuthStore((s) => s.ensureInit)
 
   useEffect(() => {
-    reload()
-  }, [reload])
+    void ensureInit()
+  }, [ensureInit])
 
-  const login = useCallback(async (username, password) => {
-    const u = await authLogin(username, password)
-    setUser(u)
-    return u
-  }, [])
-
-  const logout = useCallback(async () => {
-    await authLogout()
-    setUser(null)
-  }, [])
-
-  const value = useMemo(
-    () => ({
-      user,
-      loading,
-      login,
-      logout,
-      reload,
-    }),
-    [user, loading, login, logout, reload],
-  )
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+  return children
 }
 
 export function useAuth() {
-  const ctx = useContext(AuthContext)
-  if (!ctx) {
-    throw new Error('useAuth debe usarse dentro de AuthProvider')
-  }
-  return ctx
+  const user = useAuthStore((s) => s.user)
+  const loading = useAuthStore((s) => s.loading)
+  const login = useAuthStore((s) => s.login)
+  const logout = useAuthStore((s) => s.logout)
+  const reload = useAuthStore((s) => s.reload)
+  return { user, loading, login, logout, reload }
 }

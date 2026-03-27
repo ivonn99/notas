@@ -422,59 +422,151 @@ async function runImportJob({
         if (row.estado === 'RESUELTA' && prevEstado !== 'RESUELTA') resueltos += 1
       }
 
-      const upsertR = await pool.query(
-        `
-        WITH input AS (
-          SELECT *
-          FROM jsonb_to_recordset($1::jsonb) AS x(
-            empresa text,
-            serie_folio text,
-            cliente text,
-            monto numeric,
-            abono numeric,
-            saldo numeric,
-            fecha_nota date,
-            estado text,
-            ruta_id integer,
-            usuario_id bigint,
-            usuario_vendedor_pv text,
-            requiere_atencion boolean,
-            resuelta_automaticamente boolean
+      const chunkJson = JSON.stringify(chunk)
+      let changedCount = 0
+      try {
+        const upsertR = await pool.query(
+          `
+          WITH input AS (
+            SELECT *
+            FROM jsonb_to_recordset($1::jsonb) AS x(
+              empresa text,
+              serie_folio text,
+              cliente text,
+              monto numeric,
+              abono numeric,
+              saldo numeric,
+              fecha_nota date,
+              estado text,
+              ruta_id integer,
+              usuario_id bigint,
+              usuario_vendedor_pv text,
+              requiere_atencion boolean,
+              resuelta_automaticamente boolean
+            )
           )
+          INSERT INTO notas_credito (
+            empresa, serie_folio, cliente, monto, abono, saldo, estado,
+            ruta_id, usuario_id, usuario_vendedor_pv, requiere_atencion,
+            resuelta_automaticamente, fecha_nota, fecha_corriente,
+            fecha_ultima_actualizacion, created_at
+          )
+          SELECT
+            i.empresa, i.serie_folio, i.cliente, i.monto, i.abono, i.saldo, i.estado,
+            i.ruta_id, i.usuario_id, i.usuario_vendedor_pv, i.requiere_atencion,
+            i.resuelta_automaticamente, i.fecha_nota, NOW(), NOW(), NOW()
+          FROM input i
+          ON CONFLICT (empresa, serie_folio)
+          DO UPDATE SET
+            cliente = EXCLUDED.cliente,
+            monto = EXCLUDED.monto,
+            abono = EXCLUDED.abono,
+            saldo = EXCLUDED.saldo,
+            fecha_nota = EXCLUDED.fecha_nota,
+            estado = EXCLUDED.estado,
+            fecha_ultima_actualizacion = NOW(),
+            fecha_resolucion = CASE WHEN EXCLUDED.estado = 'RESUELTA' THEN NOW() ELSE NULL END,
+            ruta_id = EXCLUDED.ruta_id,
+            usuario_id = COALESCE(EXCLUDED.usuario_id, notas_credito.usuario_id),
+            usuario_vendedor_pv = EXCLUDED.usuario_vendedor_pv,
+            requiere_atencion = EXCLUDED.requiere_atencion,
+            resuelta_automaticamente = EXCLUDED.resuelta_automaticamente
+          RETURNING id
+        `,
+          [chunkJson],
         )
-        INSERT INTO notas_credito (
-          empresa, serie_folio, cliente, monto, abono, saldo, estado,
-          ruta_id, usuario_id, usuario_vendedor_pv, requiere_atencion,
-          resuelta_automaticamente, fecha_nota, fecha_corriente,
-          fecha_ultima_actualizacion, created_at
+        changedCount = upsertR.rowCount || 0
+      } catch (e) {
+        // Fallback para esquemas migrados sin UNIQUE(empresa, serie_folio).
+        if (e?.code !== '42P10') throw e
+
+        const updR = await pool.query(
+          `
+          WITH input AS (
+            SELECT *
+            FROM jsonb_to_recordset($1::jsonb) AS x(
+              empresa text,
+              serie_folio text,
+              cliente text,
+              monto numeric,
+              abono numeric,
+              saldo numeric,
+              fecha_nota date,
+              estado text,
+              ruta_id integer,
+              usuario_id bigint,
+              usuario_vendedor_pv text,
+              requiere_atencion boolean,
+              resuelta_automaticamente boolean
+            )
+          )
+          UPDATE notas_credito n
+          SET
+            cliente = i.cliente,
+            monto = i.monto,
+            abono = i.abono,
+            saldo = i.saldo,
+            fecha_nota = i.fecha_nota,
+            estado = i.estado,
+            fecha_ultima_actualizacion = NOW(),
+            fecha_resolucion = CASE WHEN i.estado = 'RESUELTA' THEN NOW() ELSE NULL END,
+            ruta_id = i.ruta_id,
+            usuario_id = COALESCE(i.usuario_id, n.usuario_id),
+            usuario_vendedor_pv = i.usuario_vendedor_pv,
+            requiere_atencion = i.requiere_atencion,
+            resuelta_automaticamente = i.resuelta_automaticamente
+          FROM input i
+          WHERE n.empresa = i.empresa
+            AND n.serie_folio = i.serie_folio
+        `,
+          [chunkJson],
         )
-        SELECT
-          i.empresa, i.serie_folio, i.cliente, i.monto, i.abono, i.saldo, i.estado,
-          i.ruta_id, i.usuario_id, i.usuario_vendedor_pv, i.requiere_atencion,
-          i.resuelta_automaticamente, i.fecha_nota, NOW(), NOW(), NOW()
-        FROM input i
-        ON CONFLICT (empresa, serie_folio)
-        DO UPDATE SET
-          cliente = EXCLUDED.cliente,
-          monto = EXCLUDED.monto,
-          abono = EXCLUDED.abono,
-          saldo = EXCLUDED.saldo,
-          fecha_nota = EXCLUDED.fecha_nota,
-          estado = EXCLUDED.estado,
-          fecha_ultima_actualizacion = NOW(),
-          fecha_resolucion = CASE WHEN EXCLUDED.estado = 'RESUELTA' THEN NOW() ELSE NULL END,
-          ruta_id = EXCLUDED.ruta_id,
-          usuario_id = COALESCE(EXCLUDED.usuario_id, notas_credito.usuario_id),
-          usuario_vendedor_pv = EXCLUDED.usuario_vendedor_pv,
-          requiere_atencion = EXCLUDED.requiere_atencion,
-          resuelta_automaticamente = EXCLUDED.resuelta_automaticamente
-        RETURNING id
-      `,
-        [JSON.stringify(chunk)],
-      )
+
+        const insR = await pool.query(
+          `
+          WITH input AS (
+            SELECT *
+            FROM jsonb_to_recordset($1::jsonb) AS x(
+              empresa text,
+              serie_folio text,
+              cliente text,
+              monto numeric,
+              abono numeric,
+              saldo numeric,
+              fecha_nota date,
+              estado text,
+              ruta_id integer,
+              usuario_id bigint,
+              usuario_vendedor_pv text,
+              requiere_atencion boolean,
+              resuelta_automaticamente boolean
+            )
+          )
+          INSERT INTO notas_credito (
+            empresa, serie_folio, cliente, monto, abono, saldo, estado,
+            ruta_id, usuario_id, usuario_vendedor_pv, requiere_atencion,
+            resuelta_automaticamente, fecha_nota, fecha_corriente,
+            fecha_ultima_actualizacion, created_at
+          )
+          SELECT
+            i.empresa, i.serie_folio, i.cliente, i.monto, i.abono, i.saldo, i.estado,
+            i.ruta_id, i.usuario_id, i.usuario_vendedor_pv, i.requiere_atencion,
+            i.resuelta_automaticamente, i.fecha_nota, NOW(), NOW(), NOW()
+          FROM input i
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM notas_credito n
+            WHERE n.empresa = i.empresa
+              AND n.serie_folio = i.serie_folio
+          )
+        `,
+          [chunkJson],
+        )
+        changedCount = (updR.rowCount || 0) + (insR.rowCount || 0)
+      }
 
       job.processed += chunk.length
-      if (upsertR.rowCount > 0) {
+      if (changedCount > 0) {
         await pool.query(
           `
           UPDATE importaciones
@@ -490,7 +582,7 @@ async function runImportJob({
             nuevos,
             actualizados,
             resueltos,
-            `Procesando ${job.processed}/${records.length} â€” ${originalName}`,
+            `Procesando ${job.processed}/${records.length} âÿÿ ${originalName}`,
             importacionId,
           ],
         )

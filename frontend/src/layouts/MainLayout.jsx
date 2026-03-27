@@ -22,7 +22,9 @@ import {
 } from 'react-icons/fa6'
 import { ROUTES } from '../constants/routes.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
-import { notificacionesApi } from '../services/notificacionesApi.js'
+import { useDomainSyncStore } from '../stores/domainSyncStore.js'
+import { useNotificationsStore } from '../stores/notificationsStore.js'
+import { useUiStore } from '../stores/uiStore.js'
 
 const navLinkClass = ({ isActive }) =>
   `nav-link py-1 px-2 rounded d-flex align-items-center position-relative${isActive ? ' active' : ''}`
@@ -45,10 +47,17 @@ export default function MainLayout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const [notifTotal, setNotifTotal] = useState(0)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [theme, setTheme] = useState('light')
+  const notifTotal = useNotificationsStore((s) => s.total)
+  const notifVersion = useDomainSyncStore((s) => s.notificacionesVersion)
+  const {
+    sidebarOpen,
+    sidebarCollapsed,
+    theme,
+    initialize,
+    toggleTheme,
+    setSidebarOpen,
+    setSidebarCollapsed,
+  } = useUiStore()
   const [viewportLg, setViewportLg] = useState(
     () =>
       typeof window !== 'undefined' &&
@@ -77,25 +86,12 @@ export default function MainLayout() {
   }, [])
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem('nc_theme')
-    const nextTheme = savedTheme === 'dark' ? 'dark' : 'light'
-    setTheme(nextTheme)
-    document.documentElement.setAttribute('data-theme', nextTheme)
-    document.documentElement.setAttribute('data-bs-theme', nextTheme)
-  }, [])
-
-  useEffect(() => {
-    const savedCollapsed = localStorage.getItem('nc_sidebar_collapsed')
-    setSidebarCollapsed(savedCollapsed === '1')
-  }, [])
-
-  useEffect(() => {
-    localStorage.setItem('nc_sidebar_collapsed', sidebarCollapsed ? '1' : '0')
-  }, [sidebarCollapsed])
+    initialize()
+  }, [initialize])
 
   useEffect(() => {
     setSidebarOpen(false)
-  }, [location.pathname])
+  }, [location.pathname, setSidebarOpen])
 
   /** Escritorio: clic fuera del sidebar lo colapsa (solo queda la hamburguesa). */
   useEffect(() => {
@@ -108,38 +104,23 @@ export default function MainLayout() {
     }
     document.addEventListener('pointerdown', handlePointerDown, true)
     return () => document.removeEventListener('pointerdown', handlePointerDown, true)
+  }, [setSidebarCollapsed])
+
+  useEffect(() => {
+    const { startPolling, stopPolling } = useNotificationsStore.getState()
+    startPolling()
+    return () => stopPolling()
   }, [])
 
   useEffect(() => {
-    let cancel = false
-    ;(async () => {
-      try {
-        const r = await notificacionesApi.resumen()
-        if (!cancel) setNotifTotal(r?.counts?.total ?? 0)
-      } catch {
-        if (!cancel) setNotifTotal(0)
-      }
-    })()
-    return () => {
-      cancel = true
-    }
-  }, [])
-
-  function toggleTheme() {
-    setTheme((prev) => {
-      const next = prev === 'dark' ? 'light' : 'dark'
-      document.documentElement.setAttribute('data-theme', next)
-      document.documentElement.setAttribute('data-bs-theme', next)
-      localStorage.setItem('nc_theme', next)
-      return next
-    })
-  }
+    void useNotificationsStore.getState().loadResumen()
+  }, [notifVersion])
 
   function toggleSidebar() {
     if (viewportLg) {
-      setSidebarCollapsed((v) => !v)
+      setSidebarCollapsed(!sidebarCollapsed)
     } else {
-      setSidebarOpen((v) => !v)
+      setSidebarOpen(!sidebarOpen)
     }
   }
 

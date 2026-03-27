@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { importacionesApi } from '../../services/importacionesApi.js'
+import { useImportJobStore } from '../../stores/importJobStore.js'
 
 function toDdMmYyyy(isoDate) {
   const s = String(isoDate || '').trim()
@@ -11,12 +12,21 @@ function toDdMmYyyy(isoDate) {
 
 export default function ImportarReportePage() {
   const [file, setFile] = useState(null)
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [ok, setOk] = useState('')
-  const [progress, setProgress] = useState(null)
   const [preview, setPreview] = useState(null)
   const [mapping, setMapping] = useState(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const loading = useImportJobStore((s) => s.loading)
+  const ok = useImportJobStore((s) => s.okMessage)
+  const progressStatus = useImportJobStore((s) => s.status)
+  const progressTotal = useImportJobStore((s) => s.total)
+  const progressProcessed = useImportJobStore((s) => s.processed)
+  const progressErrorCount = useImportJobStore((s) => s.errorCount)
+  const progressPct = useImportJobStore((s) => s.pct)
+  const currentImportacionId = useImportJobStore((s) => s.currentImportacionId)
+  const startImport = useImportJobStore((s) => s.startImport)
+  const storeError = useImportJobStore((s) => s.error)
+  const resetMessages = useImportJobStore((s) => s.resetMessages)
   const FIELDS = [
     'serie_folio',
     'cliente',
@@ -46,61 +56,20 @@ export default function ImportarReportePage() {
     }
   }
 
-  async function pollProgress(importacionId) {
-    let done = false
-    while (!done) {
-      // eslint-disable-next-line no-await-in-loop
-      const p = await importacionesApi.progreso(importacionId)
-      if (p.inMemory) {
-        setProgress({
-          status: p.status,
-          total: p.total,
-          processed: p.processed,
-          errorCount: p.errorCount,
-          pct: p.pct ?? 0,
-        })
-        done = Boolean(p.done)
-      } else {
-        const pr = p.progress
-        const i = p.importacion
-        setProgress({
-          status: pr?.status || i.estado,
-          total: pr?.total ?? i.total_registros ?? 0,
-          processed:
-            pr?.processed ??
-            (i.registros_nuevos || 0) + (i.registros_actualizados || 0),
-          errorCount: pr?.errorCount ?? 0,
-          pct: pr?.pct ?? 0,
-        })
-        done = Boolean(pr?.done) || ['COMPLETADA', 'PARCIAL', 'FALLIDA'].includes(i.estado)
-      }
-      if (!done) {
-        // eslint-disable-next-line no-await-in-loop
-        await new Promise((r) => setTimeout(r, 1200))
-      }
-    }
-  }
-
   async function onSubmit(e) {
     e.preventDefault()
     if (!file) {
       setError('Selecciona un archivo CSV')
       return
     }
-    setLoading(true)
     setError('')
-    setOk('')
-    setProgress(null)
+    resetMessages()
     setPreview(null)
     try {
-      const r = await importacionesApi.uploadCsv(file, mapping)
-      await pollProgress(r.importacionId)
-      setOk(`Importación #${r.importacionId} finalizada. Revisa historial para detalle.`)
+      await startImport({ file, mapping })
       setFile(null)
     } catch (e2) {
       setError(e2?.message || 'No se pudo importar')
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -109,9 +78,8 @@ export default function ImportarReportePage() {
       setError('Selecciona un archivo para previsualizar')
       return
     }
-    setLoading(true)
+    setPreviewLoading(true)
     setError('')
-    setOk('')
     setPreview(null)
     try {
       const p = await importacionesApi.preview(file, mapping)
@@ -120,13 +88,13 @@ export default function ImportarReportePage() {
     } catch (e) {
       setError(e?.message || 'No se pudo generar preview')
     } finally {
-      setLoading(false)
+      setPreviewLoading(false)
     }
   }
 
   async function refreshPreviewWithMapping(nextMapping) {
     if (!file) return
-    setLoading(true)
+    setPreviewLoading(true)
     setError('')
     try {
       const p = await importacionesApi.preview(file, nextMapping)
@@ -135,7 +103,7 @@ export default function ImportarReportePage() {
     } catch (e) {
       setError(e?.message || 'No se pudo aplicar mapeo')
     } finally {
-      setLoading(false)
+      setPreviewLoading(false)
     }
   }
 
@@ -174,19 +142,23 @@ export default function ImportarReportePage() {
             Descargar archivo muestra
           </button>
           {error ? <div className="alert alert-warning">{error}</div> : null}
+          {!error && storeError ? <div className="alert alert-warning">{storeError}</div> : null}
           {ok ? <div className="alert alert-success">{ok}</div> : null}
-          {progress ? (
+          {progressStatus ? (
             <div className="alert alert-info">
-              <div className="fw-semibold mb-1">Estado: {progress.status}</div>
+              <div className="fw-semibold mb-1">
+                Estado: {progressStatus}
+                {currentImportacionId ? ` · Importación #${currentImportacionId}` : ''}
+              </div>
               <div className="small">
-                Procesados: {progress.processed} / {progress.total || '...'} | errores:{' '}
-                {progress.errorCount}
+                Procesados: {progressProcessed} / {progressTotal || '...'} | errores:{' '}
+                {progressErrorCount}
               </div>
               <div className="progress mt-2" role="progressbar">
                 <div
                   className="progress-bar"
                   style={{
-                    width: `${progress.pct ?? 0}%`,
+                    width: `${progressPct ?? 0}%`,
                   }}
                 />
               </div>
@@ -207,10 +179,10 @@ export default function ImportarReportePage() {
             <button
               className="btn btn-outline-secondary ms-2"
               type="button"
-              disabled={loading}
+              disabled={loading || previewLoading}
               onClick={onPreview}
             >
-              Previsualizar
+              {previewLoading ? 'Previsualizando...' : 'Previsualizar'}
             </button>
           </form>
           {preview ? (

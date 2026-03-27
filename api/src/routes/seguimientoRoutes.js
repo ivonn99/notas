@@ -126,6 +126,78 @@ router.get('/', requireAuth, async (req, res, next) => {
     )
     const total = countR.rows[0]?.total ?? 0
 
+    const resumenR = await pool.query(
+      `
+      SELECT
+        COUNT(*)::int AS total_filtrado,
+        COUNT(*) FILTER (WHERE n.requiere_atencion = true)::int AS requiere_atencion
+      FROM notas_credito n
+      LEFT JOIN rutas r ON r.id = n.ruta_id
+      ${whereSql}
+    `,
+      params,
+    )
+
+    const porRutaR = await pool.query(
+      `
+      SELECT
+        COALESCE(NULLIF(TRIM(r.codigo), ''), '(sin ruta)') AS ruta_codigo,
+        COUNT(*)::int AS registros
+      FROM notas_credito n
+      LEFT JOIN rutas r ON r.id = n.ruta_id
+      ${whereSql}
+      GROUP BY 1
+      ORDER BY registros DESC, ruta_codigo ASC
+      LIMIT 200
+    `,
+      params,
+    )
+
+    const porAntiguedadR = await pool.query(
+      `
+      WITH base AS (
+        SELECT
+          CASE
+            WHEN n.fecha_nota IS NULL THEN NULL
+            ELSE (CURRENT_DATE - n.fecha_nota::date)::int
+          END AS dias
+        FROM notas_credito n
+        LEFT JOIN rutas r ON r.id = n.ruta_id
+        ${whereSql}
+      ),
+      agrupado AS (
+        SELECT
+          CASE
+            WHEN base.dias IS NULL OR base.dias < 0 THEN 'negativo'
+            WHEN base.dias <= 30 THEN 'd0_30'
+            WHEN base.dias <= 45 THEN 'd31_45'
+            WHEN base.dias <= 60 THEN 'd46_60'
+            WHEN base.dias <= 90 THEN 'd61_90'
+            WHEN base.dias <= 180 THEN 'd91_180'
+            WHEN base.dias <= 365 THEN 'd181_365'
+            ELSE 'd366_plus'
+          END AS bucket_id,
+          COUNT(*)::int AS registros
+        FROM base
+        GROUP BY 1
+      )
+      SELECT bucket_id, registros
+      FROM agrupado
+      ORDER BY
+        CASE agrupado.bucket_id
+          WHEN 'negativo' THEN 0
+          WHEN 'd0_30' THEN 1
+          WHEN 'd31_45' THEN 2
+          WHEN 'd46_60' THEN 3
+          WHEN 'd61_90' THEN 4
+          WHEN 'd91_180' THEN 5
+          WHEN 'd181_365' THEN 6
+          WHEN 'd366_plus' THEN 7
+        END
+    `,
+      params,
+    )
+
     const listParams = [...params, pageSize, offset]
     const listR = await pool.query(
       `
@@ -169,6 +241,9 @@ router.get('/', requireAuth, async (req, res, next) => {
         q: q || null,
         sort: sortKeyRaw && SEGUIMIENTO_ORDER_BY[sortKeyRaw] ? sortKeyRaw : 'default',
       },
+      resumen: resumenR.rows[0] || { total_filtrado: total, requiere_atencion: 0 },
+      porRuta: porRutaR.rows,
+      porAntiguedad: porAntiguedadR.rows,
       items: listR.rows,
     })
   } catch (e) {

@@ -3,7 +3,7 @@ import QRCode from 'qrcode'
 
 import { getPool } from '../db.js'
 import { requireAuth, requireRoles } from '../middleware/auth.js'
-import { whatsappBaileysService } from '../services/whatsappBaileysService.js'
+import { whatsappClient } from '../services/whatsappClient.js'
 
 const router = Router()
 
@@ -25,8 +25,8 @@ function maskPhone(v) {
 
 router.post('/connect', async (_req, res, next) => {
   try {
-    const status = await whatsappBaileysService.connect()
-    res.json({ ok: true, status })
+    const status = await whatsappClient.connect()
+    res.json({ ok: true, mode: whatsappClient.mode, status })
   } catch (e) {
     next(e)
   }
@@ -36,26 +36,34 @@ router.post('/disconnect', async (req, res, next) => {
   try {
     const clearSessionRaw = String(req.body?.clearSession ?? '').trim().toLowerCase()
     const clearSession = ['1', 'true', 'si', 'sí', 'yes'].includes(clearSessionRaw)
-    const status = await whatsappBaileysService.disconnect({ clearSession })
-    res.json({ ok: true, status, clearSession })
+    const status = await whatsappClient.disconnect({ clearSession })
+    res.json({ ok: true, mode: whatsappClient.mode, status, clearSession })
   } catch (e) {
     next(e)
   }
 })
 
-router.get('/status', (_req, res) => {
-  const status = whatsappBaileysService.getStatus()
-  res.json({ ok: true, status })
+router.get('/status', async (_req, res, next) => {
+  try {
+    const status = await whatsappClient.getStatus()
+    res.json({ ok: true, mode: whatsappClient.mode, enabled: whatsappClient.isEnabled(), status })
+  } catch (e) {
+    next(e)
+  }
 })
 
 router.get('/qr', async (_req, res, next) => {
   try {
-    const qrText = whatsappBaileysService.getQrText()
+    const qrPayload = await whatsappClient.getQrPayload()
+    const qrText = String(qrPayload?.qr ?? '').trim()
     if (!qrText) {
+      if (qrPayload?.qrDataUrl) {
+        return res.json({ ok: true, mode: whatsappClient.mode, qr: '', qrDataUrl: qrPayload.qrDataUrl })
+      }
       return res.status(404).json({ ok: false, error: 'QR no disponible por ahora' })
     }
     const qrDataUrl = await QRCode.toDataURL(qrText, { margin: 1, width: 320 })
-    res.json({ ok: true, qr: qrText, qrDataUrl })
+    res.json({ ok: true, mode: whatsappClient.mode, qr: qrText, qrDataUrl })
   } catch (e) {
     next(e)
   }
@@ -67,8 +75,8 @@ router.post('/send-manual', async (req, res, next) => {
     const message = String(req.body?.message ?? '').trim()
     if (!phone) return res.status(400).json({ ok: false, error: 'phone es requerido' })
     if (!message) return res.status(400).json({ ok: false, error: 'message es requerido' })
-    const result = await whatsappBaileysService.sendText({ phone, message })
-    res.json({ ok: true, to: maskPhone(phone), result })
+    const result = await whatsappClient.sendText({ phone, message })
+    res.json({ ok: true, mode: whatsappClient.mode, to: maskPhone(phone), result })
   } catch (e) {
     next(e)
   }
@@ -87,8 +95,8 @@ router.post('/send-test', async (req, res, next) => {
       req.body?.message ??
         'Mensaje de prueba DMH: conexión WhatsApp operativa.',
     ).trim()
-    const result = await whatsappBaileysService.sendText({ phone, message })
-    res.json({ ok: true, to: maskPhone(phone), result })
+    const result = await whatsappClient.sendText({ phone, message })
+    res.json({ ok: true, mode: whatsappClient.mode, to: maskPhone(phone), result })
   } catch (e) {
     next(e)
   }
@@ -131,7 +139,7 @@ router.post('/send-batch', async (req, res, next) => {
       } else {
         try {
           // eslint-disable-next-line no-await-in-loop
-          const sendR = await whatsappBaileysService.sendText({ phone, message })
+          const sendR = await whatsappClient.sendText({ phone, message })
           results.push({
             index: i,
             ok: true,

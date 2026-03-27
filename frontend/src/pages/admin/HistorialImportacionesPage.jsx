@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { importacionesApi } from '../../services/importacionesApi.js'
+import { useImportJobStore } from '../../stores/importJobStore.js'
 
 function estadoBadgeClass(estado) {
   const s = String(estado ?? '').toUpperCase()
@@ -23,6 +24,8 @@ export default function HistorialImportacionesPage() {
   const [error, setError] = useState('')
   const [items, setItems] = useState([])
   const [selectedObs, setSelectedObs] = useState(null)
+  const importStatus = useImportJobStore((s) => s.status)
+  const currentImportacionId = useImportJobStore((s) => s.currentImportacionId)
 
   useEffect(() => {
     ;(async () => {
@@ -39,9 +42,38 @@ export default function HistorialImportacionesPage() {
     })()
   }, [])
 
+  useEffect(() => {
+    if (!importStatus || ['COMPLETADA', 'PARCIAL', 'FALLIDA'].includes(String(importStatus).toUpperCase())) {
+      return
+    }
+    let cancel = false
+    const tick = async () => {
+      try {
+        const r = await importacionesApi.list()
+        if (!cancel) setItems(r.items || [])
+      } catch {
+        // ignore intermittent refresh errors
+      }
+    }
+    const timer = setInterval(() => {
+      void tick()
+    }, 3000)
+    void tick()
+    return () => {
+      cancel = true
+      clearInterval(timer)
+    }
+  }, [importStatus])
+
   return (
     <section className="container-fluid px-0">
       <h1 className="h3 mb-3">Historial de importaciones</h1>
+      {importStatus && ['EN_PROCESO'].includes(String(importStatus).toUpperCase()) ? (
+        <div className="alert alert-info py-2">
+          Importación en proceso
+          {currentImportacionId ? ` (#${currentImportacionId})` : ''}. Esta tabla se actualiza automáticamente.
+        </div>
+      ) : null}
       {error ? <div className="alert alert-warning">{error}</div> : null}
       <div className="card">
         <div className="table-responsive">

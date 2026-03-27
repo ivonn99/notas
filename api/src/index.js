@@ -8,7 +8,7 @@ import cors from 'cors'
 import dotenv from 'dotenv'
 import express from 'express'
 
-import { closePool, getPool } from './db.js'
+import { closePool, getDbConnectionMeta, getPool } from './db.js'
 import adminRouter from './routes/adminRoutes.js'
 import alertasRouter from './routes/alertasRoutes.js'
 import auditoriaRouter from './routes/auditoriaRoutes.js'
@@ -101,13 +101,14 @@ app.get('/api/healthz', (_req, res) => {
   res.json({ status: 'ok' })
 })
 
-/** Comprueba conexión a Neon y, si existe la tabla, cuenta notas de crédito. */
+/** Comprueba conexión a la base de datos y, si existe la tabla, cuenta notas de crédito. */
 app.get('/api/db/ping', async (_req, res) => {
   const t0 = Date.now()
   try {
     const pool = getPool()
     await pool.query('SELECT 1 AS ok')
 
+    const meta = getDbConnectionMeta()
     let notasCreditoCount = null
     try {
       const r = await pool.query(
@@ -120,16 +121,16 @@ app.get('/api/db/ping', async (_req, res) => {
 
     res.json({
       ok: true,
-      neon: true,
+      dbSource: meta?.source,
       latencyMs: Date.now() - t0,
       notasCreditoCount,
+      dbHost: meta?.host,
     })
   } catch (err) {
-    console.error('Neon / DB ping:', err.message)
+    console.error('DB ping:', err.message)
     res.status(503).json({
       ok: false,
-      neon: false,
-      error: 'No se pudo conectar a la base de datos. Revisa NEON_DATABASE_URL en api/.env.',
+      error: 'No se pudo conectar a la base de datos. Revisa SUPABASE_DB_URL (o DATABASE_URL) en api/.env.',
     })
   }
 })
@@ -152,12 +153,25 @@ app.use((err, _req, res, _next) => {
 })
 
 const server = app.listen(PORT, async () => {
-  await ensureAuditTable()
-  await ensureNotasOptionalColumns()
-  await ensureUsuariosOptionalColumns()
-  await markInterruptedImportaciones()
+  // Resiliencia de arranque: si falla DB no tumbamos el proceso.
+  try {
+    await ensureAuditTable()
+    await ensureNotasOptionalColumns()
+    await ensureUsuariosOptionalColumns()
+    await markInterruptedImportaciones()
+  } catch (e) {
+    const msg = e?.message || 'error desconocido en bootstrap'
+    console.error('[bootstrap] Inicialización de DB falló:', msg)
+    appendAppLogLine(`[bootstrap] Inicialización de DB falló: ${msg}`)
+  }
   appendAppLogLine(`API lista en http://localhost:${PORT}`)
-  console.log(`API lista en http://localhost:${PORT} (Neon → NEON_DATABASE_URL)`)
+  console.log(`API lista en http://localhost:${PORT}`)
+})
+
+server.on('error', (err) => {
+  const msg = err?.message || 'error de servidor'
+  console.error('[server:error]', msg)
+  appendAppLogLine(`[server:error] ${msg}`)
 })
 
 async function shutdown() {
@@ -167,3 +181,13 @@ async function shutdown() {
 
 process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)
+process.on('unhandledRejection', (reason) => {
+  const msg = reason?.message || String(reason)
+  console.error('[process:unhandledRejection]', msg)
+  appendAppLogLine(`[process:unhandledRejection] ${msg}`)
+})
+process.on('uncaughtException', (err) => {
+  const msg = err?.message || String(err)
+  console.error('[process:uncaughtException]', msg)
+  appendAppLogLine(`[process:uncaughtException] ${msg}`)
+})

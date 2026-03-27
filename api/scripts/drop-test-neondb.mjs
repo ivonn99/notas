@@ -3,13 +3,29 @@ import pg from 'pg'
 
 dotenv.config({ path: new URL('../.env', import.meta.url) })
 
-const cs = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL
+const cs = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL
+const usingSupabase = Boolean(process.env.SUPABASE_DB_URL?.trim())
 if (!cs) {
-  console.error('Falta NEON_DATABASE_URL/DATABASE_URL en api/.env')
+  console.error('Falta SUPABASE_DB_URL/DATABASE_URL en api/.env')
   process.exit(1)
 }
 
-const client = new pg.Client({ connectionString: cs })
+function stripSslParams(connectionString) {
+  const cs = String(connectionString || '')
+  if (!cs.includes('?')) return cs
+  const [base, qs] = cs.split('?', 2)
+  if (!qs) return cs
+  const params = new URLSearchParams(qs)
+  params.delete('sslmode')
+  params.delete('channel_binding')
+  const nextQs = params.toString()
+  return nextQs ? `${base}?${nextQs}` : base
+}
+
+const client = new pg.Client({
+  connectionString: stripSslParams(cs),
+  ssl: usingSupabase ? { rejectUnauthorized: false } : undefined,
+})
 await client.connect()
 
 const check = await client.query(

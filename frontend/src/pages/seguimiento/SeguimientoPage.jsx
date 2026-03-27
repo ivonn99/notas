@@ -1,9 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useDomainSyncStore } from '../../stores/domainSyncStore.js'
 import { fetchSeguimientoList } from '../../services/seguimientoApi.js'
+import { useListCacheStore } from '../../stores/listCacheStore.js'
+import { useListFiltersStore } from '../../stores/listFiltersStore.js'
 import { estadoBadgeClass } from '../../utils/estadoBadge.js'
 
 const PAGE_SIZE = 20
+const BUCKET_LABELS = {
+  negativo: 'Fecha inconsistente',
+  d0_30: '0–30 días',
+  d31_45: '31–45 días',
+  d46_60: '46–60 días',
+  d61_90: '61–90 días',
+  d91_180: '91–180 días',
+  d181_365: '181–365 días',
+  d366_plus: '>365 días',
+}
 
 function formatFechaNota(value) {
   if (value == null || value === '') return '—'
@@ -15,36 +28,76 @@ function formatFechaNota(value) {
   return `${day}/${month}/${year}`
 }
 
+function mergeCachedPages(entry, upToPage) {
+  if (!entry?.pages) return []
+  const ids = new Set()
+  const merged = []
+  for (let p = 1; p <= upToPage; p += 1) {
+    const rows = entry.pages[p] || []
+    for (const row of rows) {
+      if (ids.has(row.id)) continue
+      ids.add(row.id)
+      merged.push(row)
+    }
+  }
+  return merged
+}
+
 export default function SeguimientoPage() {
-  const [empresaActiva, setEmpresaActiva] = useState('DISTRIBUIDORA')
+  const seguimientoFilters = useListFiltersStore((s) => s.seguimiento)
+  const setSeguimientoFilters = useListFiltersStore((s) => s.setSeguimientoFilters)
   const [page, setPage] = useState(1)
-  const [estado, setEstado] = useState('PENDIENTE')
-  const [atencion, setAtencion] = useState('')
-  const [ruta, setRuta] = useState('')
-  const [q, setQ] = useState('')
-  const [orden, setOrden] = useState('default')
   const [data, setData] = useState({ items: [], total: 0, totalPages: 1 })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [loadingMore, setLoadingMore] = useState(false)
   const loadMoreRef = useRef(null)
+  const syncMountRef = useRef(false)
+  const getCacheEntry = useListCacheStore((s) => s.getEntry)
+  const setCachePage = useListCacheStore((s) => s.setPage)
+  const clearScreenCache = useListCacheStore((s) => s.clearScreen)
+  const notasVersion = useDomainSyncStore((s) => s.notasVersion)
+  const rutasVersion = useDomainSyncStore((s) => s.rutasVersion)
 
   const filtros = useMemo(
     () => ({
       pageSize: PAGE_SIZE,
-      empresa: empresaActiva,
-      estado,
-      atencion,
-      ruta,
-      q,
-      sort: orden,
+      empresa: seguimientoFilters.empresaActiva,
+      estado: seguimientoFilters.estado,
+      atencion: seguimientoFilters.atencion,
+      ruta: seguimientoFilters.ruta,
+      q: seguimientoFilters.q,
+      sort: seguimientoFilters.orden,
     }),
-    [empresaActiva, estado, atencion, ruta, q, orden],
+    [
+      seguimientoFilters.empresaActiva,
+      seguimientoFilters.estado,
+      seguimientoFilters.atencion,
+      seguimientoFilters.ruta,
+      seguimientoFilters.q,
+      seguimientoFilters.orden,
+    ],
   )
+  const cacheKey = useMemo(() => JSON.stringify(filtros), [filtros])
 
   const hasMore = page < (data.totalPages || 1)
 
   const cargarPagina = useCallback(async (targetPage, append = false) => {
+    const cached = getCacheEntry('seguimiento', cacheKey)
+    if (cached?.pages?.[targetPage]) {
+      const merged = mergeCachedPages(cached, targetPage)
+      setData({
+        items: merged,
+        total: cached.total ?? 0,
+        totalPages: cached.totalPages ?? 1,
+      })
+      setPage(targetPage)
+      setLoading(false)
+      setLoadingMore(false)
+      setError('')
+      return
+    }
+
     if (append) {
       setLoadingMore(true)
     } else {
@@ -53,10 +106,13 @@ export default function SeguimientoPage() {
     }
     try {
       const r = await fetchSeguimientoList({ ...filtros, page: targetPage })
-      setData((prev) => ({
+      setCachePage('seguimiento', cacheKey, targetPage, r)
+      const nextCached = getCacheEntry('seguimiento', cacheKey)
+      const merged = nextCached ? mergeCachedPages(nextCached, targetPage) : r.items || []
+      setData({
         ...r,
-        items: append ? [...(prev.items || []), ...(r.items || [])] : r.items || [],
-      }))
+        items: merged,
+      })
       setPage(targetPage)
     } catch (e) {
       setError(e?.message || 'No se pudo cargar seguimiento')
@@ -64,7 +120,18 @@ export default function SeguimientoPage() {
       setLoading(false)
       setLoadingMore(false)
     }
-  }, [filtros])
+  }, [filtros, getCacheEntry, cacheKey, setCachePage])
+
+  useEffect(() => {
+    if (!syncMountRef.current) {
+      syncMountRef.current = true
+      return
+    }
+    clearScreenCache('seguimiento')
+    setData({ items: [], total: 0, totalPages: 1 })
+    setPage(1)
+    void cargarPagina(1, false)
+  }, [notasVersion, rutasVersion, clearScreenCache, cargarPagina])
 
   useEffect(() => {
     setPage(1)
@@ -95,9 +162,9 @@ export default function SeguimientoPage() {
         <li className="nav-item">
           <button
             type="button"
-            className={`nav-link${empresaActiva === 'DISTRIBUIDORA' ? ' active' : ''}`}
+            className={`nav-link${seguimientoFilters.empresaActiva === 'DISTRIBUIDORA' ? ' active' : ''}`}
             onClick={() => {
-              setEmpresaActiva('DISTRIBUIDORA')
+              setSeguimientoFilters({ empresaActiva: 'DISTRIBUIDORA' })
               setPage(1)
             }}
           >
@@ -107,9 +174,9 @@ export default function SeguimientoPage() {
         <li className="nav-item">
           <button
             type="button"
-            className={`nav-link${empresaActiva === 'RODRIGO' ? ' active' : ''}`}
+            className={`nav-link${seguimientoFilters.empresaActiva === 'RODRIGO' ? ' active' : ''}`}
             onClick={() => {
-              setEmpresaActiva('RODRIGO')
+              setSeguimientoFilters({ empresaActiva: 'RODRIGO' })
               setPage(1)
             }}
           >
@@ -125,9 +192,9 @@ export default function SeguimientoPage() {
               <label className="form-label mb-1">Estado</label>
               <select
                 className="form-select"
-                value={estado}
+                value={seguimientoFilters.estado}
                 onChange={(e) => {
-                  setEstado(e.target.value)
+                  setSeguimientoFilters({ estado: e.target.value })
                   setPage(1)
                 }}
               >
@@ -141,9 +208,9 @@ export default function SeguimientoPage() {
               <label className="form-label mb-1">Atención</label>
               <select
                 className="form-select"
-                value={atencion}
+                value={seguimientoFilters.atencion}
                 onChange={(e) => {
-                  setAtencion(e.target.value)
+                  setSeguimientoFilters({ atencion: e.target.value })
                   setPage(1)
                 }}
               >
@@ -157,9 +224,9 @@ export default function SeguimientoPage() {
               <input
                 className="form-control"
                 placeholder="Ej: DR201"
-                value={ruta}
+                value={seguimientoFilters.ruta}
                 onChange={(e) => {
-                  setRuta(e.target.value.toUpperCase())
+                  setSeguimientoFilters({ ruta: e.target.value.toUpperCase() })
                   setPage(1)
                 }}
               />
@@ -169,9 +236,9 @@ export default function SeguimientoPage() {
               <input
                 className="form-control"
                 placeholder="serie, cliente o vendedor"
-                value={q}
+                value={seguimientoFilters.q}
                 onChange={(e) => {
-                  setQ(e.target.value)
+                  setSeguimientoFilters({ q: e.target.value })
                   setPage(1)
                 }}
               />
@@ -182,9 +249,9 @@ export default function SeguimientoPage() {
               <label className="form-label mb-1">Ordenar por</label>
               <select
                 className="form-select"
-                value={orden}
+                value={seguimientoFilters.orden}
                 onChange={(e) => {
-                  setOrden(e.target.value)
+                  setSeguimientoFilters({ orden: e.target.value })
                   setPage(1)
                 }}
               >
@@ -204,6 +271,112 @@ export default function SeguimientoPage() {
                 <option value="saldo_desc">Saldo — mayor primero</option>
                 <option value="saldo_asc">Saldo — menor primero</option>
               </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="row g-3 mb-3">
+        <div className="col-12 col-md-4">
+          <div className="card h-100 border-0 shadow-sm">
+            <div className="card-body py-2 px-3">
+              <div className="text-body-secondary small">Total filtrado</div>
+              <div className="fs-5 fw-semibold">
+                {(data?.resumen?.total_filtrado ?? data?.total ?? 0).toLocaleString('es-MX')}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="col-12 col-md-4">
+          <div className="card h-100 border-0 shadow-sm">
+            <div className="card-body py-2 px-3">
+              <div className="text-body-secondary small">Requieren atención</div>
+              <div className="fs-5 fw-semibold text-warning">
+                {(data?.resumen?.requiere_atencion ?? 0).toLocaleString('es-MX')}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="col-12 col-md-4">
+          <div className="card h-100 border-0 shadow-sm">
+            <div className="card-body py-2 px-3">
+              <div className="text-body-secondary small">Rutas con notas</div>
+              <div className="fs-5 fw-semibold">
+                {(data?.porRuta?.length ?? 0).toLocaleString('es-MX')}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="row g-3 mb-3">
+        <div className="col-12 col-xl-6">
+          <div className="card h-100">
+            <div className="card-header">Registros por ruta</div>
+            <div className="card-body p-0">
+              <div className="table-responsive">
+                <table className="table table-sm table-striped mb-0">
+                  <thead className="table-light">
+                    <tr>
+                      <th>Ruta</th>
+                      <th className="text-end">Registros</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading ? (
+                      <tr>
+                        <td colSpan="2" className="text-center py-3">Cargando...</td>
+                      </tr>
+                    ) : (data?.porRuta?.length || 0) === 0 ? (
+                      <tr>
+                        <td colSpan="2" className="text-center py-3 text-body-secondary">Sin datos</td>
+                      </tr>
+                    ) : (
+                      (data.porRuta || []).slice(0, 15).map((r) => (
+                        <tr key={r.ruta_codigo}>
+                          <td>{r.ruta_codigo}</td>
+                          <td className="text-end">{(r.registros ?? 0).toLocaleString('es-MX')}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="col-12 col-xl-6">
+          <div className="card h-100">
+            <div className="card-header">Rangos de antigüedad</div>
+            <div className="card-body p-0">
+              <div className="table-responsive">
+                <table className="table table-sm table-bordered mb-0">
+                  <thead className="table-light">
+                    <tr>
+                      <th>Rango</th>
+                      <th className="text-end">Registros</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading ? (
+                      <tr>
+                        <td colSpan="2" className="text-center py-3">Cargando...</td>
+                      </tr>
+                    ) : (data?.porAntiguedad?.length || 0) === 0 ? (
+                      <tr>
+                        <td colSpan="2" className="text-center py-3 text-body-secondary">Sin datos</td>
+                      </tr>
+                    ) : (
+                      (data.porAntiguedad || []).map((r) => (
+                        <tr key={r.bucket_id}>
+                          <td>{BUCKET_LABELS[r.bucket_id] || r.bucket_id}</td>
+                          <td className="text-end">{(r.registros ?? 0).toLocaleString('es-MX')}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>

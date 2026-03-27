@@ -1,6 +1,7 @@
 import { useNavigate, useParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { adminApi } from '../../../services/adminApi.js'
+import { useDomainSyncStore } from '../../../stores/domainSyncStore.js'
 
 export default function AsignarRutasPage() {
   const { id } = useParams()
@@ -11,6 +12,7 @@ export default function AsignarRutasPage() {
   const [user, setUser] = useState(null)
   const [rutas, setRutas] = useState([])
   const [selected, setSelected] = useState(new Set())
+  const emitRutasChanged = useDomainSyncStore((s) => s.emitRutasChanged)
 
   useEffect(() => {
     ;(async () => {
@@ -43,6 +45,7 @@ export default function AsignarRutasPage() {
     setOk('')
     try {
       await adminApi.updateUsuarioRutas(id, Array.from(selected))
+      emitRutasChanged()
       setOk('Rutas guardadas')
     } catch (e) {
       setError(e?.message || 'No se pudo guardar rutas')

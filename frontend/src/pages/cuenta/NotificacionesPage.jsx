@@ -1,81 +1,58 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ROUTES } from '../../constants/routes.js'
-import { notificacionesApi } from '../../services/notificacionesApi.js'
-import { alertasApi } from '../../services/alertasApi.js'
 import { useAuth } from '../../contexts/AuthContext.jsx'
+import { useNotificationsStore } from '../../stores/notificationsStore.js'
 
 export default function NotificacionesPage({ initialTab = 'notificaciones' }) {
   const { user } = useAuth()
   const canCredito = user?.isSuperuser || ['ADMIN', 'CREDITO'].includes(user?.rol)
+  const items = useNotificationsStore((s) => s.items)
+  const alertas = useNotificationsStore((s) => s.alertas)
+  const loading = useNotificationsStore((s) => s.loadingItems)
+  const loadingAlertas = useNotificationsStore((s) => s.loadingAlertas)
+  const storeError = useNotificationsStore((s) => s.lastError)
+  const loadItems = useNotificationsStore((s) => s.loadItems)
+  const loadAlertas = useNotificationsStore((s) => s.loadAlertas)
+  const marcarNotificacionLeida = useNotificationsStore((s) => s.marcarNotificacionLeida)
+  const marcarTodasNotificaciones = useNotificationsStore((s) => s.marcarTodasNotificaciones)
+  const marcarAlertaLeidaStore = useNotificationsStore((s) => s.marcarAlertaLeida)
   const [tab, setTab] = useState(
     initialTab === 'alertas' && canCredito ? 'alertas' : 'notificaciones',
   )
-  const [loading, setLoading] = useState(true)
-  const [loadingAlertas, setLoadingAlertas] = useState(true)
-  const [error, setError] = useState('')
-  const [items, setItems] = useState([])
-  const [alertas, setAlertas] = useState([])
-
-  async function loadNotificaciones() {
-    setLoading(true)
-    try {
-      const r = await notificacionesApi.list()
-      setItems(r.items || [])
-    } catch (e) {
-      setError(e?.message || 'No se pudo cargar notificaciones')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function loadAlertas() {
-    if (!canCredito) {
-      setAlertas([])
-      setLoadingAlertas(false)
-      return
-    }
-    setLoadingAlertas(true)
-    try {
-      const r = await alertasApi.list()
-      setAlertas(r.items || [])
-    } catch (e) {
-      setError(e?.message || 'No se pudo cargar alertas')
-    } finally {
-      setLoadingAlertas(false)
-    }
-  }
+  const [localError, setLocalError] = useState('')
 
   useEffect(() => {
-    setError('')
-    loadNotificaciones()
-    loadAlertas()
-  }, [canCredito])
+    void loadItems()
+    void loadAlertas(canCredito)
+  }, [canCredito, loadItems, loadAlertas])
+
+  const error = localError || storeError
 
   async function marcar(item) {
     try {
-      await notificacionesApi.marcarLeida(item.tipo, item.id)
-      await loadNotificaciones()
+      setLocalError('')
+      await marcarNotificacionLeida(item)
     } catch (e) {
-      setError(e?.message || 'No se pudo marcar notificación')
+      setLocalError(e?.message || 'No se pudo marcar notificación')
     }
   }
 
   async function marcarTodas() {
     try {
-      await notificacionesApi.marcarTodas()
-      await loadNotificaciones()
+      setLocalError('')
+      await marcarTodasNotificaciones()
     } catch (e) {
-      setError(e?.message || 'No se pudo marcar todas')
+      setLocalError(e?.message || 'No se pudo marcar todas')
     }
   }
 
   async function marcarAlertaLeida(id) {
     try {
-      await alertasApi.marcarLeida(id)
-      await loadAlertas()
+      setLocalError('')
+      await marcarAlertaLeidaStore(id, canCredito)
     } catch (e) {
-      setError(e?.message || 'No se pudo marcar alerta')
+      setLocalError(e?.message || 'No se pudo marcar alerta')
     }
   }
 

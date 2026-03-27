@@ -4,7 +4,7 @@
  * Uso (desde carpeta api/):
  *   node scripts/seed-usuarios-lista.mjs "ContraseñaTemporalUnica"
  *
- * Requiere NEON_DATABASE_URL o DATABASE_URL en .env
+ * Requiere SUPABASE_DB_URL (o DATABASE_URL) en .env
  * Omite MAGO (CREDITO) si ya existe usuario mago o nombre MAGO con rol CREDITO.
  * Si vuelves a ejecutar, no duplica (username ya existe).
  */
@@ -24,11 +24,22 @@ if (!plainPassword || plainPassword.length < 4) {
   process.exit(1)
 }
 
-const conn =
-  process.env.NEON_DATABASE_URL || process.env.DATABASE_URL
+const conn = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL
 if (!conn) {
-  console.error('Falta NEON_DATABASE_URL o DATABASE_URL en api/.env')
+  console.error('Falta SUPABASE_DB_URL o DATABASE_URL en api/.env')
   process.exit(1)
+}
+
+function stripSslParams(connectionString) {
+  const cs = String(connectionString || '')
+  if (!cs.includes('?')) return cs
+  const [base, qs] = cs.split('?', 2)
+  if (!qs) return cs
+  const params = new URLSearchParams(qs)
+  params.delete('sslmode')
+  params.delete('channel_binding')
+  const nextQs = params.toString()
+  return nextQs ? `${base}?${nextQs}` : base
 }
 
 /** Orden del listado (misma fila = mismo sufijo al repetir nombre). */
@@ -75,7 +86,11 @@ function slugify(name) {
   return s || 'usuario'
 }
 
-const pool = new pg.Pool({ connectionString: conn })
+const usingSupabase = Boolean(process.env.SUPABASE_DB_URL?.trim())
+const pool = new pg.Pool({
+  connectionString: stripSslParams(conn),
+  ssl: usingSupabase ? { rejectUnauthorized: false } : undefined,
+})
 
 async function usernameTaken(u) {
   const r = await pool.query(
@@ -155,22 +170,17 @@ try {
       continue
     }
 
-    const nextIdR = await pool.query(
-      'SELECT COALESCE(MAX(id), 0)::bigint + 1 AS next_id FROM usuarios',
-    )
-    const nextId = nextIdR.rows[0].next_id
-
     await pool.query(
       `
       INSERT INTO usuarios (
-        id, password, last_login, is_superuser, username, first_name, last_name, email,
+        password, last_login, is_superuser, username, first_name, last_name, email,
         is_staff, is_active, date_joined, nombre_completo, rol, activo, created_at, telefono
       ) VALUES (
-        $1, $2, NULL, false, $3, '', '', '',
-        false, true, NOW(), $4, $5, true, NOW(), NULL
+        $1, NULL, false, $2, '', '', '',
+        false, true, NOW(), $3, $4, true, NOW(), NULL
       )
     `,
-      [nextId, encoded, username, nombre, rolU],
+      [encoded, username, nombre, rolU],
     )
 
     console.log(`creado   ${username.padEnd(14)} | ${nombre.padEnd(12)} | ${rolU}`)

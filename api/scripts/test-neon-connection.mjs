@@ -6,10 +6,22 @@ import pg from 'pg'
 
 dotenv.config({ path: new URL('../.env', import.meta.url) })
 
-const url = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL
+const url = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL
 if (!url) {
-  console.error('Falta NEON_DATABASE_URL o DATABASE_URL en api/.env')
+  console.error('Falta SUPABASE_DB_URL o DATABASE_URL en api/.env')
   process.exit(1)
+}
+
+function stripSslParams(connectionString) {
+  const cs = String(connectionString || '')
+  if (!cs.includes('?')) return cs
+  const [base, qs] = cs.split('?', 2)
+  if (!qs) return cs
+  const params = new URLSearchParams(qs)
+  params.delete('sslmode')
+  params.delete('channel_binding')
+  const nextQs = params.toString()
+  return nextQs ? `${base}?${nextQs}` : base
 }
 
 let host = '(desconocido)'
@@ -21,7 +33,11 @@ try {
 
 console.log('Host configurado:', host)
 
-const pool = new pg.Pool({ connectionString: url })
+const usingSupabase = Boolean(process.env.SUPABASE_DB_URL?.trim())
+const pool = new pg.Pool({
+  connectionString: stripSslParams(url),
+  ssl: usingSupabase ? { rejectUnauthorized: false } : undefined,
+})
 
 const info = await pool.query(`
   SELECT current_database() AS db,

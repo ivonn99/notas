@@ -21,8 +21,22 @@ if (!username || !plain) {
 }
 
 const encoded = encodeDjangoPassword(plain)
+const conn = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL
+const usingSupabase = Boolean(process.env.SUPABASE_DB_URL?.trim())
+function stripSslParams(connectionString) {
+  const cs = String(connectionString || '')
+  if (!cs.includes('?')) return cs
+  const [base, qs] = cs.split('?', 2)
+  if (!qs) return cs
+  const params = new URLSearchParams(qs)
+  params.delete('sslmode')
+  params.delete('channel_binding')
+  const nextQs = params.toString()
+  return nextQs ? `${base}?${nextQs}` : base
+}
 const pool = new pg.Pool({
-  connectionString: process.env.NEON_DATABASE_URL || process.env.DATABASE_URL,
+  connectionString: stripSslParams(conn),
+  ssl: usingSupabase ? { rejectUnauthorized: false } : undefined,
 })
 
 const r = await pool.query(

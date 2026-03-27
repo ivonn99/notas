@@ -8,6 +8,9 @@ export default function HealthzPage() {
   const [healthz, setHealthz] = useState(null)
   const [dbPing, setDbPing] = useState(null)
 
+  const dbSource = dbPing?.data?.dbSource
+  const dbSourceLabel = dbSource === 'SUPABASE' ? 'Supabase' : dbSource || null
+
   useEffect(() => {
     let cancel = false
     ;(async () => {
@@ -87,7 +90,7 @@ export default function HealthzPage() {
               <div className="card-body">
                 {dbPing?.ok && dbPing?.data?.ok ? (
                   <div className="alert alert-success py-2 mb-2" role="alert">
-                    <strong>Neon:</strong> conexión correcta
+                    <strong>{dbSourceLabel ?? 'Base de datos'}:</strong> conexión correcta
                     {dbPing?.data?.latencyMs != null ? (
                       <span className="ms-1">({dbPing.data.latencyMs} ms)</span>
                     ) : null}
@@ -97,10 +100,15 @@ export default function HealthzPage() {
                         <strong>{dbPing.data.notasCreditoCount}</strong>
                       </div>
                     ) : null}
+                    {dbPing?.data?.dbHost ? (
+                      <div className="small mt-1 mb-0">
+                        Host: <code>{dbPing.data.dbHost}</code>
+                      </div>
+                    ) : null}
                   </div>
                 ) : dbPing ? (
                   <div className="alert alert-warning py-2 mb-2" role="alert">
-                    {dbPing?.data?.error || dbPing?.hint || 'No se pudo validar conexión a Neon.'}
+                    {dbPing?.data?.error || dbPing?.hint || 'No se pudo validar conexión.'}
                   </div>
                 ) : null}
                 <pre className="small mb-0 text-break">

@@ -1,8 +1,8 @@
 # Archivo del proyecto — Sistema Notas de Crédito (Django)
 
-Documento de referencia **antes de eliminar el repositorio local**. Resume qué hacía la app, rutas, roles, base de datos Neon y estructura de plantillas.
+Documento de referencia **antes de eliminar el repositorio local**. Resume qué hacía la app, rutas, roles, base de datos Supabase y estructura de plantillas.
 
-> **Seguridad:** no guardes contraseñas reales en este archivo. Las credenciales viven en **Neon** y en tu archivo **`.env`** (local / Render). Si alguna clave se compartió en chat o por error, **rótala** en el panel de Neon.
+> **Seguridad:** no guardes contraseñas reales en este archivo. Las credenciales viven en **Supabase** y en tu archivo **`.env`** (local / Render). Si alguna clave se compartió en chat o por error, **rótala** en el panel de Supabase.
 
 ---
 
@@ -107,29 +107,29 @@ Rutas definidas en `pagina/urls.py` (prefijo raíz `''` en `proyecto/urls.py`).
 
 ---
 
-## 3. Neon / conexión a base de datos
+## 3. Supabase / conexión a base de datos
 
 ### 3.1 Dónde se configura en Django
 
 Archivo: `proyecto/settings.py`.
 
-- **Opción A (recomendada):** variable de entorno **`NEON_DATABASE_URL`** — cadena `postgresql://...` (parseada con `dj-database-url`).
-- **Opción B:** variables sueltas: `NEON_DB_HOST`, `NEON_DB_NAME`, `NEON_DB_USER`, `NEON_DB_PASSWORD`, `NEON_DB_PORT` (SSL `require`).
-- **Sin Neon en entorno y `DEBUG=True`:** SQLite local `db.sqlite3` en la raíz del proyecto.
-- **Sin Neon y `DEBUG=False`:** el settings endurecido exige configurar Neon (no usar SQLite en prod).
+- **Opción A (recomendada):** variable de entorno **`SUPABASE_DB_URL`** — cadena `postgresql://...` (configurada en tu backend).
+- **Opción B:** variables sueltas: `SUPABASE_DB_HOST`, `SUPABASE_DB_NAME`, `SUPABASE_DB_USER`, `SUPABASE_DB_PASSWORD`, `SUPABASE_DB_PORT` (SSL `require`).
+- **Sin Supabase en entorno y `DEBUG=True`:** SQLite local `db.sqlite3` en la raíz del proyecto (solo para desarrollo).
+- **Sin Supabase y `DEBUG=False`:** el settings endurecido exige configurar Supabase (no usar SQLite en prod).
 
 ### 3.2 Dónde están las “contraseñas” (sin escribirlas aquí)
 
 | Secreto | Uso | Dónde obtenerlo / guardarlo |
 |---------|-----|-----------------------------|
-| Contraseña de BD Neon | Conexión PostgreSQL | Panel Neon → proyecto → **Connection string** o **Reset password** del rol de BD. |
-| `NEON_DATABASE_URL` | URL completa con usuario y password | Copiar de Neon; pegar en `.env`, Render, etc. **No commitear.** |
+| Contraseña de BD | Conexión PostgreSQL | Panel Supabase → proyecto → **Connection string** o **Reset password** del rol de BD. |
+| `SUPABASE_DB_URL` | URL completa con usuario y password | Copiar de Supabase; pegar en `.env`, Render, etc. **No commitear.** |
 | `SECRET_KEY` | Firmas de sesión Django | Generar con Django; guardar solo en env. |
 | Usuario/contraseña de **login de la app** | Acceso web | Tabla `usuarios` (campo `password` = hash Django). Cambiar con admin Django o `createsuperuser` / formularios. |
 
 **Después de borrar el proyecto:** conserva en un gestor de secretos:
 
-1. URL o variables de Neon.  
+1. URL o variables de Supabase.  
 2. `SECRET_KEY` de producción si sigues usando la misma BD con otro stack.  
 3. Lista de usuarios administrativos (sin contraseñas en claro).
 
@@ -222,7 +222,7 @@ Además existen (migraciones Django): por ejemplo `django_session`, `django_migr
 
 | Carpeta | Descripción breve |
 |---------|-------------------|
-| `js-app/` | App **Node + Express + EJS** que replica parte del flujo contra la misma BD; variables `DATABASE_URL` / `NEON_DATABASE_URL`; contraseñas verificadas como hash Django. |
+| `js-app/` | App **Node + Express + EJS** que replica parte del flujo contra la misma BD; variables `DATABASE_URL` / `SUPABASE_DB_URL`; contraseñas verificadas como hash Django. |
 
 Si migras a **Next.js** u otro front, este documento sigue siendo la referencia del **dominio y la BD** que alimentaba Django.
 
@@ -230,7 +230,7 @@ Si migras a **Next.js** u otro front, este documento sigue siendo la referencia 
 
 ## 7. Checklist antes de eliminar el proyecto
 
-- [ ] Exportar o respaldar **Neon** (dump SQL o backup del proveedor).  
+- [ ] Exportar o respaldar **Supabase** (dump SQL o backup del proveedor).  
 - [ ] Guardar **`.env`** (sin subirlo a git) o secretos en vault.  
 - [ ] Anotar URL de producción (Render u otro) si aún la usas.  
 - [ ] Clonar o zip del repo si quieres histórico: `https://github.com/ivonn99/notas`  

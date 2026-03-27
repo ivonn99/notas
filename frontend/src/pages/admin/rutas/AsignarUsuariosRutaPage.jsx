@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { adminApi } from '../../../services/adminApi.js'
+import { useDomainSyncStore } from '../../../stores/domainSyncStore.js'
 
 export default function AsignarUsuariosRutaPage() {
   const { id } = useParams()
@@ -11,6 +12,7 @@ export default function AsignarUsuariosRutaPage() {
   const [ruta, setRuta] = useState(null)
   const [usuarios, setUsuarios] = useState([])
   const [selected, setSelected] = useState(new Set())
+  const emitRutasChanged = useDomainSyncStore((s) => s.emitRutasChanged)
 
   useEffect(() => {
     ;(async () => {
@@ -43,6 +45,7 @@ export default function AsignarUsuariosRutaPage() {
     setOk('')
     try {
       await adminApi.updateRutaUsuarios(id, Array.from(selected))
+      emitRutasChanged()
       setOk('Usuarios enlazados guardados')
     } catch (e) {
       setError(e?.message || 'No se pudo guardar usuarios enlazados')

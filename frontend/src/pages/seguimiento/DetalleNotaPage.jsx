@@ -7,6 +7,7 @@ import {
   postSeguimientoEstado,
   postSeguimientoRuta,
 } from '../../services/seguimientoApi.js'
+import { useDomainSyncStore } from '../../stores/domainSyncStore.js'
 import { estadoBadgeClass } from '../../utils/estadoBadge.js'
 
 export default function DetalleNotaPage() {
@@ -25,6 +26,7 @@ export default function DetalleNotaPage() {
   const [sendingRuta, setSendingRuta] = useState(false)
   const [docFile, setDocFile] = useState(null)
   const [sendingDoc, setSendingDoc] = useState(false)
+  const emitNotaChanged = useDomainSyncStore((s) => s.emitNotaChanged)
 
   async function load() {
     setLoading(true)
@@ -55,6 +57,7 @@ export default function DetalleNotaPage() {
         comentario: comentario.trim(),
         tipo: tipoComentario,
       })
+      emitNotaChanged()
       setComentario('')
       await load()
     } catch (e2) {
@@ -72,6 +75,7 @@ export default function DetalleNotaPage() {
         estado: nuevoEstado,
         observacion: obsEstado.trim(),
       })
+      emitNotaChanged()
       setObsEstado('')
       await load()
     } catch (e2) {
@@ -87,6 +91,7 @@ export default function DetalleNotaPage() {
     setSendingRuta(true)
     try {
       await postSeguimientoRuta(id, nuevaRutaId)
+      emitNotaChanged()
       await load()
     } catch (e2) {
       setError(e2?.message || 'No se pudo cambiar ruta')
@@ -101,6 +106,7 @@ export default function DetalleNotaPage() {
     setSendingDoc(true)
     try {
       await postSeguimientoDocumento(id, docFile)
+      emitNotaChanged()
       setDocFile(null)
       await load()
     } catch (e2) {
