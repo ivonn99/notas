@@ -22,6 +22,7 @@ import {
 } from 'react-icons/fa6'
 import { ROUTES } from '../constants/routes.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
+import { getNavFlags } from '../utils/navAccess.js'
 import { useDomainSyncStore } from '../stores/domainSyncStore.js'
 import { useNotificationsStore } from '../stores/notificationsStore.js'
 import { useUiStore } from '../stores/uiStore.js'
@@ -64,11 +65,7 @@ export default function MainLayout() {
       window.matchMedia('(min-width: 992px)').matches,
   )
 
-  const isAdmin = user.isSuperuser || user.rol === 'ADMIN'
-  const canCredito =
-    user.isSuperuser || ['ADMIN', 'CREDITO'].includes(user.rol)
-  const canSeguimiento =
-    user.isSuperuser || ['ADMIN', 'CREDITO', 'VENDEDOR'].includes(user.rol)
+  const { isAdmin, canCredito, canSeguimiento } = getNavFlags(user)
 
   async function handleLogout() {
     await logout()
@@ -234,6 +231,14 @@ export default function MainLayout() {
                 <FaFileLines size={18} />
               </NavIcon>
               <span className="sidebar-nav-label">Reporte</span>
+            </NavLink>
+          ) : null}
+          {canCredito ? (
+            <NavLink to={ROUTES.alertas} className={navLinkClass} title="Alertas">
+              <NavIcon>
+                <FaTriangleExclamation size={18} />
+              </NavIcon>
+              <span className="sidebar-nav-label">Alertas</span>
             </NavLink>
           ) : null}
           {isAdmin ? (

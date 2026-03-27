@@ -1,14 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { BRAND_IMG_DARK, BRAND_IMG_LIGHT } from '../../constants/brand.js'
 import { useAuth } from '../../contexts/AuthContext.jsx'
 import { isSupabaseConfigured } from '../../lib/supabaseClient.js'
-
-/** Logo en modo claro */
-const LOGIN_BRAND_IMG_LIGHT =
-  'https://i.imgur.com/WLZ8PrB.png'
-/** Logo en modo oscuro */
-const LOGIN_BRAND_IMG_DARK =
-  'https://i.imgur.com/waCO9vZ.png'
 
 export default function LoginPage() {
   const { user, loading, login } = useAuth()
@@ -35,7 +29,7 @@ export default function LoginPage() {
     return () => obs.disconnect()
   }, [])
 
-  const loginBrandImg = themeDark ? LOGIN_BRAND_IMG_DARK : LOGIN_BRAND_IMG_LIGHT
+  const loginBrandImg = themeDark ? BRAND_IMG_DARK : BRAND_IMG_LIGHT
 
   if (loading) {
     return (
