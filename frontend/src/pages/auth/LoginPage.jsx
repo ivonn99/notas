@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext.jsx'
+import { isSupabaseConfigured } from '../../lib/supabaseClient.js'
 
 /** Logo en modo claro */
 const LOGIN_BRAND_IMG_LIGHT =
@@ -56,10 +57,12 @@ export default function LoginPage() {
     setSending(true)
     const u = username.trim()
     if (import.meta.env.DEV) {
-      console.info('[login] envío POST /api/auth/login', {
-        usuario: u,
-        longitudClave: password.length,
-      })
+      console.info(
+        isSupabaseConfigured
+          ? '[login] Supabase Auth (signInWithPassword)'
+          : '[login] POST /api/auth/login',
+        { usuario: u, longitudClave: password.length },
+      )
     }
     try {
       await login(u, password)

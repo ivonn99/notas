@@ -1,5 +1,20 @@
 import { supabase } from './supabaseClient.js'
 
+/**
+ * Mismo criterio que el seed/sync: si no hay @, se usa `<slug>@local.test`.
+ * Supabase Auth solo acepta email en signInWithPassword.
+ */
+export function loginIdentifierToSupabaseEmail(input) {
+  const raw = String(input ?? '').trim()
+  if (!raw) return ''
+  if (raw.includes('@')) return raw.toLowerCase()
+  const user = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return `${user || 'usuario'}@local.test`
+}
+
 export async function getSupabaseAuthMeta() {
   const {
     data: { user },

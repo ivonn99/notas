@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient.js'
+import { loginIdentifierToSupabaseEmail } from '../lib/supabaseAuth.js'
 import { apiUrl } from '../utils/apiUrl.js'
 
 const jsonHeaders = { 'Content-Type': 'application/json' }
@@ -54,12 +55,27 @@ function loginErrorMessage(status, data) {
 
 export async function authLogin(username, password) {
   if (isSupabaseConfigured) {
-    const email = String(username || '').trim()
+    const email = loginIdentifierToSupabaseEmail(username)
+    if (!email) {
+      throw new Error('Indica usuario o correo')
+    }
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     })
     if (error) {
+      const raw = String(error.message || '').toLowerCase()
+      const invalid =
+        raw.includes('invalid login') ||
+        raw.includes('invalid_credentials') ||
+        raw.includes('invalid grant')
+      if (invalid) {
+        throw new Error(
+          'Usuario o contraseña incorrectos, o aún no existe en Supabase Auth. ' +
+            `Se usa el email «${email}». ` +
+            'Si solo creaste usuarios en Postgres, en la carpeta api: npm run sync:supabase-auth -- "TuContraseña"',
+        )
+      }
       throw new Error(error.message || 'No se pudo iniciar sesión en Supabase')
     }
     const user = data?.user || null
