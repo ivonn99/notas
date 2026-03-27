@@ -97,7 +97,7 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit}>
             <div className="mb-3">
               <label htmlFor="login-user" className="form-label">
-                Usuario
+                Usuario o correo
               </label>
               <input
                 id="login-user"

@@ -1,3 +1,4 @@
+import { supabase, isSupabaseConfigured } from '../lib/supabaseClient.js'
 import { apiUrl } from '../utils/apiUrl.js'
 
 const jsonHeaders = { 'Content-Type': 'application/json' }
@@ -52,6 +53,33 @@ function loginErrorMessage(status, data) {
 }
 
 export async function authLogin(username, password) {
+  if (isSupabaseConfigured) {
+    const email = String(username || '').trim()
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+    if (error) {
+      throw new Error(error.message || 'No se pudo iniciar sesión en Supabase')
+    }
+    const user = data?.user || null
+    if (!user) return null
+    return {
+      id: user.id,
+      usuarioId:
+        user.user_metadata?.usuarioId ??
+        user.user_metadata?.usuario_id ??
+        user.user_metadata?.dbUserId ??
+        null,
+      username: user.user_metadata?.username || user.email || email,
+      rol: user.user_metadata?.rol || 'VENDEDOR',
+      nombreCompleto: user.user_metadata?.nombreCompleto || null,
+      isSuperuser: Boolean(user.user_metadata?.isSuperuser),
+      isStaff: Boolean(user.user_metadata?.isStaff),
+      email: user.email || null,
+    }
+  }
+
   const res = await fetch(apiUrl('/api/auth/login'), {
     method: 'POST',
     credentials: 'include',
@@ -67,10 +95,37 @@ export async function authLogin(username, password) {
 }
 
 export async function authLogout() {
+  if (isSupabaseConfigured) {
+    const { error } = await supabase.auth.signOut()
+    if (error) throw new Error(error.message || 'No se pudo cerrar sesión')
+    return
+  }
   await fetch(apiUrl('/api/auth/logout'), { method: 'POST', credentials: 'include' })
 }
 
 export async function authMe() {
+  if (isSupabaseConfigured) {
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser()
+    if (error || !user) return null
+    return {
+      id: user.id,
+      usuarioId:
+        user.user_metadata?.usuarioId ??
+        user.user_metadata?.usuario_id ??
+        user.user_metadata?.dbUserId ??
+        null,
+      username: user.user_metadata?.username || user.email || 'usuario',
+      rol: user.user_metadata?.rol || 'VENDEDOR',
+      nombreCompleto: user.user_metadata?.nombreCompleto || null,
+      isSuperuser: Boolean(user.user_metadata?.isSuperuser),
+      isStaff: Boolean(user.user_metadata?.isStaff),
+      email: user.email || null,
+    }
+  }
+
   const res = await fetch(apiUrl('/api/auth/me'), { credentials: 'include' })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) return null

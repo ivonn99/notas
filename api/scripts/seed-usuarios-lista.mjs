@@ -7,6 +7,7 @@
  * Requiere SUPABASE_DB_URL (o DATABASE_URL) en .env
  * Omite MAGO (CREDITO) si ya existe usuario mago o nombre MAGO con rol CREDITO.
  * Si vuelves a ejecutar, no duplica (username ya existe).
+ * Email inicial: `<username>@local.test` (mismo criterio que el front / sync a Supabase Auth).
  */
 import dotenv from 'dotenv'
 import path from 'node:path'
@@ -170,17 +171,19 @@ try {
       continue
     }
 
+    const emailInicial = `${username}@local.test`
+
     await pool.query(
       `
       INSERT INTO usuarios (
         password, last_login, is_superuser, username, first_name, last_name, email,
         is_staff, is_active, date_joined, nombre_completo, rol, activo, created_at, telefono
       ) VALUES (
-        $1, NULL, false, $2, '', '', '',
-        false, true, NOW(), $3, $4, true, NOW(), NULL
+        $1, NULL, false, $2, '', '', $3,
+        false, true, NOW(), $4, $5, true, NOW(), NULL
       )
     `,
-      [encoded, username, nombre, rolU],
+      [encoded, username, emailInicial, nombre, rolU],
     )
 
     console.log(`creado   ${username.padEnd(14)} | ${nombre.padEnd(12)} | ${rolU}`)

@@ -4,9 +4,11 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/free-port-3001.mjs && node --watch src/index.js",
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "sync:supabase-auth": "node scripts/sync-usuarios-to-supabase-auth.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.100.1",
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
