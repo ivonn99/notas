@@ -46,8 +46,12 @@ export default function EditarUsuarioPage() {
     setError('')
     setOk('')
     try {
-      await adminApi.updateUsuario(id, form)
-      setOk('Usuario actualizado')
+      const r = await adminApi.updateUsuario(id, form)
+      let msg = 'Usuario actualizado'
+      if (r.authEmailSync?.message) {
+        msg += `. ${r.authEmailSync.message}`
+      }
+      setOk(msg)
     } catch (e2) {
       setError(e2?.message || 'No se pudo actualizar')
     }
@@ -107,6 +111,10 @@ export default function EditarUsuarioPage() {
                   value={form.email}
                   onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
                 />
+                <div className="form-text">
+                  Si cambias el correo y está configurada la función en Supabase, también se actualiza el
+                  email de inicio de sesión (Auth).
+                </div>
               </div>
               <div className="col-md-6">
                 <label className="form-label">Teléfono</label>

@@ -398,3 +398,7 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 # Reset de contraseña (admin): desplegar con `supabase functions deploy admin-reset-password`
 [functions.admin-reset-password]
 verify_jwt = true
+
+# Sincronizar email en Auth al editar usuario (admin)
+[functions.admin-sync-user-email]
+verify_jwt = true

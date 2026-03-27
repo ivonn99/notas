@@ -1,5 +1,16 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient.js'
 import { loginIdentifierToSupabaseEmail } from '../lib/supabaseAuth.js'
+
+/** Si la migración resolve_login_email está aplicada, usa el email real de usuarios (ej. mago@dmh.com). */
+async function resolveLoginEmailFromDb(usernameRaw) {
+  const s = String(usernameRaw ?? '').trim()
+  if (!s || s.includes('@')) return null
+  const { data, error } = await supabase.rpc('resolve_login_email', {
+    p_username: s,
+  })
+  if (error || data == null || String(data).trim() === '') return null
+  return String(data).trim().toLowerCase()
+}
 import { apiUrl } from '../utils/apiUrl.js'
 
 const jsonHeaders = { 'Content-Type': 'application/json' }
@@ -55,7 +66,9 @@ function loginErrorMessage(status, data) {
 
 export async function authLogin(username, password) {
   if (isSupabaseConfigured) {
-    const email = loginIdentifierToSupabaseEmail(username)
+    const fallback = loginIdentifierToSupabaseEmail(username)
+    const resolved = await resolveLoginEmailFromDb(username)
+    const email = resolved || fallback
     if (!email) {
       throw new Error('Indica usuario o correo')
     }
@@ -71,9 +84,9 @@ export async function authLogin(username, password) {
         raw.includes('invalid grant')
       if (invalid) {
         throw new Error(
-          'Usuario o contraseña incorrectos, o aún no existe en Supabase Auth. ' +
-            `Se usa el email «${email}». ` +
-            'Si solo creaste usuarios en Postgres, en la carpeta api: npm run sync:supabase-auth -- "TuContraseña"',
+          'Usuario o contraseña incorrectos, o el usuario no está en Supabase Auth. ' +
+            `(Email usado: ${email}). Sincroniza: api → npm run sync:supabase-auth -- "TuContraseña". ` +
+            'O entra con el correo completo si no es …@local.test.',
         )
       }
       throw new Error(error.message || 'No se pudo iniciar sesión en Supabase')

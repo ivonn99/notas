@@ -2,6 +2,27 @@ import { canAdmin, getSupabaseAuthMeta } from '../lib/supabaseAuth.js'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
 import { http } from './http.js'
 
+/** Si no defines VITE_SUPABASE_ADMIN_*_ENDPOINT, se usa VITE_SUPABASE_URL + /functions/v1/<nombre>. */
+function supabaseFunctionUrl(name) {
+  const base = String(import.meta.env.VITE_SUPABASE_URL || '')
+    .trim()
+    .replace(/\/$/, '')
+  if (!base) return ''
+  return `${base}/functions/v1/${name}`
+}
+
+function adminResetPasswordEndpoint() {
+  const explicit = String(import.meta.env.VITE_SUPABASE_ADMIN_RESET_ENDPOINT || '').trim()
+  if (explicit) return explicit
+  return supabaseFunctionUrl('admin-reset-password')
+}
+
+function adminSyncUserEmailEndpoint() {
+  const explicit = String(import.meta.env.VITE_SUPABASE_ADMIN_SYNC_EMAIL_ENDPOINT || '').trim()
+  if (explicit) return explicit
+  return supabaseFunctionUrl('admin-sync-user-email')
+}
+
 function normalizeEmail(emailRaw, usernameRaw) {
   const email = String(emailRaw ?? '').trim().toLowerCase()
   if (email) return email
@@ -27,7 +48,7 @@ async function adminResetPasswordViaSupabase(id, newPassword) {
 
   await assertAdmin()
 
-  const endpoint = String(import.meta.env.VITE_SUPABASE_ADMIN_RESET_ENDPOINT || '').trim()
+  const endpoint = adminResetPasswordEndpoint()
   if (endpoint) {
     const { data: sessionData } = await supabase.auth.getSession()
     const token = sessionData?.session?.access_token
@@ -67,9 +88,53 @@ async function adminResetPasswordViaSupabase(id, newPassword) {
     ok: true,
     mode: 'email_reset',
     message:
-      'Se envió un correo de recuperación al usuario. Configura VITE_SUPABASE_ADMIN_RESET_ENDPOINT para reset directo sin email.',
+      'Se envió un correo de recuperación al usuario. Con VITE_SUPABASE_URL desplegado, suele bastar la función admin-reset-password en la misma instancia.',
     item: { id: user.id, username: user.username, email: user.email },
   }
+}
+
+/**
+ * Si el admin cambia el email, actualiza también Supabase Auth (Edge Function con service_role).
+ */
+async function syncAuthEmailIfChanged(uid, beforeRow, nextEmailNormalized) {
+  const beforeEmail = normalizeEmail(beforeRow?.email, beforeRow?.username)
+  if (beforeEmail === nextEmailNormalized) {
+    return { synced: true, skipped: true }
+  }
+
+  const endpoint = adminSyncUserEmailEndpoint()
+  if (!endpoint) {
+    return {
+      synced: false,
+      message:
+        'Email guardado en la base. Define VITE_SUPABASE_URL para poder llamar a la función admin-sync-user-email.',
+    }
+  }
+
+  const { data: sessionData } = await supabase.auth.getSession()
+  const token = sessionData?.session?.access_token
+  if (!token) throw new Error('Sesión inválida para sincronizar email en Auth')
+
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      usuarioId: uid,
+      previousEmail: beforeEmail,
+      newEmail: nextEmailNormalized,
+    }),
+  })
+  const payload = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(payload?.error || `Error HTTP ${res.status} al sincronizar email en Auth`)
+  }
+  if (payload?.skipped && payload?.message) {
+    return { synced: false, skipped: true, message: payload.message }
+  }
+  return { synced: Boolean(payload?.synced) }
 }
 
 export const adminApi = {
@@ -127,6 +192,20 @@ export const adminApi = {
     const isActive = Boolean(body?.is_active)
     if (!username) throw new Error('Username requerido')
     if (!['ADMIN', 'CREDITO', 'VENDEDOR'].includes(rol)) throw new Error('Rol inválido')
+
+    const { data: before, error: beforeErr } = await supabase
+      .from('usuarios')
+      .select('email, username')
+      .eq('id', uid)
+      .maybeSingle()
+    if (beforeErr) throw new Error(beforeErr.message || 'No se pudo leer usuario')
+    if (!before) throw new Error('Usuario no encontrado')
+
+    let authEmailSync = null
+    if (normalizeEmail(before.email, before.username) !== email) {
+      authEmailSync = await syncAuthEmailIfChanged(uid, before, email)
+    }
+
     const { data, error } = await supabase
       .from('usuarios')
       .update({ username, nombre_completo: nombreCompleto, email, telefono: telefono || null, rol, activo, is_active: isActive })
@@ -135,7 +214,7 @@ export const adminApi = {
       .limit(1)
     if (error) throw new Error(error.message || 'No se pudo actualizar usuario')
     if (!data?.[0]) throw new Error('Usuario no encontrado')
-    return { ok: true, item: data[0] }
+    return { ok: true, item: data[0], authEmailSync }
   },
   resetUsuarioPassword: async (id, newPassword) => {
     if (!isSupabaseConfigured) {
