@@ -10,6 +10,16 @@ import {
 import { useDomainSyncStore } from '../../stores/domainSyncStore.js'
 import { estadoBadgeClass } from '../../utils/estadoBadge.js'
 
+function money(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return '—'
+  return new Intl.NumberFormat('es-MX', {
+    style: 'currency',
+    currency: 'MXN',
+    maximumFractionDigits: 2,
+  }).format(n)
+}
+
 export default function DetalleNotaPage() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -162,6 +172,20 @@ export default function DetalleNotaPage() {
                 <div className="col-md-2">
                   <small className="text-body-secondary d-block">Ruta</small>
                   <strong>{detalle.nota.ruta_codigo || '—'}</strong>
+                </div>
+              </div>
+              <div className="row g-3 mt-1">
+                <div className="col-md-4">
+                  <small className="text-body-secondary d-block">Monto</small>
+                  <strong>{money(detalle.nota.monto)}</strong>
+                </div>
+                <div className="col-md-4">
+                  <small className="text-body-secondary d-block">Abono</small>
+                  <strong>{money(detalle.nota.abono)}</strong>
+                </div>
+                <div className="col-md-4">
+                  <small className="text-body-secondary d-block">Saldo</small>
+                  <strong className="text-primary">{money(detalle.nota.saldo)}</strong>
                 </div>
               </div>
               <div className="row g-3 mt-1">

@@ -28,6 +28,16 @@ function formatFechaNota(value) {
   return `${day}/${month}/${year}`
 }
 
+function money(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return '—'
+  return new Intl.NumberFormat('es-MX', {
+    style: 'currency',
+    currency: 'MXN',
+    maximumFractionDigits: 2,
+  }).format(n)
+}
+
 function mergeCachedPages(entry, upToPage) {
   if (!entry?.pages) return []
   const ids = new Set()
@@ -395,6 +405,9 @@ export default function SeguimientoPage() {
                 <th>Cliente</th>
                 <th>Empresa</th>
                 <th>Ruta</th>
+                <th className="text-end">Monto</th>
+                <th className="text-end">Abono</th>
+                <th className="text-end">Saldo</th>
                 <th>Estado</th>
                 <th>Atención</th>
                 <th>Acción</th>
@@ -403,7 +416,7 @@ export default function SeguimientoPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="9" className="text-center py-4">
+                  <td colSpan="12" className="text-center py-4">
                     Cargando...
                   </td>
                 </tr>
@@ -416,6 +429,9 @@ export default function SeguimientoPage() {
                     <td>{n.cliente || '—'}</td>
                     <td>{n.empresa || '—'}</td>
                     <td>{n.ruta_codigo || '—'}</td>
+                    <td className="text-end small">{money(n.monto)}</td>
+                    <td className="text-end small">{money(n.abono)}</td>
+                    <td className="text-end small fw-medium">{money(n.saldo)}</td>
                     <td>
                       <span className={`badge ${estadoBadgeClass(n.estado)}`}>{n.estado || '—'}</span>
                     </td>
@@ -429,7 +445,7 @@ export default function SeguimientoPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="9" className="text-center py-4">
+                  <td colSpan="12" className="text-center py-4">
                     Sin resultados
                   </td>
                 </tr>

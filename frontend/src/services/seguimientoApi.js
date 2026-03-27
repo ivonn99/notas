@@ -325,7 +325,7 @@ async function fetchSeguimientoListSupabase(params = {}) {
     .select(
       `
       id, serie_folio, fecha_nota, cliente, estado, requiere_atencion, resuelta_automaticamente,
-      fecha_corriente, fecha_ultima_actualizacion, saldo, empresa, usuario_vendedor_pv, ruta_id,
+      fecha_corriente, fecha_ultima_actualizacion, monto, abono, saldo, empresa, usuario_vendedor_pv, ruta_id,
       rutas:ruta_id(codigo),
       vendedor:usuario_id(username)
     `,

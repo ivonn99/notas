@@ -211,6 +211,8 @@ router.get('/', requireAuth, async (req, res, next) => {
         n.resuelta_automaticamente,
         n.fecha_corriente,
         n.fecha_ultima_actualizacion,
+        n.monto,
+        n.abono,
         n.saldo,
         n.empresa,
         n.usuario_vendedor_pv,
