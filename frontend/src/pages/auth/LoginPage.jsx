@@ -54,7 +54,7 @@ export default function LoginPage() {
       console.info(
         isSupabaseConfigured
           ? '[login] Supabase Auth (signInWithPassword)'
-          : '[login] POST /api/auth/login',
+          : '[login] API (POST /api/auth/login, cookie JWT)',
         { usuario: u, longitudClave: password.length },
       )
     }

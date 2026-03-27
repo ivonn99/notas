@@ -151,7 +151,35 @@ export default function MainLayout() {
           </div>
           <div className="fw-semibold d-inline d-md-none">DMH</div>
         </div>
-        <div className="small text-body-secondary">{user?.rol}</div>
+        <div className="d-flex align-items-center gap-2 gap-md-3 flex-shrink-0">
+          <span
+            className="small text-body-secondary text-truncate d-none d-md-inline"
+            style={{ maxWidth: '10rem' }}
+            title={user?.nombreCompleto || user?.username || ''}
+          >
+            {user?.nombreCompleto || user?.username || '—'}
+          </span>
+          <span className="small text-body-secondary text-nowrap">{user?.rol}</span>
+          <NavLink
+            to={ROUTES.perfil}
+            className={({ isActive }) =>
+              `btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-2${isActive ? ' active' : ''}`
+            }
+            title="Mi perfil"
+            aria-label="Mi perfil"
+          >
+            <FaUser size={18} aria-hidden />
+          </NavLink>
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-2"
+            onClick={handleLogout}
+            title="Cerrar sesión"
+            aria-label="Cerrar sesión"
+          >
+            <FaRightFromBracket size={18} aria-hidden />
+          </button>
+        </div>
       </header>
       <div className="app-shell-body d-flex flex-grow-1 min-vh-0 position-relative">
       {sidebarOpen ? (

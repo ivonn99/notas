@@ -23,6 +23,12 @@ function adminSyncUserEmailEndpoint() {
   return supabaseFunctionUrl('admin-sync-user-email')
 }
 
+function adminSyncUsuarioMetadataEndpoint() {
+  const explicit = String(import.meta.env.VITE_SUPABASE_ADMIN_SYNC_METADATA_ENDPOINT || '').trim()
+  if (explicit) return explicit
+  return supabaseFunctionUrl('admin-sync-usuario-metadata')
+}
+
 function normalizeEmail(emailRaw, usernameRaw) {
   const email = String(emailRaw ?? '').trim().toLowerCase()
   if (email) return email
@@ -137,6 +143,39 @@ async function syncAuthEmailIfChanged(uid, beforeRow, nextEmailNormalized) {
   return { synced: Boolean(payload?.synced) }
 }
 
+/**
+ * Tras guardar en `usuarios`, alinea user_metadata en Supabase Auth (rol, usuarioId, etc.).
+ * Sin esto el JWT sigue con el rol antiguo hasta volver a iniciar sesión.
+ */
+async function syncAuthUserMetadataFromDb(usuarioId) {
+  const endpoint = adminSyncUsuarioMetadataEndpoint()
+  if (!endpoint) {
+    return {
+      synced: false,
+      skipped: true,
+      message:
+        'Rol guardado en la base. Define VITE_SUPABASE_URL y despliega la función admin-sync-usuario-metadata para actualizar la sesión en Auth.',
+    }
+  }
+  const { data: sessionData } = await supabase.auth.getSession()
+  const token = sessionData?.session?.access_token
+  if (!token) throw new Error('Sesión inválida para sincronizar metadatos en Auth')
+
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ usuarioId }),
+  })
+  const payload = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(payload?.error || `Error HTTP ${res.status} al sincronizar metadatos en Auth`)
+  }
+  return payload
+}
+
 export const adminApi = {
   listUsuarios: async () => {
     if (!isSupabaseConfigured) return http('/api/admin/usuarios')
@@ -214,7 +253,30 @@ export const adminApi = {
       .limit(1)
     if (error) throw new Error(error.message || 'No se pudo actualizar usuario')
     if (!data?.[0]) throw new Error('Usuario no encontrado')
-    return { ok: true, item: data[0], authEmailSync }
+
+    let authMetadataSync = null
+    try {
+      authMetadataSync = await syncAuthUserMetadataFromDb(uid)
+    } catch (e) {
+      authMetadataSync = {
+        synced: false,
+        error: String(e?.message || e),
+      }
+    }
+
+    const metadataApplied = Boolean(authMetadataSync?.synced === true || authMetadataSync?.ok === true)
+    if (metadataApplied) {
+      try {
+        const meta = await getSupabaseAuthMeta()
+        if (Number(meta.usuarioId) === uid) {
+          await supabase.auth.refreshSession()
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    return { ok: true, item: data[0], authEmailSync, authMetadataSync }
   },
   resetUsuarioPassword: async (id, newPassword) => {
     if (!isSupabaseConfigured) {

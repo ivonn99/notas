@@ -402,3 +402,7 @@ verify_jwt = true
 # Sincronizar email en Auth al editar usuario (admin)
 [functions.admin-sync-user-email]
 verify_jwt = true
+
+# Sincronizar rol / metadatos en Auth tras editar usuario (admin)
+[functions.admin-sync-usuario-metadata]
+verify_jwt = true

@@ -51,6 +51,11 @@ export default function EditarUsuarioPage() {
       if (r.authEmailSync?.message) {
         msg += `. ${r.authEmailSync.message}`
       }
+      if (r.authMetadataSync?.error) {
+        msg += `. No se pudo actualizar la sesión en Supabase Auth: ${r.authMetadataSync.error}`
+      } else if (r.authMetadataSync?.message) {
+        msg += `. ${r.authMetadataSync.message}`
+      }
       setOk(msg)
     } catch (e2) {
       setError(e2?.message || 'No se pudo actualizar')
