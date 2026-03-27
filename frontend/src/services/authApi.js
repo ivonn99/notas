@@ -15,12 +15,33 @@ function loginErrorMessage(status, data) {
   if (data.error) return data.error
 
   if (status === 404) {
-    return 'No hay ruta de login (404). En la carpeta api: npm run dev. Comprueba http://127.0.0.1:3001/api/auth/ping'
+    const hasApiOrigin = Boolean(
+      typeof import.meta.env.VITE_API_URL === 'string' &&
+        String(import.meta.env.VITE_API_URL).trim(),
+    )
+    if (!hasApiOrigin) {
+      return (
+        'No se encontró el API (404). En Netlify: en Site settings → Environment variables añade ' +
+        'VITE_API_URL con la URL pública de tu servidor (ej. https://tu-api.onrender.com), sin barra final, ' +
+        'luego vuelve a desplegar (Clear cache and deploy). En local: carpeta api → npm run dev.'
+      )
+    }
+    return (
+      'El login respondió 404. Revisa que VITE_API_URL apunte al host correcto del API y que exista ' +
+      'POST /api/auth/login. Prueba en el navegador: GET {tu API}/api/auth/ping (debe devolver JSON).'
+    )
   }
 
   // Vite proxy cuando el API no responde en 3001
   if (status === 502 || status === 503 || status === 504) {
-    return `El front no puede hablar con el API (HTTP ${status}). Arranca el servidor: carpeta api → npm run dev y espera a ver "API lista en http://localhost:3001". Abre http://127.0.0.1:3001/api/health en el navegador (debe salir JSON).`
+    const hasApiOrigin = Boolean(
+      typeof import.meta.env.VITE_API_URL === 'string' &&
+        String(import.meta.env.VITE_API_URL).trim(),
+    )
+    if (!hasApiOrigin) {
+      return `El front no puede hablar con el API (HTTP ${status}). En Netlify configura VITE_API_URL y redespliega. En local: api → npm run dev y abre http://127.0.0.1:3001/api/health.`
+    }
+    return `El API no respondió bien (HTTP ${status}). Comprueba que el servicio del API esté en línea y CORS permita tu dominio Netlify.`
   }
 
   if (data._raw) {
