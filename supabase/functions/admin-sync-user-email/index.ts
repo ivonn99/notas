@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { pickBearerAuth, resolveAdminAuth } from "../_shared/resolveAdminAuth.ts"
 
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -40,17 +41,11 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const authHeader = req.headers.get("Authorization")
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "No autorizado" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      })
-    }
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? ""
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? ""
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+    const jwtSecret = (Deno.env.get("JWT_SECRET") ?? Deno.env.get("SUPABASE_JWT_SECRET") ?? "")
+      .trim() || undefined
 
     if (!supabaseUrl || !supabaseAnonKey || !serviceKey) {
       return new Response(JSON.stringify({ error: "Faltan variables en el servidor" }), {
@@ -59,36 +54,27 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    })
-
-    const {
-      data: { user },
-      error: userErr,
-    } = await userClient.auth.getUser()
-    if (userErr || !user) {
-      return new Response(JSON.stringify({ error: "Sesión inválida" }), {
-        status: 401,
+    const raw = await req.text()
+    let body: Record<string, unknown> = {}
+    try {
+      if (raw) body = JSON.parse(raw) as Record<string, unknown>
+    } catch {
+      return new Response(JSON.stringify({ error: "JSON inválido" }), {
+        status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       })
     }
 
-    const meta = user.user_metadata ?? {}
-    const isSuper = Boolean(meta.isSuperuser)
-    const rol = String(meta.rol ?? "").toUpperCase()
-    if (!isSuper && rol !== "ADMIN") {
-      return new Response(JSON.stringify({ error: "Sin permiso" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      })
-    }
+    const effectiveAuth = pickBearerAuth(req.headers.get("Authorization"), body)
+    const adminAuth = await resolveAdminAuth(
+      supabaseUrl,
+      supabaseAnonKey,
+      effectiveAuth,
+      jwtSecret,
+      corsHeaders,
+    )
+    if (adminAuth instanceof Response) return adminAuth
 
-    const body = (await req.json()) as {
-      usuarioId?: number
-      previousEmail?: string
-      newEmail?: string
-    }
     const usuarioId = Number(body?.usuarioId)
     const previousEmail = String(body?.previousEmail ?? "").trim().toLowerCase()
     const newEmail = String(body?.newEmail ?? "").trim().toLowerCase()

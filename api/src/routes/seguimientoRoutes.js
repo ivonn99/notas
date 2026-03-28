@@ -90,8 +90,8 @@ router.get('/', requireAuth, async (req, res, next) => {
 
     const ruta = String(req.query.ruta ?? '').trim().toUpperCase()
     if (ruta) {
-      params.push(`%${ruta}%`)
-      where.push(`UPPER(r.codigo) LIKE $${params.length}`)
+      params.push(ruta)
+      where.push(`UPPER(TRIM(COALESCE(r.codigo, ''))) = $${params.length}`)
     }
 
     const atencion = String(req.query.atencion ?? '').trim().toLowerCase()

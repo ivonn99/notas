@@ -5,7 +5,7 @@ import { requireAuth, requireRoles } from '../middleware/auth.js'
 
 const router = Router()
 
-router.use(requireAuth, requireRoles('ADMIN'))
+router.use(requireAuth, requireRoles('ADMIN', 'CREDITO'))
 
 router.get('/', async (req, res, next) => {
   try {

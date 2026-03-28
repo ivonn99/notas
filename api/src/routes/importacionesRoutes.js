@@ -707,7 +707,7 @@ async function runImportJob({
   }
 }
 
-router.get('/', requireAuth, requireRoles('ADMIN'), async (_req, res, next) => {
+router.get('/', requireAuth, requireRoles('ADMIN', 'CREDITO'), async (_req, res, next) => {
   try {
     const pool = getPool()
     const r = await pool.query(
@@ -734,7 +734,7 @@ router.get('/', requireAuth, requireRoles('ADMIN'), async (_req, res, next) => {
   }
 })
 
-router.get('/muestra', requireAuth, requireRoles('ADMIN'), (_req, res) => {
+router.get('/muestra', requireAuth, requireRoles('ADMIN', 'CREDITO'), (_req, res) => {
   const csv = sampleCsv()
   res.setHeader('Content-Type', 'text/csv; charset=utf-8')
   res.setHeader('Content-Disposition', 'attachment; filename="muestra_importacion_notas.csv"')
@@ -744,7 +744,7 @@ router.get('/muestra', requireAuth, requireRoles('ADMIN'), (_req, res) => {
 router.post(
   '/preview',
   requireAuth,
-  requireRoles('ADMIN'),
+  requireRoles('ADMIN', 'CREDITO'),
   upload.single('file'),
   async (req, res, next) => {
     try {
@@ -800,7 +800,7 @@ router.post(
   },
 )
 
-router.get('/:id/progreso', requireAuth, requireRoles('ADMIN'), async (req, res, next) => {
+router.get('/:id/progreso', requireAuth, requireRoles('ADMIN', 'CREDITO'), async (req, res, next) => {
   try {
     const id = Number.parseInt(String(req.params.id ?? ''), 10)
     if (!Number.isFinite(id) || id <= 0) {
@@ -864,7 +864,7 @@ router.get('/:id/progreso', requireAuth, requireRoles('ADMIN'), async (req, res,
   }
 })
 
-router.get('/:id/errores-txt', requireAuth, requireRoles('ADMIN'), async (req, res, next) => {
+router.get('/:id/errores-txt', requireAuth, requireRoles('ADMIN', 'CREDITO'), async (req, res, next) => {
   try {
     const id = Number.parseInt(String(req.params.id ?? ''), 10)
     if (!Number.isFinite(id) || id <= 0) {
@@ -899,7 +899,7 @@ router.get('/:id/errores-txt', requireAuth, requireRoles('ADMIN'), async (req, r
 router.post(
   '/upload',
   requireAuth,
-  requireRoles('ADMIN'),
+  requireRoles('ADMIN', 'CREDITO'),
   upload.single('file'),
   async (req, res, next) => {
     try {

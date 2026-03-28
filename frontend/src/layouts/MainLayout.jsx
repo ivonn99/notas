@@ -65,7 +65,7 @@ export default function MainLayout() {
       window.matchMedia('(min-width: 992px)').matches,
   )
 
-  const { isAdmin, canCredito, canSeguimiento } = getNavFlags(user)
+  const { canCredito, canSeguimiento, canAccessAdminPanel } = getNavFlags(user)
 
   async function handleLogout() {
     await logout()
@@ -269,7 +269,7 @@ export default function MainLayout() {
               <span className="sidebar-nav-label">Alertas</span>
             </NavLink>
           ) : null}
-          {isAdmin ? (
+          {canAccessAdminPanel ? (
             <>
               <hr className="my-2" />
               <div className="text-uppercase text-muted small fw-semibold mt-1">
@@ -370,7 +370,7 @@ export default function MainLayout() {
               </span>
             ) : null}
           </NavLink>
-          {isAdmin ? (
+          {canAccessAdminPanel ? (
             <>
               <hr className="my-2" />
               <NavLink to={ROUTES.healthz} className={navLinkClass} title="Healthz">

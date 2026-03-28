@@ -81,7 +81,7 @@ const SHORTCUT_DEFS = [
     title: 'Importar reporte',
     description: 'Carga de archivos e importación.',
     icon: FaFileArrowUp,
-    show: (f) => f.isAdmin,
+    show: (f) => f.canAccessAdminPanel,
   },
   {
     id: 'historial-import',
@@ -89,7 +89,7 @@ const SHORTCUT_DEFS = [
     title: 'Historial importaciones',
     description: 'Importaciones anteriores.',
     icon: FaClockRotateLeft,
-    show: (f) => f.isAdmin,
+    show: (f) => f.canAccessAdminPanel,
   },
   {
     id: 'usuarios',
@@ -97,7 +97,7 @@ const SHORTCUT_DEFS = [
     title: 'Usuarios',
     description: 'Usuarios y roles.',
     icon: FaUsers,
-    show: (f) => f.isAdmin,
+    show: (f) => f.canAccessAdminPanel,
   },
   {
     id: 'rutas',
@@ -105,7 +105,7 @@ const SHORTCUT_DEFS = [
     title: 'Rutas',
     description: 'Catálogo de rutas.',
     icon: FaRoad,
-    show: (f) => f.isAdmin,
+    show: (f) => f.canAccessAdminPanel,
   },
   {
     id: 'rutas-sin',
@@ -113,7 +113,7 @@ const SHORTCUT_DEFS = [
     title: 'Rutas sin asignar',
     description: 'Rutas sin vendedor asignado.',
     icon: FaTriangleExclamation,
-    show: (f) => f.isAdmin,
+    show: (f) => f.canAccessAdminPanel,
   },
   {
     id: 'parametros',
@@ -121,7 +121,7 @@ const SHORTCUT_DEFS = [
     title: 'Parámetros',
     description: 'Ajustes del sistema.',
     icon: FaSliders,
-    show: (f) => f.isAdmin,
+    show: (f) => f.canAccessAdminPanel,
   },
   {
     id: 'logs',
@@ -129,7 +129,7 @@ const SHORTCUT_DEFS = [
     title: 'Logs del sistema',
     description: 'Registros y diagnóstico.',
     icon: FaClipboardList,
-    show: (f) => f.isAdmin,
+    show: (f) => f.canAccessAdminPanel,
   },
   {
     id: 'whatsapp',
@@ -137,7 +137,7 @@ const SHORTCUT_DEFS = [
     title: 'WhatsApp cobranza',
     description: 'Integración de mensajes.',
     icon: FaBell,
-    show: (f) => f.isAdmin,
+    show: (f) => f.canAccessAdminPanel,
   },
   {
     id: 'healthz',
@@ -145,7 +145,7 @@ const SHORTCUT_DEFS = [
     title: 'Estado del sistema',
     description: 'Salud y conexión a servicios.',
     icon: FaHeartPulse,
-    show: (f) => f.isAdmin,
+    show: (f) => f.canAccessAdminPanel,
   },
   {
     id: 'perfil',
@@ -199,13 +199,13 @@ export default function PaginaPrincipalPage() {
     user?.username ||
     'Usuario'
 
-  const { isAdmin, canCredito, canSeguimiento } = getNavFlags(user)
+  const { canCredito, canSeguimiento, canAccessAdminPanel } = getNavFlags(user)
   const shortcuts = useMemo(
     () =>
       SHORTCUT_DEFS.filter((s) =>
-        s.show({ isAdmin, canCredito, canSeguimiento }),
+        s.show({ canCredito, canSeguimiento, canAccessAdminPanel }),
       ),
-    [isAdmin, canCredito, canSeguimiento],
+    [canCredito, canSeguimiento, canAccessAdminPanel],
   )
 
   return (
@@ -249,7 +249,7 @@ export default function PaginaPrincipalPage() {
                 <strong>{BRAND_NAME_SHORT}</strong> — {BRAND_NAME_LONG}. Abajo solo aparecen enlaces a
                 secciones que tu usuario puede usar (mismas reglas que el menú lateral).
               </p>
-              {isAdmin ? (
+              {canAccessAdminPanel ? (
                 <p className="small text-body-secondary mb-0">
                   Para revisar conexión a base de datos y servicios:{' '}
                   <Link to={ROUTES.healthz}>Estado del sistema</Link>.

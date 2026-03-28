@@ -1,9 +1,22 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { encodeDjangoPasswordAsync } from "../_shared/djangoPassword.ts"
+import { pickBearerAuth, resolveAdminAuth } from "../_shared/resolveAdminAuth.ts"
 
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
+}
+
+function normalizeEmail(emailRaw: unknown, usernameRaw: unknown): string {
+  const email = String(emailRaw ?? "").trim().toLowerCase()
+  if (email) return email
+  const user = String(usernameRaw ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+  return `${user || "usuario"}@local.test`
 }
 
 Deno.serve(async (req: Request) => {
@@ -19,17 +32,11 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const authHeader = req.headers.get("Authorization")
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "No autorizado" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      })
-    }
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? ""
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? ""
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+    const jwtSecret = (Deno.env.get("JWT_SECRET") ?? Deno.env.get("SUPABASE_JWT_SECRET") ?? "")
+      .trim() || undefined
 
     if (!supabaseUrl || !supabaseAnonKey || !serviceKey) {
       return new Response(JSON.stringify({ error: "Faltan variables en el servidor" }), {
@@ -38,35 +45,41 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    })
-
-    const {
-      data: { user },
-      error: userErr,
-    } = await userClient.auth.getUser()
-    if (userErr || !user) {
-      return new Response(JSON.stringify({ error: "Sesión inválida" }), {
-        status: 401,
+    const raw = await req.text()
+    let body: Record<string, unknown> = {}
+    try {
+      if (raw) body = JSON.parse(raw) as Record<string, unknown>
+    } catch {
+      return new Response(JSON.stringify({ error: "JSON inválido" }), {
+        status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       })
     }
 
-    const meta = user.user_metadata ?? {}
-    const isSuper = Boolean(meta.isSuperuser)
-    const rol = String(meta.rol ?? "").toUpperCase()
-    if (!isSuper && rol !== "ADMIN") {
-      return new Response(JSON.stringify({ error: "Sin permiso" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      })
+    const effectiveAuth = pickBearerAuth(req.headers.get("Authorization"), body)
+    const adminAuth = await resolveAdminAuth(
+      supabaseUrl,
+      supabaseAnonKey,
+      effectiveAuth,
+      jwtSecret,
+      corsHeaders,
+    )
+    if (adminAuth instanceof Response) {
+      const errText = await adminAuth.clone().text().catch(() => "")
+      console.error(
+        "[admin-reset-password] auth rechazado",
+        JSON.stringify({
+          status: adminAuth.status,
+          jwtSecretConfigured: Boolean(jwtSecret),
+          hadHeaderAuthorization: Boolean(req.headers.get("Authorization")?.trim()),
+          hadBodyAccessToken: Boolean(String(body?.accessToken ?? "").trim()),
+          effectiveBearerPresent: Boolean(effectiveAuth),
+          responseBodyPreview: errText.slice(0, 400),
+        }),
+      )
+      return adminAuth
     }
 
-    const body = (await req.json()) as {
-      usuarioId?: number
-      newPassword?: string
-    }
     const usuarioId = Number(body?.usuarioId)
     const newPassword = String(body?.newPassword ?? "")
     if (!Number.isFinite(usuarioId) || usuarioId <= 0 || newPassword.length < 4) {
@@ -82,18 +95,18 @@ Deno.serve(async (req: Request) => {
 
     const { data: row, error: rowErr } = await admin
       .from("usuarios")
-      .select("id, email")
+      .select("id, email, username")
       .eq("id", usuarioId)
       .maybeSingle()
 
-    if (rowErr || !row?.email) {
+    if (rowErr || !row) {
       return new Response(JSON.stringify({ error: "Usuario no encontrado" }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       })
     }
 
-    const emailNorm = String(row.email).trim().toLowerCase()
+    const emailNorm = normalizeEmail(row.email, row.username)
     let authUserId: string | null = null
     let page = 1
     const perPage = 200
@@ -121,15 +134,25 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!authUserId) {
+      const newHash = await encodeDjangoPasswordAsync(newPassword)
+      const { error: upDb } = await admin
+        .from("usuarios")
+        .update({ password: newHash })
+        .eq("id", usuarioId)
+      if (upDb) {
+        return new Response(JSON.stringify({ error: upDb.message }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        })
+      }
       return new Response(
         JSON.stringify({
-          error:
-            "No existe usuario en Supabase Auth con el mismo email que en la tabla usuarios",
+          ok: true,
+          mode: "db_password_only",
+          message: "Contraseña actualizada en la tabla usuarios (sin cuenta en Supabase Auth).",
+          item: { usuarioTablaId: row.id },
         }),
-        {
-          status: 404,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
       )
     }
 

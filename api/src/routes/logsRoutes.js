@@ -12,7 +12,7 @@ const defaultLogPath = path.join(__dirname, '..', '..', 'logs', 'app.log')
 
 const router = Router()
 
-router.get('/archivo', requireAuth, requireRoles('ADMIN'), (req, res) => {
+router.get('/archivo', requireAuth, requireRoles('ADMIN', 'CREDITO'), (req, res) => {
   const maxLines = Math.min(
     Math.max(Number.parseInt(String(req.query.lines ?? '200'), 10) || 200, 1),
     2000,
@@ -41,7 +41,7 @@ router.get('/archivo', requireAuth, requireRoles('ADMIN'), (req, res) => {
   }
 })
 
-router.get('/', requireAuth, requireRoles('ADMIN'), async (_req, res, next) => {
+router.get('/', requireAuth, requireRoles('ADMIN', 'CREDITO'), async (_req, res, next) => {
   try {
     const pool = getPool()
     const r = await pool.query(

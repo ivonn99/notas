@@ -1,3 +1,4 @@
+import { getSupabaseAuthMeta } from '../lib/supabaseAuth.js'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
 import { apiUrl } from '../utils/apiUrl.js'
 
@@ -37,22 +38,13 @@ async function request(path, options = {}) {
   return data
 }
 
-function getAuthMeta(authUser) {
-  const meta = authUser?.user_metadata || {}
-  return {
-    rol: String(meta.rol || 'VENDEDOR').toUpperCase(),
-    isSuperuser: Boolean(meta.isSuperuser),
-    usuarioId: meta.usuarioId ?? meta.usuario_id ?? meta.dbUserId ?? null,
-  }
-}
-
 async function getCurrentAuthMeta() {
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser()
-  if (error || !user) throw new Error('Sesión inválida en Supabase')
-  return getAuthMeta(user)
+  const m = await getSupabaseAuthMeta()
+  return {
+    rol: m.rol,
+    isSuperuser: m.isSuperuser,
+    usuarioId: m.usuarioId,
+  }
 }
 
 function normalizeSort(sort) {
@@ -301,7 +293,7 @@ async function fetchSeguimientoListSupabase(params = {}) {
     const { data: rutasByCode, error: rutaErr } = await supabase
       .from('rutas')
       .select('id')
-      .ilike('codigo', `%${ruta}%`)
+      .ilike('codigo', ruta)
     if (rutaErr) throw new Error(rutaErr.message || 'No se pudo filtrar por ruta')
     rutaIdsFiltro = (rutasByCode || []).map((r) => r.id)
     if (rutaIdsFiltro.length === 0) {

@@ -76,6 +76,14 @@ router.post('/login', async (req, res) => {
       return res.status(403).json({ ok: false, error: 'Usuario desactivado' })
     }
 
+    if (row.password == null || String(row.password).trim() === '') {
+      return res.status(401).json({
+        ok: false,
+        error:
+          'Este usuario no tiene contraseña en el servidor. Inicia sesión con la opción Supabase del sistema o pide a un administrador que asigne contraseña (reset).',
+      })
+    }
+
     if (isProbablyLegacyPlaintextPassword(row.password)) {
       console.warn(
         '[auth/login] Campo password sin formato Django (posible texto plano legacy)',

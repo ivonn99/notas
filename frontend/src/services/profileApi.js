@@ -1,6 +1,16 @@
+import { getDbJwtToken, isDbJwtLoginEnabled } from '../lib/dbJwtSession.js'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
 import { getSupabaseAuthMeta } from '../lib/supabaseAuth.js'
 import { http } from './http.js'
+
+function dbChangeOwnPasswordUrl() {
+  const explicit = String(import.meta.env.VITE_SUPABASE_DB_CHANGE_PASSWORD_ENDPOINT || '').trim()
+  if (explicit) return explicit
+  const base = String(import.meta.env.VITE_SUPABASE_URL || '')
+    .trim()
+    .replace(/\/$/, '')
+  return base ? `${base}/functions/v1/db-change-own-password` : ''
+}
 
 export const profileApi = {
   getMe: async () => {
@@ -37,11 +47,55 @@ export const profileApi = {
         body: JSON.stringify({ currentPassword, newPassword }),
       })
     }
+    if (isDbJwtLoginEnabled()) {
+      const token = getDbJwtToken()
+      if (!token) {
+        throw new Error(
+          'No hay sesión JWT guardada. Cierra sesión y entra de nuevo. Si acabas de poner VITE_SUPABASE_DB_LOGIN=true, reinicia el servidor de Vite (npm run dev).',
+        )
+      }
+      const url = dbChangeOwnPasswordUrl()
+      const anon = String(import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim()
+      if (!url || !anon) {
+        throw new Error('Falta VITE_SUPABASE_URL o VITE_SUPABASE_ANON_KEY')
+      }
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: anon,
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          currentPassword,
+          newPassword,
+          accessToken: token,
+        }),
+      })
+      const text = await res.text()
+      let data = {}
+      try {
+        data = JSON.parse(text)
+      } catch {
+        data = { _raw: text.slice(0, 200) }
+      }
+      if (!res.ok) {
+        throw new Error(
+          data.error ||
+            (data._raw ? `HTTP ${res.status}: ${data._raw}` : `Error HTTP ${res.status}`),
+        )
+      }
+      return { ok: true }
+    }
     const {
       data: { user },
       error: userErr,
     } = await supabase.auth.getUser()
-    if (userErr || !user) throw new Error('Sesión inválida')
+    if (userErr || !user) {
+      throw new Error(
+        'No hay sesión de Supabase Auth. Si inicias sesión con la tabla usuarios (db-login), define VITE_SUPABASE_DB_LOGIN=true y reinicia Vite.',
+      )
+    }
     const email = user.email
     if (!email) throw new Error('El usuario no tiene correo para validar contraseña actual')
     const { error: signInErr } = await supabase.auth.signInWithPassword({

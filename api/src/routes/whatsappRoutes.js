@@ -7,7 +7,7 @@ import { whatsappClient } from '../services/whatsappClient.js'
 
 const router = Router()
 
-router.use(requireAuth, requireRoles('ADMIN'))
+router.use(requireAuth, requireRoles('ADMIN', 'CREDITO'))
 
 const EMPRESAS = new Set(['DISTRIBUIDORA', 'RODRIGO'])
 

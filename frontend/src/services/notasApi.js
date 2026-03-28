@@ -1,3 +1,4 @@
+import { getSupabaseAuthMeta } from '../lib/supabaseAuth.js'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
 import { apiUrl } from '../utils/apiUrl.js'
 
@@ -58,13 +59,10 @@ async function fetchNotasCreditoSupabase(params = {}) {
   const hasDias = Number.isFinite(dias) && dias > 0 && dias <= 3650
   const sort = normalizeSort(params.sort)
 
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser()
-  const meta = authUser?.user_metadata || {}
-  const rol = String(meta.rol || 'VENDEDOR').toUpperCase()
-  const isSuperuser = Boolean(meta.isSuperuser)
-  const usuarioId = meta.usuarioId ?? meta.usuario_id ?? meta.dbUserId ?? null
+  const sessionMeta = await getSupabaseAuthMeta()
+  const rol = sessionMeta.rol
+  const isSuperuser = sessionMeta.isSuperuser
+  const usuarioId = sessionMeta.usuarioId
 
   let query = supabase
     .from('notas_credito')

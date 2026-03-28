@@ -444,7 +444,7 @@ export default function WhatsappCobranzaPage() {
             Esta sección está preparada para integrar envío de mensajes de cobranza a vendedores.
           </p>
           <p className="text-body-secondary mb-0 small">
-            Acceso solo ADMIN. Aquí puedes centralizar conexión, plantillas y monitoreo.
+            Acceso ADMIN o CREDITO. Aquí puedes centralizar conexión, plantillas y monitoreo.
           </p>
         </div>
       </div>

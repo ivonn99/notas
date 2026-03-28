@@ -1,4 +1,6 @@
+import { decodeDbJwtPayloadUnsafe, isDbJwtLoginEnabled } from '../lib/dbJwtSession.js'
 import { canAdmin, getSupabaseAuthMeta } from '../lib/supabaseAuth.js'
+import { getEdgeFunctionBearer } from '../lib/supabaseSessionToken.js'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
 import { http } from './http.js'
 
@@ -29,6 +31,16 @@ function adminSyncUsuarioMetadataEndpoint() {
   return supabaseFunctionUrl('admin-sync-usuario-metadata')
 }
 
+/** PostgREST y el gateway de Edge Functions suelen exigir `apikey` (anon) además del JWT del usuario. */
+function supabaseEdgeFunctionHeaders(bearerAccessToken) {
+  const anon = String(import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim()
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${bearerAccessToken}`,
+    ...(anon ? { apikey: anon } : {}),
+  }
+}
+
 function normalizeEmail(emailRaw, usernameRaw) {
   const email = String(emailRaw ?? '').trim().toLowerCase()
   if (email) return email
@@ -40,10 +52,57 @@ function normalizeEmail(emailRaw, usernameRaw) {
   return `${user || 'usuario'}@local.test`
 }
 
+/** Firefox: "NetworkError when attempting to fetch resource"; Chrome: "Failed to fetch". */
+function isBrowserFetchNetworkFailure(err) {
+  const name = err?.name
+  const m = String(err?.message || err)
+  if (name === 'TypeError' && /fetch|network|load failed|failed to fetch/i.test(m)) return true
+  return /networkerror|failed to fetch|network request failed/i.test(m)
+}
+
+/** Columnas legacy Django (NOT NULL): el API Node inserta '' ''; aquí derivamos de nombre completo. */
+function djangoFirstLastFromNombreCompleto(nombreCompletoRaw, usernameFallback) {
+  const s =
+    String(nombreCompletoRaw ?? '').trim() || String(usernameFallback ?? '').trim()
+  const parts = s.split(/\s+/).filter(Boolean)
+  return {
+    first_name: parts[0] || '',
+    last_name: parts.length > 1 ? parts.slice(1).join(' ') : '',
+  }
+}
+
 async function assertAdmin() {
   const meta = await getSupabaseAuthMeta()
   if (!canAdmin(meta)) throw new Error('Sin permiso')
   return meta
+}
+
+/** Sin token completo: iss, exp, rol en metadata (solo depuración). */
+function bearerDebugSummary(token) {
+  if (!token) return { present: false }
+  const pay = decodeDbJwtPayloadUnsafe(token)
+  const expSec = typeof pay?.exp === 'number' ? pay.exp : null
+  let expIso = null
+  let expired = null
+  if (expSec != null) {
+    try {
+      expIso = new Date(expSec * 1000).toISOString()
+      expired = Date.now() / 1000 > expSec
+    } catch {
+      /* ignore */
+    }
+  }
+  const meta = pay?.user_metadata && typeof pay.user_metadata === 'object' ? pay.user_metadata : {}
+  return {
+    present: true,
+    lengthChars: token.length,
+    iss: pay?.iss ?? null,
+    aud: pay?.aud ?? null,
+    expIso,
+    expiredGuess: expired,
+    rolMeta: meta.rol ?? meta.Rol ?? null,
+    isSuperMeta: meta.isSuperuser ?? null,
+  }
 }
 
 async function adminResetPasswordViaSupabase(id, newPassword) {
@@ -56,19 +115,52 @@ async function adminResetPasswordViaSupabase(id, newPassword) {
 
   const endpoint = adminResetPasswordEndpoint()
   if (endpoint) {
-    const { data: sessionData } = await supabase.auth.getSession()
-    const token = sessionData?.session?.access_token
-    if (!token) throw new Error('Sesión inválida para reset de contraseña')
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ usuarioId: uid, newPassword: nextPass }),
-    })
-    const payload = await res.json().catch(() => ({}))
+    const token = await getEdgeFunctionBearer()
+    const anonConfigured = Boolean(String(import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim())
+    const debugBase = {
+      context: 'admin-reset-password',
+      usuarioTablaId: uid,
+      endpoint,
+      dbLoginMode: isDbJwtLoginEnabled(),
+      viteSupabaseUrlSet: Boolean(String(import.meta.env.VITE_SUPABASE_URL || '').trim()),
+      anonKeyConfigured: anonConfigured,
+      bearer: bearerDebugSummary(token),
+    }
+    if (!token) {
+      console.error('[adminApi] admin-reset-password: no hay bearer (getEdgeFunctionBearer vacío)', debugBase)
+      throw new Error('Sesión inválida para reset de contraseña')
+    }
+    let res
+    try {
+      res = await fetch(endpoint, {
+        method: 'POST',
+        headers: supabaseEdgeFunctionHeaders(token),
+        body: JSON.stringify({ usuarioId: uid, newPassword: nextPass, accessToken: token }),
+      })
+    } catch (netErr) {
+      console.error('[adminApi] admin-reset-password: fallo de red al llamar Edge Function', {
+        ...debugBase,
+        networkMessage: netErr?.message,
+        networkName: netErr?.name,
+      })
+      throw netErr
+    }
+    const rawText = await res.text()
+    let payload = {}
+    try {
+      payload = rawText ? JSON.parse(rawText) : {}
+    } catch {
+      const prev =
+        rawText.length > 280 ? `${rawText.slice(0, 280)}…` : rawText || 'Respuesta vacía'
+      payload = { error: prev, _rawParseFailed: true }
+    }
     if (!res.ok) {
+      console.error('[adminApi] admin-reset-password: respuesta HTTP no OK', {
+        ...debugBase,
+        httpStatus: res.status,
+        httpStatusText: res.statusText,
+        responseBody: payload,
+      })
       throw new Error(payload?.error || `Error HTTP ${res.status} al resetear contraseña`)
     }
     return payload
@@ -117,30 +209,38 @@ async function syncAuthEmailIfChanged(uid, beforeRow, nextEmailNormalized) {
     }
   }
 
-  const { data: sessionData } = await supabase.auth.getSession()
-  const token = sessionData?.session?.access_token
+  const token = await getEdgeFunctionBearer()
   if (!token) throw new Error('Sesión inválida para sincronizar email en Auth')
 
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      usuarioId: uid,
-      previousEmail: beforeEmail,
-      newEmail: nextEmailNormalized,
-    }),
-  })
-  const payload = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new Error(payload?.error || `Error HTTP ${res.status} al sincronizar email en Auth`)
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: supabaseEdgeFunctionHeaders(token),
+      body: JSON.stringify({
+        usuarioId: uid,
+        previousEmail: beforeEmail,
+        newEmail: nextEmailNormalized,
+        accessToken: token,
+      }),
+    })
+    const payload = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      throw new Error(payload?.error || `Error HTTP ${res.status} al sincronizar email en Auth`)
+    }
+    if (payload?.skipped && payload?.message) {
+      return { synced: false, skipped: true, message: payload.message }
+    }
+    return { synced: Boolean(payload?.synced) }
+  } catch (e) {
+    if (isBrowserFetchNetworkFailure(e)) {
+      return {
+        synced: false,
+        message:
+          'Email guardado solo en la base; no se pudo contactar admin-sync-user-email (red o función no desplegada). Ajusta VITE_SUPABASE_URL y despliega la función, o sincroniza el correo en Auth manualmente.',
+      }
+    }
+    throw e
   }
-  if (payload?.skipped && payload?.message) {
-    return { synced: false, skipped: true, message: payload.message }
-  }
-  return { synced: Boolean(payload?.synced) }
 }
 
 /**
@@ -157,23 +257,32 @@ async function syncAuthUserMetadataFromDb(usuarioId) {
         'Rol guardado en la base. Define VITE_SUPABASE_URL y despliega la función admin-sync-usuario-metadata para actualizar la sesión en Auth.',
     }
   }
-  const { data: sessionData } = await supabase.auth.getSession()
-  const token = sessionData?.session?.access_token
+  const token = await getEdgeFunctionBearer()
   if (!token) throw new Error('Sesión inválida para sincronizar metadatos en Auth')
 
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ usuarioId }),
-  })
-  const payload = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new Error(payload?.error || `Error HTTP ${res.status} al sincronizar metadatos en Auth`)
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: supabaseEdgeFunctionHeaders(token),
+      body: JSON.stringify({ usuarioId, accessToken: token }),
+    })
+    const payload = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      throw new Error(payload?.error || `Error HTTP ${res.status} al sincronizar metadatos en Auth`)
+    }
+    return payload
+  } catch (e) {
+    if (isBrowserFetchNetworkFailure(e)) {
+      return {
+        synced: false,
+        message:
+          'Los cambios ya están guardados en la base. No se pudo contactar la función admin-sync-usuario-metadata (red, URL de Supabase o función no desplegada). ' +
+          'Revisa VITE_SUPABASE_URL, despliega las Edge Functions y prueba sin VPN o bloqueadores. ' +
+          'El usuario editado verá rol y datos actualizados al volver a iniciar sesión.',
+      }
+    }
+    throw e
   }
-  return payload
 }
 
 export const adminApi = {
@@ -199,15 +308,50 @@ export const adminApi = {
     const email = normalizeEmail(body?.email, username)
     const telefono = String(body?.telefono ?? '').trim()
     const rol = String(body?.rol ?? 'VENDEDOR').trim().toUpperCase()
+    const plainPassword = String(body?.password ?? '').trim()
     if (!username) throw new Error('Username obligatorio')
+    if (isDbJwtLoginEnabled()) {
+      if (!plainPassword || plainPassword.length < 4) {
+        throw new Error('Contraseña obligatoria (mín. 4 caracteres) para login por base de datos')
+      }
+    }
     if (!['ADMIN', 'CREDITO', 'VENDEDOR'].includes(rol)) throw new Error('Rol inválido')
+    const nc = nombreCompleto || username
+    const { first_name, last_name } = djangoFirstLastFromNombreCompleto(nc, username)
     const { data, error } = await supabase
       .from('usuarios')
-      .insert({ username, nombre_completo: nombreCompleto || username, email, telefono: telefono || null, rol, activo: true, is_active: true })
+      .insert({
+        username,
+        nombre_completo: nc,
+        first_name,
+        last_name,
+        email,
+        telefono: telefono || null,
+        rol,
+        activo: true,
+        is_active: true,
+      })
       .select('id, username, nombre_completo, email, telefono, rol, activo, is_active')
       .limit(1)
     if (error) throw new Error(error.message || 'No se pudo crear usuario')
-    return { ok: true, item: data?.[0] || null }
+    const item = data?.[0] || null
+    if (isDbJwtLoginEnabled() && item?.id && plainPassword) {
+      try {
+        await adminResetPasswordViaSupabase(item.id, plainPassword)
+      } catch (e) {
+        console.error('[adminApi] createUsuario: insert OK pero falló guardar hash de contraseña', {
+          usuarioTablaId: item.id,
+          username: item.username,
+          errorMessage: e?.message,
+          errorName: e?.name,
+          ...(import.meta.env.DEV ? { stack: e?.stack } : {}),
+        })
+        throw new Error(
+          `Usuario creado (#${item.id}) pero no se pudo guardar la contraseña: ${e?.message || e}. Usa «Restablecer contraseña».`,
+        )
+      }
+    }
+    return { ok: true, item }
   },
   getUsuario: async (id) => {
     if (!isSupabaseConfigured) return http(`/api/admin/usuarios/${id}`)
@@ -245,9 +389,20 @@ export const adminApi = {
       authEmailSync = await syncAuthEmailIfChanged(uid, before, email)
     }
 
+    const { first_name, last_name } = djangoFirstLastFromNombreCompleto(nombreCompleto, username)
     const { data, error } = await supabase
       .from('usuarios')
-      .update({ username, nombre_completo: nombreCompleto, email, telefono: telefono || null, rol, activo, is_active: isActive })
+      .update({
+        username,
+        nombre_completo: nombreCompleto,
+        first_name,
+        last_name,
+        email,
+        telefono: telefono || null,
+        rol,
+        activo,
+        is_active: isActive,
+      })
       .eq('id', uid)
       .select('id, username, nombre_completo, email, telefono, rol, activo, is_active, is_superuser')
       .limit(1)
@@ -265,7 +420,7 @@ export const adminApi = {
     }
 
     const metadataApplied = Boolean(authMetadataSync?.synced === true || authMetadataSync?.ok === true)
-    if (metadataApplied) {
+    if (metadataApplied && !isDbJwtLoginEnabled()) {
       try {
         const meta = await getSupabaseAuthMeta()
         if (Number(meta.usuarioId) === uid) {

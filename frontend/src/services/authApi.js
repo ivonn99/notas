@@ -1,5 +1,6 @@
+import { clearDbJwtToken, isDbJwtLoginEnabled, setDbJwtToken } from '../lib/dbJwtSession.js'
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient.js'
-import { loginIdentifierToSupabaseEmail } from '../lib/supabaseAuth.js'
+import { getSupabaseAuthMeta, loginIdentifierToSupabaseEmail } from '../lib/supabaseAuth.js'
 
 /** Si la migración resolve_login_email está aplicada, usa el email real de usuarios (ej. mago@dmh.com). */
 async function resolveLoginEmailFromDb(usernameRaw) {
@@ -64,7 +65,61 @@ function loginErrorMessage(status, data) {
   return `Error HTTP ${status} al iniciar sesión`
 }
 
+function dbLoginJwtUrl() {
+  const explicit = String(import.meta.env.VITE_SUPABASE_DB_LOGIN_ENDPOINT || '').trim()
+  if (explicit) return explicit
+  const base = String(import.meta.env.VITE_SUPABASE_URL || '')
+    .trim()
+    .replace(/\/$/, '')
+  return base ? `${base}/functions/v1/db-login-jwt` : ''
+}
+
 export async function authLogin(username, password) {
+  if (isSupabaseConfigured && isDbJwtLoginEnabled()) {
+    const url = dbLoginJwtUrl()
+    const anon = String(import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim()
+    if (!url || !anon) {
+      throw new Error('Falta VITE_SUPABASE_URL o VITE_SUPABASE_ANON_KEY para login por base de datos')
+    }
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: anon,
+        Authorization: `Bearer ${anon}`,
+      },
+      body: JSON.stringify({
+        username: String(username ?? '').trim(),
+        password: String(password ?? ''),
+      }),
+    })
+    const text = await res.text()
+    const data = parseBody(text)
+    if (!res.ok) {
+      const msg =
+        data.error ||
+        data.message ||
+        data.msg ||
+        (data._raw ? `HTTP ${res.status}: ${data._raw}` : null) ||
+        `Error HTTP ${res.status} al iniciar sesión`
+      throw new Error(msg)
+    }
+    if (!data.access_token) throw new Error('Respuesta de login inválida')
+    setDbJwtToken(data.access_token)
+    const u = data.user
+    if (!u) return null
+    return {
+      id: u.id,
+      usuarioId: u.usuarioId ?? u.id,
+      username: u.username,
+      rol: u.rol || 'VENDEDOR',
+      nombreCompleto: u.nombreCompleto ?? null,
+      isSuperuser: Boolean(u.isSuperuser),
+      isStaff: Boolean(u.isStaff),
+      email: u.email ?? null,
+    }
+  }
+
   if (isSupabaseConfigured) {
     const fallback = loginIdentifierToSupabaseEmail(username)
     const resolved = await resolveLoginEmailFromDb(username)
@@ -124,6 +179,11 @@ export async function authLogin(username, password) {
 }
 
 export async function authLogout() {
+  if (isSupabaseConfigured && isDbJwtLoginEnabled()) {
+    clearDbJwtToken()
+    await supabase.auth.signOut().catch(() => {})
+    return
+  }
   if (isSupabaseConfigured) {
     const { error } = await supabase.auth.signOut()
     if (error) throw new Error(error.message || 'No se pudo cerrar sesión')
@@ -134,24 +194,20 @@ export async function authLogout() {
 
 export async function authMe() {
   if (isSupabaseConfigured) {
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser()
-    if (error || !user) return null
-    return {
-      id: user.id,
-      usuarioId:
-        user.user_metadata?.usuarioId ??
-        user.user_metadata?.usuario_id ??
-        user.user_metadata?.dbUserId ??
-        null,
-      username: user.user_metadata?.username || user.email || 'usuario',
-      rol: user.user_metadata?.rol || 'VENDEDOR',
-      nombreCompleto: user.user_metadata?.nombreCompleto || null,
-      isSuperuser: Boolean(user.user_metadata?.isSuperuser),
-      isStaff: Boolean(user.user_metadata?.isStaff),
-      email: user.email || null,
+    try {
+      const m = await getSupabaseAuthMeta()
+      return {
+        id: m.user.id,
+        usuarioId: m.usuarioId,
+        username: m.username,
+        rol: m.rol,
+        nombreCompleto: m.nombreCompleto,
+        isSuperuser: m.isSuperuser,
+        isStaff: Boolean(m.user.user_metadata?.isStaff),
+        email: m.user.email || null,
+      }
+    } catch {
+      return null
     }
   }
 

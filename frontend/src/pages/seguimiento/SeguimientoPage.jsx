@@ -230,10 +230,11 @@ export default function SeguimientoPage() {
               </select>
             </div>
             <div className="col-12 col-md-2">
-              <label className="form-label mb-1">Ruta</label>
+              <label className="form-label mb-1">Ruta (código exacto)</label>
               <input
                 className="form-control"
                 placeholder="Ej: DR201"
+                title="Debe coincidir exactamente con el código de ruta (sin búsqueda parcial)"
                 value={seguimientoFilters.ruta}
                 onChange={(e) => {
                   setSeguimientoFilters({ ruta: e.target.value.toUpperCase() })

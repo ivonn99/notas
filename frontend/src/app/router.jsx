@@ -60,7 +60,7 @@ export const router = createBrowserRouter([
       {
         path: 'importar-reporte',
         element: (
-          <RequireRole roles={['ADMIN']}>
+          <RequireRole roles={['ADMIN', 'CREDITO']}>
             <ImportarReportePage />
           </RequireRole>
         ),
@@ -68,7 +68,7 @@ export const router = createBrowserRouter([
       {
         path: 'historial-importaciones',
         element: (
-          <RequireRole roles={['ADMIN']}>
+          <RequireRole roles={['ADMIN', 'CREDITO']}>
             <HistorialImportacionesPage />
           </RequireRole>
         ),
@@ -76,7 +76,7 @@ export const router = createBrowserRouter([
       {
         path: 'usuarios',
         element: (
-          <RequireRole roles={['ADMIN']}>
+          <RequireRole roles={['ADMIN', 'CREDITO']}>
             <UsuariosPage />
           </RequireRole>
         ),
@@ -84,7 +84,7 @@ export const router = createBrowserRouter([
       {
         path: 'usuarios/editar/:id',
         element: (
-          <RequireRole roles={['ADMIN']}>
+          <RequireRole roles={['ADMIN', 'CREDITO']}>
             <EditarUsuarioPage />
           </RequireRole>
         ),
@@ -92,7 +92,7 @@ export const router = createBrowserRouter([
       {
         path: 'usuarios/asignar-rutas/:id',
         element: (
-          <RequireRole roles={['ADMIN']}>
+          <RequireRole roles={['ADMIN', 'CREDITO']}>
             <AsignarRutasPage />
           </RequireRole>
         ),
@@ -100,7 +100,7 @@ export const router = createBrowserRouter([
       {
         path: 'rutas',
         element: (
-          <RequireRole roles={['ADMIN']}>
+          <RequireRole roles={['ADMIN', 'CREDITO']}>
             <RutasPage />
           </RequireRole>
         ),
@@ -108,7 +108,7 @@ export const router = createBrowserRouter([
       {
         path: 'rutas/sin-asignar-vendedor',
         element: (
-          <RequireRole roles={['ADMIN']}>
+          <RequireRole roles={['ADMIN', 'CREDITO']}>
             <RutasSinAsignarVendedorPage />
           </RequireRole>
         ),
@@ -116,7 +116,7 @@ export const router = createBrowserRouter([
       {
         path: 'rutas/editar/:id',
         element: (
-          <RequireRole roles={['ADMIN']}>
+          <RequireRole roles={['ADMIN', 'CREDITO']}>
             <EditarRutaPage />
           </RequireRole>
         ),
@@ -124,7 +124,7 @@ export const router = createBrowserRouter([
       {
         path: 'rutas/asignar-usuarios/:id',
         element: (
-          <RequireRole roles={['ADMIN']}>
+          <RequireRole roles={['ADMIN', 'CREDITO']}>
             <AsignarUsuariosRutaPage />
           </RequireRole>
         ),
@@ -132,7 +132,7 @@ export const router = createBrowserRouter([
       {
         path: 'parametros',
         element: (
-          <RequireRole roles={['ADMIN']}>
+          <RequireRole roles={['ADMIN', 'CREDITO']}>
             <ParametrosPage />
           </RequireRole>
         ),
@@ -140,7 +140,7 @@ export const router = createBrowserRouter([
       {
         path: 'parametros/editar/:id',
         element: (
-          <RequireRole roles={['ADMIN']}>
+          <RequireRole roles={['ADMIN', 'CREDITO']}>
             <EditarParametroPage />
           </RequireRole>
         ),
@@ -148,7 +148,7 @@ export const router = createBrowserRouter([
       {
         path: 'logs-sistema',
         element: (
-          <RequireRole roles={['ADMIN']}>
+          <RequireRole roles={['ADMIN', 'CREDITO']}>
             <LogsSistemaPage />
           </RequireRole>
         ),
@@ -156,7 +156,7 @@ export const router = createBrowserRouter([
       {
         path: 'whatsapp-cobranza',
         element: (
-          <RequireRole roles={['ADMIN']}>
+          <RequireRole roles={['ADMIN', 'CREDITO']}>
             <WhatsappCobranzaPage />
           </RequireRole>
         ),
@@ -166,7 +166,7 @@ export const router = createBrowserRouter([
       {
         path: 'healthz',
         element: (
-          <RequireRole roles={['ADMIN']}>
+          <RequireRole roles={['ADMIN', 'CREDITO']}>
             <HealthzPage />
           </RequireRole>
         ),

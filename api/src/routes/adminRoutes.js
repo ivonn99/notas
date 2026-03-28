@@ -7,7 +7,7 @@ import { logAudit } from '../services/audit.js'
 
 const router = Router()
 
-router.use(requireAuth, requireRoles('ADMIN'))
+router.use(requireAuth, requireRoles('ADMIN', 'CREDITO'))
 
 function parseId(value) {
   const id = Number.parseInt(String(value ?? ''), 10)
