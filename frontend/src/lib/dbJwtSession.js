@@ -1,7 +1,11 @@
 const STORAGE_KEY = 'notas_db_jwt_access_token'
 
+/** Acepta true / 1 / yes (Vercel u otros paneles a veces guardan mayúsculas o sin comillas). */
 export function isDbJwtLoginEnabled() {
-  return String(import.meta.env.VITE_SUPABASE_DB_LOGIN || '').trim() === 'true'
+  const v = String(import.meta.env.VITE_SUPABASE_DB_LOGIN ?? '')
+    .trim()
+    .toLowerCase()
+  return v === 'true' || v === '1' || v === 'yes'
 }
 
 export function getDbJwtToken() {
