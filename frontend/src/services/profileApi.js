@@ -87,24 +87,8 @@ export const profileApi = {
       }
       return { ok: true }
     }
-    const {
-      data: { user },
-      error: userErr,
-    } = await supabase.auth.getUser()
-    if (userErr || !user) {
-      throw new Error(
-        'No hay sesión de Supabase Auth. Si inicias sesión con la tabla usuarios (db-login), define VITE_SUPABASE_DB_LOGIN=true y reinicia Vite.',
-      )
-    }
-    const email = user.email
-    if (!email) throw new Error('El usuario no tiene correo para validar contraseña actual')
-    const { error: signInErr } = await supabase.auth.signInWithPassword({
-      email,
-      password: currentPassword,
-    })
-    if (signInErr) throw new Error('Contraseña actual incorrecta')
-    const { error: updateErr } = await supabase.auth.updateUser({ password: newPassword })
-    if (updateErr) throw new Error(updateErr.message || 'No se pudo cambiar contraseña')
-    return { ok: true }
+    throw new Error(
+      'Cambio de contraseña: define VITE_SUPABASE_DB_LOGIN=true y usa la Edge Function db-change-own-password (mismo modelo que el login por tabla).',
+    )
   },
 }

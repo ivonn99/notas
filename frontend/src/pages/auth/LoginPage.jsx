@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { BRAND_IMG_DARK, BRAND_IMG_LIGHT } from '../../constants/brand.js'
 import { useAuth } from '../../contexts/AuthContext.jsx'
+import { isDbJwtLoginEnabled } from '../../lib/dbJwtSession.js'
 import { isSupabaseConfigured } from '../../lib/supabaseClient.js'
 
 export default function LoginPage() {
@@ -51,12 +52,13 @@ export default function LoginPage() {
     setSending(true)
     const u = username.trim()
     if (import.meta.env.DEV) {
-      console.info(
-        isSupabaseConfigured
-          ? '[login] Supabase Auth (signInWithPassword)'
-          : '[login] API (POST /api/auth/login, cookie JWT)',
-        { usuario: u, longitudClave: password.length },
-      )
+      const modo =
+        isSupabaseConfigured && isDbJwtLoginEnabled()
+          ? '[login] db-login-jwt (tabla usuarios)'
+          : isSupabaseConfigured
+            ? '[login] Supabase sin DB_LOGIN (config errónea)'
+            : '[login] API Node (cookie JWT)'
+      console.info(modo, { usuario: u, longitudClave: password.length })
     }
     try {
       await login(u, password)

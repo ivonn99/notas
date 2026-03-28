@@ -1,17 +1,6 @@
 import { clearDbJwtToken, isDbJwtLoginEnabled, setDbJwtToken } from '../lib/dbJwtSession.js'
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient.js'
-import { getSupabaseAuthMeta, loginIdentifierToSupabaseEmail } from '../lib/supabaseAuth.js'
-
-/** Si la migración resolve_login_email está aplicada, usa el email real de usuarios (ej. mago@dmh.com). */
-async function resolveLoginEmailFromDb(usernameRaw) {
-  const s = String(usernameRaw ?? '').trim()
-  if (!s || s.includes('@')) return null
-  const { data, error } = await supabase.rpc('resolve_login_email', {
-    p_username: s,
-  })
-  if (error || data == null || String(data).trim() === '') return null
-  return String(data).trim().toLowerCase()
-}
+import { getSupabaseAuthMeta } from '../lib/supabaseAuth.js'
 import { apiUrl } from '../utils/apiUrl.js'
 
 const jsonHeaders = { 'Content-Type': 'application/json' }
@@ -121,47 +110,10 @@ export async function authLogin(username, password) {
   }
 
   if (isSupabaseConfigured) {
-    const fallback = loginIdentifierToSupabaseEmail(username)
-    const resolved = await resolveLoginEmailFromDb(username)
-    const email = resolved || fallback
-    if (!email) {
-      throw new Error('Indica usuario o correo')
-    }
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
-    if (error) {
-      const raw = String(error.message || '').toLowerCase()
-      const invalid =
-        raw.includes('invalid login') ||
-        raw.includes('invalid_credentials') ||
-        raw.includes('invalid grant')
-      if (invalid) {
-        throw new Error(
-          'Usuario o contraseña incorrectos, o el usuario no está en Supabase Auth. ' +
-            `(Email usado: ${email}). Sincroniza: api → npm run sync:supabase-auth -- "TuContraseña". ` +
-            'O entra con el correo completo si no es …@local.test.',
-        )
-      }
-      throw new Error(error.message || 'No se pudo iniciar sesión en Supabase')
-    }
-    const user = data?.user || null
-    if (!user) return null
-    return {
-      id: user.id,
-      usuarioId:
-        user.user_metadata?.usuarioId ??
-        user.user_metadata?.usuario_id ??
-        user.user_metadata?.dbUserId ??
-        null,
-      username: user.user_metadata?.username || user.email || email,
-      rol: user.user_metadata?.rol || 'VENDEDOR',
-      nombreCompleto: user.user_metadata?.nombreCompleto || null,
-      isSuperuser: Boolean(user.user_metadata?.isSuperuser),
-      isStaff: Boolean(user.user_metadata?.isStaff),
-      email: user.email || null,
-    }
+    throw new Error(
+      'Este proyecto usa solo login por tabla `usuarios` (Edge Function db-login-jwt). ' +
+        'En .env y en el hosting define VITE_SUPABASE_DB_LOGIN=true, reinicia el build del front y despliega la función db-login-jwt con JWT_SECRET en secrets.',
+    )
   }
 
   const res = await fetch(apiUrl('/api/auth/login'), {
@@ -179,14 +131,9 @@ export async function authLogin(username, password) {
 }
 
 export async function authLogout() {
-  if (isSupabaseConfigured && isDbJwtLoginEnabled()) {
+  if (isSupabaseConfigured) {
     clearDbJwtToken()
     await supabase.auth.signOut().catch(() => {})
-    return
-  }
-  if (isSupabaseConfigured) {
-    const { error } = await supabase.auth.signOut()
-    if (error) throw new Error(error.message || 'No se pudo cerrar sesión')
     return
   }
   await fetch(apiUrl('/api/auth/logout'), { method: 'POST', credentials: 'include' })
