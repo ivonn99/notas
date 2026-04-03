@@ -1,6 +1,8 @@
 import { fetchCarteraReporte } from '../../services/reportesApi.js'
 import { estadoBadgeClass } from '../../utils/estadoBadge.js'
+import { ROUTES } from '../../constants/routes.js'
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 
 const REPORTES_STORAGE_KEY = 'reporte_cartera_filtros_v1'
 
@@ -77,6 +79,134 @@ function fmtDate(value) {
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return '—'
   return d.toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
+function ReporteDetalleCardMovil({ row }) {
+  return (
+    <div className="card border shadow-sm">
+      <div className="card-body py-3">
+        <div className="d-flex justify-content-between align-items-start gap-2 mb-2">
+          <div className="min-w-0">
+            <div className="fw-semibold text-truncate">{row.serie_folio || '—'}</div>
+            <div className="small text-body-secondary">ID {row.id}</div>
+          </div>
+          <Link
+            className="btn btn-sm btn-outline-primary flex-shrink-0"
+            to={ROUTES.detalleNota(String(row.id))}
+          >
+            Ver nota
+          </Link>
+        </div>
+        <dl className="row small mb-0 gx-2">
+          <dt className="col-5 text-body-secondary">Cliente</dt>
+          <dd className="col-7 mb-1 text-break">{row.cliente || '—'}</dd>
+          <dt className="col-5 text-body-secondary">Ruta</dt>
+          <dd className="col-7 mb-1">{row.ruta_codigo || '—'}</dd>
+          <dt className="col-5 text-body-secondary">Vendedor</dt>
+          <dd className="col-7 mb-1">{row.usuario_vendedor_pv || row.vendedor_username || '—'}</dd>
+          <dt className="col-5 text-body-secondary">Días</dt>
+          <dd className="col-7 mb-1 text-end">{row.dias ?? '—'}</dd>
+          <dt className="col-5 text-body-secondary">Monto</dt>
+          <dd className="col-7 mb-1 text-end">{money(row.monto)}</dd>
+          <dt className="col-5 text-body-secondary">Abono</dt>
+          <dd className="col-7 mb-1 text-end">{money(row.abono)}</dd>
+          <dt className="col-5 text-body-secondary">Saldo</dt>
+          <dd className="col-7 mb-1 text-end fw-medium">{money(row.saldo)}</dd>
+          <dt className="col-5 text-body-secondary">Estado</dt>
+          <dd className="col-7 mb-1">
+            <span className={`badge ${estadoBadgeClass(row.estado)}`}>{row.estado || '—'}</span>
+          </dd>
+          <dt className="col-5 text-body-secondary">Fecha nota</dt>
+          <dd className="col-7 mb-0">{fmtDate(row.fecha_nota)}</dd>
+        </dl>
+      </div>
+    </div>
+  )
+}
+
+function ReporteAntiguedadFilaCardMovil({ r, labels }) {
+  return (
+    <div className="card border shadow-sm">
+      <div className="card-body py-2">
+        <div className="fw-medium">{labels[r.bucket_id] || r.bucket_id}</div>
+        <div className="d-flex justify-content-between small mt-2">
+          <span className="text-body-secondary">Notas</span>
+          <span>{r.notas?.toLocaleString?.('es-MX') ?? r.notas}</span>
+        </div>
+        <div className="d-flex justify-content-between small">
+          <span className="text-body-secondary">Saldo</span>
+          <span className="fw-medium">{money(r.saldo_total)}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ReporteRutaIndicadorCardMovil({ r }) {
+  return (
+    <div className="card border shadow-sm">
+      <div className="card-body py-2">
+        <div className="fw-medium mb-2">{r.ruta_codigo}</div>
+        <div className="d-flex justify-content-between small">
+          <span className="text-body-secondary">Notas</span>
+          <span>{r.notas?.toLocaleString?.('es-MX') ?? r.notas}</span>
+        </div>
+        <div className="d-flex justify-content-between small">
+          <span className="text-body-secondary">Saldo</span>
+          <span className="fw-medium">{money(r.saldo_total)}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ReporteRutaTablasCardMovil({ r }) {
+  return (
+    <div className="card border shadow-sm">
+      <div className="card-body py-2">
+        <div className="fw-medium mb-2">{r.ruta_codigo}</div>
+        <dl className="row small mb-0 gx-2">
+          <dt className="col-6 text-body-secondary">Notas</dt>
+          <dd className="col-6 text-end mb-1">{r.notas?.toLocaleString?.('es-MX') ?? r.notas}</dd>
+          <dt className="col-6 text-body-secondary">Saldo</dt>
+          <dd className="col-6 text-end mb-1 fw-medium">{money(r.saldo_total)}</dd>
+          <dt className="col-6 text-body-secondary">Monto</dt>
+          <dd className="col-6 text-end mb-1">{money(r.monto_total)}</dd>
+          <dt className="col-6 text-body-secondary">Abonos</dt>
+          <dd className="col-6 text-end mb-0">{money(r.abono_total)}</dd>
+        </dl>
+      </div>
+    </div>
+  )
+}
+
+function ReporteResumenRutaCardMovil({ ruta, bucketOrder, resumenMatrix, resumenIdx, labels }) {
+  const totalRuta = bucketOrder.reduce(
+    (acc, bucketId) => acc + (resumenMatrix[resumenIdx[bucketId]]?.byRuta?.[ruta]?.saldo || 0),
+    0,
+  )
+  return (
+    <div className="card border shadow-sm">
+      <div className="card-body py-3">
+        <div className="fw-semibold mb-2">{ruta}</div>
+        {bucketOrder.map((bucketId) => {
+          const saldo = resumenMatrix[resumenIdx[bucketId]]?.byRuta?.[ruta]?.saldo || 0
+          const notas = resumenMatrix[resumenIdx[bucketId]]?.byRuta?.[ruta]?.notas || 0
+          if (notas <= 0) return null
+          return (
+            <div key={bucketId} className="d-flex justify-content-between small mb-1 gap-2">
+              <span className="text-body-secondary text-break">{labels[bucketId] || bucketId}</span>
+              <span className="text-nowrap">{money(saldo)}</span>
+            </div>
+          )
+        })}
+        <div className="d-flex justify-content-between border-top pt-2 mt-2 small fw-semibold">
+          <span>Total ruta</span>
+          <span>{money(totalRuta)}</span>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export default function ReportePage() {
@@ -500,7 +630,7 @@ export default function ReportePage() {
             <div className="card h-100">
               <div className="card-header">Antiguedad de cartera</div>
               <div className="card-body p-0">
-                <div className="table-responsive">
+                <div className="d-none d-md-block table-responsive">
                   <table className="table table-sm table-bordered mb-0">
                     <thead className="table-light">
                       <tr>
@@ -534,6 +664,19 @@ export default function ReportePage() {
                     </tbody>
                   </table>
                 </div>
+                <div className="d-md-none p-2 p-sm-3">
+                  {loading ? (
+                    <p className="text-center text-body-secondary py-4 mb-0">Cargando…</p>
+                  ) : porAntiguedad.length === 0 ? (
+                    <p className="text-center text-body-secondary py-4 mb-0">Sin datos.</p>
+                  ) : (
+                    <div className="d-flex flex-column gap-2">
+                      {porAntiguedad.map((r) => (
+                        <ReporteAntiguedadFilaCardMovil key={r.bucket_id} r={r} labels={BUCKET_LABELS} />
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -541,7 +684,7 @@ export default function ReportePage() {
             <div className="card h-100">
               <div className="card-header">Top rutas por saldo pendiente</div>
               <div className="card-body p-0">
-                <div className="table-responsive">
+                <div className="d-none d-md-block table-responsive">
                   <table className="table table-sm table-striped mb-0">
                     <thead className="table-light">
                       <tr>
@@ -574,6 +717,19 @@ export default function ReportePage() {
                       )}
                     </tbody>
                   </table>
+                </div>
+                <div className="d-md-none p-2 p-sm-3">
+                  {loading ? (
+                    <p className="text-center text-body-secondary py-4 mb-0">Cargando…</p>
+                  ) : porRuta.length === 0 ? (
+                    <p className="text-center text-body-secondary py-4 mb-0">Sin datos.</p>
+                  ) : (
+                    <div className="d-flex flex-column gap-2">
+                      {porRuta.slice(0, 15).map((r) => (
+                        <ReporteRutaIndicadorCardMovil key={r.ruta_codigo} r={r} />
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -611,7 +767,7 @@ export default function ReportePage() {
         <>
         <div className="card">
           <div className="card-body p-0">
-            <div className="table-responsive" style={{ maxHeight: '70vh' }}>
+            <div className="d-none d-md-block table-responsive" style={{ maxHeight: '70vh' }}>
               <table className="table table-sm table-hover align-middle mb-0">
                 <thead className="table-light sticky-top">
                   <tr>
@@ -665,6 +821,21 @@ export default function ReportePage() {
                 </tbody>
               </table>
             </div>
+            <div className="d-md-none p-2 p-sm-3" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+              {loading ? (
+                <p className="text-center text-body-secondary py-4 mb-0">Cargando…</p>
+              ) : items.length === 0 ? (
+                <p className="text-center text-body-secondary py-4 mb-0">
+                  Sin registros con los filtros actuales.
+                </p>
+              ) : (
+                <div className="d-flex flex-column gap-2">
+                  {items.map((row) => (
+                    <ReporteDetalleCardMovil key={row.id} row={row} />
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
         </>
@@ -706,7 +877,7 @@ export default function ReportePage() {
       {subVista === 'rutas' ? (
         <div className="card">
           <div className="card-body p-0">
-            <div className="table-responsive">
+            <div className="d-none d-md-block table-responsive">
               <table className="table table-sm table-striped mb-0">
                 <thead className="table-light">
                   <tr>
@@ -744,6 +915,19 @@ export default function ReportePage() {
                 </tbody>
               </table>
             </div>
+            <div className="d-md-none p-2 p-sm-3">
+              {loading ? (
+                <p className="text-center text-body-secondary py-4 mb-0">Cargando…</p>
+              ) : porRuta.length === 0 ? (
+                <p className="text-center text-body-secondary py-4 mb-0">Sin datos.</p>
+              ) : (
+                <div className="d-flex flex-column gap-2">
+                  {porRuta.map((r) => (
+                    <ReporteRutaTablasCardMovil key={r.ruta_codigo} r={r} />
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       ) : null}
@@ -751,7 +935,7 @@ export default function ReportePage() {
       {subVista === 'pivot' ? (
         <div className="card">
           <div className="card-body p-0">
-            <div className="table-responsive">
+            <div className="d-none d-md-block table-responsive">
               <table className="table table-sm table-bordered mb-0">
                 <thead className="table-light">
                   <tr>
@@ -784,6 +968,19 @@ export default function ReportePage() {
                   )}
                 </tbody>
               </table>
+            </div>
+            <div className="d-md-none p-2 p-sm-3">
+              {loading ? (
+                <p className="text-center text-body-secondary py-4 mb-0">Cargando…</p>
+              ) : porAntiguedad.length === 0 ? (
+                <p className="text-center text-body-secondary py-4 mb-0">Sin datos.</p>
+              ) : (
+                <div className="d-flex flex-column gap-2">
+                  {porAntiguedad.map((r) => (
+                    <ReporteAntiguedadFilaCardMovil key={r.bucket_id} r={r} labels={BUCKET_LABELS} />
+                  ))}
+                </div>
+              )}
             </div>
             <p className="small text-body-secondary mb-0 px-3 py-2">
               Distribución según los mismos filtros activos (incluido el chip de antigüedad si aplica).
@@ -822,7 +1019,7 @@ export default function ReportePage() {
             </div>
           </div>
           <div className="card-body p-0">
-            <div className="table-responsive">
+            <div className="d-none d-md-block table-responsive">
               <table className="table table-sm table-bordered mb-0">
                 <thead className="table-light">
                   <tr>
@@ -884,6 +1081,47 @@ export default function ReportePage() {
                   ) : null}
                 </tbody>
               </table>
+            </div>
+            <div className="d-md-none p-2 p-sm-3">
+              {loading ? (
+                <p className="text-center text-body-secondary py-4 mb-0">Cargando…</p>
+              ) : resumenMatrix.length === 0 ? (
+                <p className="text-center text-body-secondary py-4 mb-0">Sin datos.</p>
+              ) : (
+                <>
+                  <div className="d-flex flex-column gap-2">
+                    {sortedRutasColumns.map((ruta) => (
+                      <ReporteResumenRutaCardMovil
+                        key={ruta}
+                        ruta={ruta}
+                        bucketOrder={bucketOrder}
+                        resumenMatrix={resumenMatrix}
+                        resumenIdx={resumenIdx}
+                        labels={BUCKET_LABELS}
+                      />
+                    ))}
+                  </div>
+                  <div className="card border shadow-sm mt-2 bg-light">
+                    <div className="card-body py-3">
+                      <div className="fw-semibold mb-2">Suma total (por tramo)</div>
+                      {bucketOrder.map((bucketId) => (
+                        <div key={bucketId} className="d-flex justify-content-between small mb-1 gap-2">
+                          <span className="text-body-secondary text-break">
+                            {BUCKET_LABELS[bucketId] || bucketId}
+                          </span>
+                          <span className="text-nowrap fw-medium">
+                            {money(resumenMatrix[resumenIdx[bucketId]]?.totalSaldo || 0)}
+                          </span>
+                        </div>
+                      ))}
+                      <div className="d-flex justify-content-between border-top pt-2 mt-2 fw-semibold small">
+                        <span>Total general</span>
+                        <span>{money(granTotalSaldo)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
             <p className="small text-body-secondary mb-0 px-3 py-2">
               Matriz transpuesta: rutas en filas y rangos de tiempo en columnas, usando los filtros actuales.

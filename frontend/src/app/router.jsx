@@ -25,6 +25,7 @@ import LogsSistemaPage from '../pages/admin/LogsSistemaPage.jsx'
 import WhatsappCobranzaPage from '../pages/admin/WhatsappCobranzaPage.jsx'
 import PerfilPage from '../pages/cuenta/PerfilPage.jsx'
 import NotificacionesPage from '../pages/cuenta/NotificacionesPage.jsx'
+import EnlacesImagenesPage from '../pages/herramientas/EnlacesImagenesPage.jsx'
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -39,6 +40,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <PaginaPrincipalPage /> },
       { path: 'notas-credito', element: <TodasLasNotasPage /> },
+      { path: 'enlaces-imagenes', element: <EnlacesImagenesPage /> },
       {
         path: 'alertas',
         element: (

@@ -5,13 +5,9 @@ import 'sweetalert2/dist/sweetalert2.min.css'
 import './index.css'
 
 const savedTheme = localStorage.getItem('nc_theme')
-if (savedTheme === 'dark') {
-  document.documentElement.setAttribute('data-theme', 'dark')
-  document.documentElement.setAttribute('data-bs-theme', 'dark')
-} else {
-  document.documentElement.setAttribute('data-theme', 'light')
-  document.documentElement.setAttribute('data-bs-theme', 'light')
-}
+const initialTheme = savedTheme === 'light' ? 'light' : 'dark'
+document.documentElement.setAttribute('data-theme', initialTheme)
+document.documentElement.setAttribute('data-bs-theme', initialTheme)
 import App from './App.jsx'
 import { AuthProvider } from './contexts/AuthContext.jsx'
 

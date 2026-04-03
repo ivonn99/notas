@@ -19,6 +19,87 @@ function progresoPct(i) {
   return Math.max(0, Math.min(100, Math.round((done / total) * 100)))
 }
 
+function ImportacionHistorialCardMovil({ i, setSelectedObs, setError }) {
+  const pct = progresoPct(i)
+  const empresas =
+    Array.isArray(i.empresas_importadas) && i.empresas_importadas.length > 0
+      ? i.empresas_importadas.join(', ')
+      : '—'
+  const showErrores = ['PARCIAL', 'FALLIDA'].includes(String(i.estado || '').toUpperCase())
+  return (
+    <div className="card border shadow-sm">
+      <div className="card-body py-3">
+        <div className="d-flex justify-content-between align-items-start gap-2 mb-2">
+          <div>
+            <div className="fw-semibold">#{i.id}</div>
+            <div className="small text-body-secondary">
+              {i.created_at ? new Date(i.created_at).toLocaleString() : '—'}
+            </div>
+          </div>
+          <span className={`badge ${estadoBadgeClass(i.estado)}`}>{i.estado || '—'}</span>
+        </div>
+        <div className="small mb-2 text-break">{i.nombre_archivo || '—'}</div>
+        <div className="small text-body-secondary mb-2">Empresa(s): {empresas}</div>
+        <div className="d-flex align-items-center gap-2 mb-2">
+          <div className="progress flex-grow-1" style={{ height: '0.5rem' }}>
+            <div className="progress-bar" style={{ width: `${pct}%` }} />
+          </div>
+          <small className="text-body-secondary">{pct}%</small>
+        </div>
+        <dl className="row small mb-3 gx-2">
+          <dt className="col-6 text-body-secondary">Total</dt>
+          <dd className="col-6 text-end mb-1">{i.total_registros ?? 0}</dd>
+          <dt className="col-6 text-body-secondary">Nuevos</dt>
+          <dd className="col-6 text-end mb-1">{i.registros_nuevos ?? 0}</dd>
+          <dt className="col-6 text-body-secondary">Actualizados</dt>
+          <dd className="col-6 text-end mb-1">{i.registros_actualizados ?? 0}</dd>
+          <dt className="col-6 text-body-secondary">Resueltos</dt>
+          <dd className="col-6 text-end mb-1">{i.registros_resueltos ?? 0}</dd>
+          <dt className="col-12 text-body-secondary mb-1">Observaciones</dt>
+          <dd className="col-12 mb-0 small text-break">{i.observaciones || '—'}</dd>
+        </dl>
+        {showErrores ? (
+          <div className="d-flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-danger"
+              onClick={() =>
+                setSelectedObs({
+                  id: i.id,
+                  estado: i.estado,
+                  observaciones: i.observaciones || '(sin observaciones)',
+                })
+              }
+            >
+              Ver errores
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary"
+              onClick={async () => {
+                try {
+                  const txt = await importacionesApi.downloadErroresTxt(i.id)
+                  const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = `errores_importacion_${i.id}.txt`
+                  a.click()
+                  URL.revokeObjectURL(url)
+                } catch (e) {
+                  setError(e?.message || 'No se pudo descargar errores')
+                }
+              }}
+            >
+              Descargar
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 export default function HistorialImportacionesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -76,7 +157,7 @@ export default function HistorialImportacionesPage() {
       ) : null}
       {error ? <div className="alert alert-warning">{error}</div> : null}
       <div className="card">
-        <div className="table-responsive">
+        <div className="d-none d-md-block table-responsive">
           <table className="table table-sm table-hover align-middle mb-0">
             <thead className="table-light">
               <tr>
@@ -187,6 +268,24 @@ export default function HistorialImportacionesPage() {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="d-md-none p-2 p-sm-3">
+          {loading ? (
+            <p className="text-center text-body-secondary py-4 mb-0">Cargando...</p>
+          ) : items.length ? (
+            <div className="d-flex flex-column gap-2">
+              {items.map((i) => (
+                <ImportacionHistorialCardMovil
+                  key={i.id}
+                  i={i}
+                  setSelectedObs={setSelectedObs}
+                  setError={setError}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="text-center text-body-secondary py-4 mb-0">Sin importaciones</p>
+          )}
         </div>
       </div>
 

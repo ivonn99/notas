@@ -10,6 +10,7 @@ import {
   FaFileLines,
   FaHeartPulse,
   FaHouse,
+  FaImage,
   FaMoon,
   FaRoad,
   FaRightFromBracket,
@@ -244,6 +245,12 @@ export default function MainLayout() {
               <FaFileInvoiceDollar size={18} />
             </NavIcon>
             <span className="sidebar-nav-label">Notas de crédito</span>
+          </NavLink>
+          <NavLink to={ROUTES.enlacesImagenes} className={navLinkClass} title="Enlaces imágenes">
+            <NavIcon>
+              <FaImage size={18} />
+            </NavIcon>
+            <span className="sidebar-nav-label">Enlaces imágenes</span>
           </NavLink>
           {canSeguimiento ? (
             <NavLink to={ROUTES.seguimiento} className={navLinkClass} title="Seguimiento">

@@ -19,6 +19,40 @@ function IconBtn({ as: Comp = 'button', children, label, className = '', ...prop
   )
 }
 
+function RutaCardMovil({ r, eliminarRuta }) {
+  return (
+    <div className="card border shadow-sm">
+      <div className="card-body py-3">
+        <div className="d-flex justify-content-between align-items-start gap-2 mb-2">
+          <div>
+            <div className="fw-semibold">{r.codigo}</div>
+            <div className="small text-body-secondary">ID {r.id}</div>
+          </div>
+          <span className="badge text-bg-secondary">{r.activa ? 'Activa' : 'Inactiva'}</span>
+        </div>
+        <div className="small mb-2">{r.nombre || '—'}</div>
+        <div className="small text-body-secondary mb-3">Rutas enlazadas: {r.rutas_enlazadas ?? 0}</div>
+        <div className="d-flex flex-wrap align-items-center gap-1">
+          <IconBtn as={Link} to={ROUTES.editarRuta(r.id)} label="Editar ruta" className="btn-outline-primary">
+            <BsPencilSquare className="fs-5" aria-hidden />
+          </IconBtn>
+          <IconBtn
+            as={Link}
+            to={ROUTES.asignarUsuariosRuta(r.id)}
+            label="Enlazar usuarios"
+            className="btn-outline-secondary"
+          >
+            <BsPeople className="fs-5" aria-hidden />
+          </IconBtn>
+          <IconBtn label="Eliminar ruta" className="btn-outline-danger" onClick={() => eliminarRuta(r)}>
+            <BsTrash3 className="fs-5" aria-hidden />
+          </IconBtn>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function RutasPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -152,7 +186,7 @@ export default function RutasPage() {
       </div>
 
       <div className="card">
-        <div className="table-responsive">
+        <div className="d-none d-md-block table-responsive">
           <table className="table table-sm table-hover align-middle mb-0">
             <thead className="table-light">
               <tr>
@@ -217,6 +251,19 @@ export default function RutasPage() {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="d-md-none p-2 p-sm-3">
+          {loading ? (
+            <p className="text-center text-body-secondary py-4 mb-0">Cargando...</p>
+          ) : items.length ? (
+            <div className="d-flex flex-column gap-2">
+              {items.map((r) => (
+                <RutaCardMovil key={r.id} r={r} eliminarRuta={eliminarRuta} />
+              ))}
+            </div>
+          ) : (
+            <p className="text-center text-body-secondary py-4 mb-0">Sin datos</p>
+          )}
         </div>
       </div>
     </section>

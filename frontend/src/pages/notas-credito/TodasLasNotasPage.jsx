@@ -57,6 +57,59 @@ function mergeCachedPages(entry, upToPage) {
   return merged
 }
 
+function NotaCreditoCardMovil({ n }) {
+  return (
+    <div className="card border shadow-sm">
+      <div className="card-body py-3">
+        <div className="d-flex justify-content-between align-items-start gap-2 mb-2">
+          <div className="min-w-0">
+            <div className="fw-semibold text-truncate" title={n.serie_folio || ''}>
+              {n.serie_folio || '—'}
+            </div>
+            <div className="small text-body-secondary">ID {n.id}</div>
+          </div>
+          <Link
+            className="btn btn-sm btn-outline-primary flex-shrink-0"
+            to={ROUTES.detalleNota(String(n.id))}
+          >
+            Ver detalle
+          </Link>
+        </div>
+        <dl className="row small mb-0 gx-2">
+          <dt className="col-5 text-body-secondary">Cliente</dt>
+          <dd className="col-7 mb-1 text-break">{n.cliente || '—'}</dd>
+          <dt className="col-5 text-body-secondary">Empresa</dt>
+          <dd className="col-7 mb-1">{n.empresa || '—'}</dd>
+          <dt className="col-5 text-body-secondary">Ruta</dt>
+          <dd className="col-7 mb-1">{n.ruta_codigo || '—'}</dd>
+          <dt className="col-5 text-body-secondary">Fecha nota</dt>
+          <dd className="col-7 mb-1">{formatFechaNota(n.fecha_nota)}</dd>
+          <dt className="col-5 text-body-secondary">Monto</dt>
+          <dd className="col-7 mb-1 text-end">{money(n.monto)}</dd>
+          <dt className="col-5 text-body-secondary">Abono</dt>
+          <dd className="col-7 mb-1 text-end">{money(n.abono)}</dd>
+          <dt className="col-5 text-body-secondary">Saldo</dt>
+          <dd className="col-7 mb-1 text-end fw-medium">{money(n.saldo)}</dd>
+          <dt className="col-5 text-body-secondary">Estado</dt>
+          <dd className="col-7 mb-1">
+            <span className={`badge ${estadoBadgeClass(n.estado)}`}>{n.estado || '—'}</span>
+            {n.requiere_atencion ? (
+              <span className="badge text-bg-warning ms-1">Atención</span>
+            ) : null}
+            {n.resuelta_automaticamente ? (
+              <span className="badge text-bg-info ms-1" title="Marcada RESUELTA por importación">
+                Auto
+              </span>
+            ) : null}
+          </dd>
+          <dt className="col-5 text-body-secondary">Vendedor</dt>
+          <dd className="col-7 mb-0 small">{n.vendedor_username || n.usuario_vendedor_pv || '—'}</dd>
+        </dl>
+      </div>
+    </div>
+  )
+}
+
 export default function TodasLasNotasPage() {
   const notasFilters = useListFiltersStore((s) => s.notas)
   const setNotasFilters = useListFiltersStore((s) => s.setNotasFilters)
@@ -263,7 +316,7 @@ export default function TodasLasNotasPage() {
       ) : null}
 
       <div className="card">
-        <div className="table-responsive">
+        <div className="d-none d-md-block table-responsive">
           <table className="table table-sm table-hover align-middle mb-0">
             <thead className="table-light">
               <tr>
@@ -333,6 +386,19 @@ export default function TodasLasNotasPage() {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="d-md-none p-2 p-sm-3">
+          {loading && shown === 0 ? (
+            <p className="text-center text-body-secondary py-4 mb-0">Cargando…</p>
+          ) : items.length ? (
+            <div className="d-flex flex-column gap-2">
+              {items.map((n) => (
+                <NotaCreditoCardMovil key={n.id} n={n} />
+              ))}
+            </div>
+          ) : (
+            <p className="text-center text-body-secondary py-4 mb-0">Sin resultados</p>
+          )}
         </div>
         <div className="card-footer d-flex flex-column flex-md-row gap-2 justify-content-between align-items-stretch align-items-md-center">
           <span className="small text-body-secondary">

@@ -28,6 +28,70 @@ function IconButton({ as: Comp = 'button', children, label, className = '', ...p
   )
 }
 
+function UsuarioCardMovil({ u, myId, authUser, resetPassword, desactivar, eliminarPermanente }) {
+  const esMiUsuario = myId != null && Number(u.id) === Number(myId)
+  const superProtegido = u.is_superuser && !authUser?.isSuperuser
+  return (
+    <div className="card border shadow-sm">
+      <div className="card-body py-3">
+        <div className="fw-semibold mb-1">{u.username}</div>
+        <div className="small text-body-secondary mb-2">ID {u.id}</div>
+        <dl className="row small mb-3 gx-2">
+          <dt className="col-5 text-body-secondary">Nombre</dt>
+          <dd className="col-7 mb-1 text-break">{u.nombre_completo || '—'}</dd>
+          <dt className="col-5 text-body-secondary">Teléfono</dt>
+          <dd className="col-7 mb-1">{u.telefono || '—'}</dd>
+          <dt className="col-5 text-body-secondary">Rutas</dt>
+          <dd className="col-7 mb-1">{u.rutas_enlazadas ?? 0}</dd>
+          <dt className="col-5 text-body-secondary">Rol</dt>
+          <dd className="col-7 mb-1">{u.rol || '—'}</dd>
+          <dt className="col-5 text-body-secondary">Activo</dt>
+          <dd className="col-7 mb-0">{u.activo && u.is_active ? 'Sí' : 'No'}</dd>
+        </dl>
+        <div className="d-flex flex-wrap align-items-center gap-1">
+          <IconButton
+            as={Link}
+            to={ROUTES.editarUsuario(u.id)}
+            label="Editar usuario"
+            className="btn-outline-primary"
+          >
+            <BsPencilSquare className="fs-5" aria-hidden />
+          </IconButton>
+          <IconButton
+            as={Link}
+            to={ROUTES.asignarRutas(u.id)}
+            label="Asignar rutas"
+            className="btn-outline-secondary"
+          >
+            <BsSignpost2 className="fs-5" aria-hidden />
+          </IconButton>
+          <IconButton label="Restablecer contraseña" className="btn-outline-warning" onClick={() => resetPassword(u.id)}>
+            <BsKeyFill className="fs-5" aria-hidden />
+          </IconButton>
+          {!esMiUsuario ? (
+            <IconButton
+              label="Desactivar usuario"
+              className="btn-outline-danger"
+              onClick={() => desactivar(u.id, u.username)}
+            >
+              <BsPersonX className="fs-5" aria-hidden />
+            </IconButton>
+          ) : null}
+          {!esMiUsuario && !superProtegido ? (
+            <IconButton
+              label="Eliminar usuario permanentemente"
+              className="btn-outline-danger"
+              onClick={() => eliminarPermanente(u.id, u.username)}
+            >
+              <BsTrash3 className="fs-5" aria-hidden />
+            </IconButton>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function UsuariosPage() {
   const { user: authUser } = useAuth()
   const emitUsuariosChanged = useDomainSyncStore((s) => s.emitUsuariosChanged)
@@ -249,7 +313,7 @@ export default function UsuariosPage() {
         </div>
       </div>
       <div className="card">
-        <div className="table-responsive">
+        <div className="d-none d-md-block table-responsive">
           <table className="table table-sm table-hover align-middle mb-0">
             <thead className="table-light">
               <tr>
@@ -340,6 +404,27 @@ export default function UsuariosPage() {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="d-md-none p-2 p-sm-3">
+          {loading ? (
+            <p className="text-center text-body-secondary py-4 mb-0">Cargando...</p>
+          ) : items.length ? (
+            <div className="d-flex flex-column gap-2">
+              {items.map((u) => (
+                <UsuarioCardMovil
+                  key={u.id}
+                  u={u}
+                  myId={myId}
+                  authUser={authUser}
+                  resetPassword={resetPassword}
+                  desactivar={desactivar}
+                  eliminarPermanente={eliminarPermanente}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="text-center text-body-secondary py-4 mb-0">Sin datos</p>
+          )}
         </div>
       </div>
     </section>

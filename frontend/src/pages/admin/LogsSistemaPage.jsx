@@ -20,6 +20,55 @@ function buildQueryParams(f) {
   }
 }
 
+function AuditoriaCardMovil({ i }) {
+  return (
+    <div className="card border shadow-sm">
+      <div className="card-body py-3">
+        <div className="small text-body-secondary mb-2">
+          {i.created_at ? new Date(i.created_at).toLocaleString() : '—'}
+        </div>
+        <dl className="row small mb-0 gx-2">
+          <dt className="col-4 text-body-secondary">Usuario</dt>
+          <dd className="col-8 mb-2 text-break">{i.username || i.usuario_id || '—'}</dd>
+          <dt className="col-4 text-body-secondary">Acción</dt>
+          <dd className="col-8 mb-2">
+            <code className="small">{i.accion || '—'}</code>
+          </dd>
+          <dt className="col-4 text-body-secondary">Entidad</dt>
+          <dd className="col-8 mb-2 text-break">
+            {i.entidad || '—'}
+            {i.entidad_id ? ` #${i.entidad_id}` : ''}
+          </dd>
+          <dt className="col-12 text-body-secondary mb-1">Detalle</dt>
+          <dd className="col-12 mb-0 text-break small">{i.detalle ? JSON.stringify(i.detalle) : '—'}</dd>
+        </dl>
+      </div>
+    </div>
+  )
+}
+
+function LogImportacionCardMovil({ i }) {
+  return (
+    <div className="card border shadow-sm">
+      <div className="card-body py-3">
+        <div className="small text-body-secondary mb-2">
+          {i.created_at ? new Date(i.created_at).toLocaleString() : '—'}
+        </div>
+        <dl className="row small mb-0 gx-2">
+          <dt className="col-4 text-body-secondary">Usuario</dt>
+          <dd className="col-8 mb-2">{i.usuario_username || '—'}</dd>
+          <dt className="col-4 text-body-secondary">Estado</dt>
+          <dd className="col-8 mb-2">{i.estado || '—'}</dd>
+          <dt className="col-4 text-body-secondary">Archivo</dt>
+          <dd className="col-8 mb-2 text-break">{i.nombre_archivo || '—'}</dd>
+          <dt className="col-12 text-body-secondary mb-1">Observaciones</dt>
+          <dd className="col-12 mb-0 text-break">{i.observaciones || '—'}</dd>
+        </dl>
+      </div>
+    </div>
+  )
+}
+
 export default function LogsSistemaPage() {
   const [tab, setTab] = useState('auditoria')
 
@@ -216,7 +265,7 @@ export default function LogsSistemaPage() {
           </form>
           {error ? <div className="alert alert-warning">{error}</div> : null}
           <div className="card">
-            <div className="table-responsive">
+            <div className="d-none d-md-block table-responsive">
               <table className="table table-sm table-hover align-middle mb-0">
                 <thead className="table-light">
                   <tr>
@@ -259,6 +308,19 @@ export default function LogsSistemaPage() {
                 </tbody>
               </table>
             </div>
+            <div className="d-md-none p-2 p-sm-3">
+              {loading ? (
+                <p className="text-center text-body-secondary py-4 mb-0">Cargando...</p>
+              ) : items.length ? (
+                <div className="d-flex flex-column gap-2">
+                  {items.map((i) => (
+                    <AuditoriaCardMovil key={i.id} i={i} />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center text-body-secondary py-4 mb-0">Sin registros</p>
+              )}
+            </div>
           </div>
         </>
       ) : null}
@@ -267,7 +329,7 @@ export default function LogsSistemaPage() {
         <>
           {impError ? <div className="alert alert-warning">{impError}</div> : null}
           <div className="card">
-            <div className="table-responsive">
+            <div className="d-none d-md-block table-responsive">
               <table className="table table-sm table-hover align-middle mb-0">
                 <thead className="table-light">
                   <tr>
@@ -304,6 +366,19 @@ export default function LogsSistemaPage() {
                   )}
                 </tbody>
               </table>
+            </div>
+            <div className="d-md-none p-2 p-sm-3">
+              {impLoading ? (
+                <p className="text-center text-body-secondary py-4 mb-0">Cargando...</p>
+              ) : impItems.length ? (
+                <div className="d-flex flex-column gap-2">
+                  {impItems.map((i) => (
+                    <LogImportacionCardMovil key={i.id} i={i} />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center text-body-secondary py-4 mb-0">Sin registros</p>
+              )}
             </div>
           </div>
         </>

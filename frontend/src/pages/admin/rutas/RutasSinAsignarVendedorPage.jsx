@@ -1,6 +1,31 @@
 import { useEffect, useRef, useState } from 'react'
 import { adminApi } from '../../../services/adminApi.js'
 
+function NotaSinAsignarCardMovil({ n }) {
+  return (
+    <div className="card border shadow-sm">
+      <div className="card-body py-3">
+        <div className="fw-semibold text-truncate mb-1" title={n.serie_folio || ''}>
+          {n.serie_folio || '—'}
+        </div>
+        <div className="small text-body-secondary mb-2">ID {n.id}</div>
+        <dl className="row small mb-0 gx-2">
+          <dt className="col-5 text-body-secondary">Cliente</dt>
+          <dd className="col-7 mb-1 text-break">{n.cliente || '—'}</dd>
+          <dt className="col-5 text-body-secondary">Empresa</dt>
+          <dd className="col-7 mb-1">{n.empresa || '—'}</dd>
+          <dt className="col-5 text-body-secondary">Ruta</dt>
+          <dd className="col-7 mb-1">{n.ruta_codigo || '—'}</dd>
+          <dt className="col-5 text-body-secondary">Estado</dt>
+          <dd className="col-7 mb-1">{n.estado || '—'}</dd>
+          <dt className="col-5 text-body-secondary">Vendedor (archivo)</dt>
+          <dd className="col-7 mb-0">{n.usuario_vendedor_pv || '—'}</dd>
+        </dl>
+      </div>
+    </div>
+  )
+}
+
 export default function RutasSinAsignarVendedorPage() {
   const [tab, setTab] = useState('rutas')
   const [loading, setLoading] = useState(true)
@@ -135,8 +160,8 @@ export default function RutasSinAsignarVendedorPage() {
               : 'Se listan notas sin usuario vendedor asignado para la empresa seleccionada.'}
           </div>
         </div>
-        <div className="table-responsive">
-          {tab === 'rutas' ? (
+        {tab === 'rutas' ? (
+          <div className="table-responsive">
             <table className="table table-sm table-hover align-middle mb-0">
               <thead className="table-light">
                 <tr>
@@ -173,65 +198,82 @@ export default function RutasSinAsignarVendedorPage() {
                 )}
               </tbody>
             </table>
-          ) : (
-            <table className="table table-sm table-hover align-middle mb-0">
-              <thead className="table-light">
-                <tr>
-                  <th>ID</th>
-                  <th>Serie/Folio</th>
-                  <th>Cliente</th>
-                  <th>Empresa</th>
-                  <th>Ruta</th>
-                  <th>Estado</th>
-                  <th>Usuario/Vendedor (archivo)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
+          </div>
+        ) : (
+          <>
+            <div className="d-none d-md-block table-responsive">
+              <table className="table table-sm table-hover align-middle mb-0">
+                <thead className="table-light">
                   <tr>
-                    <td colSpan="7" className="text-center py-4">
-                      Cargando...
-                    </td>
+                    <th>ID</th>
+                    <th>Serie/Folio</th>
+                    <th>Cliente</th>
+                    <th>Empresa</th>
+                    <th>Ruta</th>
+                    <th>Estado</th>
+                    <th>Usuario/Vendedor (archivo)</th>
                   </tr>
-                ) : notasActivas.length ? (
-                  notasActivas.map((n) => (
-                    <tr key={n.id}>
-                      <td>{n.id}</td>
-                      <td>{n.serie_folio || '—'}</td>
-                      <td>{n.cliente || '—'}</td>
-                      <td>{n.empresa || '—'}</td>
-                      <td>{n.ruta_codigo || '—'}</td>
-                      <td>{n.estado || '—'}</td>
-                      <td>{n.usuario_vendedor_pv || '—'}</td>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr>
+                      <td colSpan="7" className="text-center py-4">
+                        Cargando...
+                      </td>
                     </tr>
-                  ))
+                  ) : notasActivas.length ? (
+                    notasActivas.map((n) => (
+                      <tr key={n.id}>
+                        <td>{n.id}</td>
+                        <td>{n.serie_folio || '—'}</td>
+                        <td>{n.cliente || '—'}</td>
+                        <td>{n.empresa || '—'}</td>
+                        <td>{n.ruta_codigo || '—'}</td>
+                        <td>{n.estado || '—'}</td>
+                        <td>{n.usuario_vendedor_pv || '—'}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="7" className="text-center py-4">
+                        Sin notas pendientes de asignación
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="d-md-none p-2 p-sm-3">
+              {loading ? (
+                <p className="text-center text-body-secondary py-4 mb-0">Cargando...</p>
+              ) : notasActivas.length ? (
+                <div className="d-flex flex-column gap-2">
+                  {notasActivas.map((n) => (
+                    <NotaSinAsignarCardMovil key={n.id} n={n} />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center text-body-secondary py-4 mb-0">
+                  Sin notas pendientes de asignación
+                </p>
+              )}
+            </div>
+            {notasActivas.length > 0 ? (
+              <div className="text-center py-2 border-top">
+                <div ref={sentinelRef} />
+                {loadingMore ? (
+                  <small className="text-body-secondary">Cargando más...</small>
+                ) : tab === 'notas_distribuidora' && hasMoreDist ? (
+                  <small className="text-body-secondary">Desliza para cargar más</small>
+                ) : tab === 'notas_rodrigo' && hasMoreRod ? (
+                  <small className="text-body-secondary">Desliza para cargar más</small>
                 ) : (
-                  <tr>
-                    <td colSpan="7" className="text-center py-4">
-                      Sin notas pendientes de asignación
-                    </td>
-                  </tr>
+                  <small className="text-body-secondary">Fin de resultados</small>
                 )}
-                {notasActivas.length > 0 ? (
-                  <tr>
-                    <td colSpan="7" className="text-center py-2">
-                      <div ref={sentinelRef} />
-                      {loadingMore ? (
-                        <small className="text-body-secondary">Cargando más...</small>
-                      ) : tab === 'notas_distribuidora' && hasMoreDist ? (
-                        <small className="text-body-secondary">Desliza para cargar más</small>
-                      ) : tab === 'notas_rodrigo' && hasMoreRod ? (
-                        <small className="text-body-secondary">Desliza para cargar más</small>
-                      ) : (
-                        <small className="text-body-secondary">Fin de resultados</small>
-                      )}
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          )}
-        </div>
+              </div>
+            ) : null}
+          </>
+        )}
       </div>
     </section>
   )

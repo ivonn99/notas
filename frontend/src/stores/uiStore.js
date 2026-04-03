@@ -12,7 +12,7 @@ function applyTheme(theme) {
 export const useUiStore = create((set) => ({
   sidebarOpen: false,
   sidebarCollapsed: false,
-  theme: 'light',
+  theme: 'dark',
   initialized: false,
 
   initialize: () =>
@@ -22,7 +22,7 @@ export const useUiStore = create((set) => ({
       }
       const savedTheme = localStorage.getItem(THEME_KEY)
       const savedCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY)
-      const theme = savedTheme === 'dark' ? 'dark' : 'light'
+      const theme = savedTheme === 'light' ? 'light' : 'dark'
       const sidebarCollapsed = savedCollapsed === '1'
       applyTheme(theme)
       return { ...state, theme, sidebarCollapsed, initialized: true }

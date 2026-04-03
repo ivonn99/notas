@@ -26,4 +26,5 @@ export const ROUTES = {
   whatsappCobranza: '/whatsapp-cobranza',
   perfil: '/perfil',
   notificaciones: '/notificaciones',
+  enlacesImagenes: '/enlaces-imagenes',
 }

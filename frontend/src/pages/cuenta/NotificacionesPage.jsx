@@ -4,6 +4,71 @@ import { ROUTES } from '../../constants/routes.js'
 import { useAuth } from '../../contexts/AuthContext.jsx'
 import { useNotificationsStore } from '../../stores/notificationsStore.js'
 
+function NotificacionCardMovil({ n, onMarcar }) {
+  return (
+    <div className="card border shadow-sm">
+      <div className="card-body py-3">
+        <div className="small text-body-secondary mb-1">
+          {n.created_at ? new Date(n.created_at).toLocaleString() : '—'}
+        </div>
+        <div className="fw-medium mb-1">{n.tipo}</div>
+        <div className="small mb-2">{n.titulo || '—'}</div>
+        <div className="small mb-3">
+          <span className="text-body-secondary">Nota: </span>
+          {n.nota_id ? n.serie_folio || `#${n.nota_id}` : '—'}
+        </div>
+        <div className="d-flex flex-wrap gap-2">
+          {n.nota_id ? (
+            <Link className="btn btn-sm btn-outline-primary" to={ROUTES.detalleNota(n.nota_id)}>
+              Ver nota
+            </Link>
+          ) : null}
+          <button className="btn btn-sm btn-outline-secondary" onClick={() => onMarcar(n)} type="button">
+            Marcar leída
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AlertaNotifCardMovil({ a, onMarcarLeida }) {
+  return (
+    <div className="card border shadow-sm">
+      <div className="card-body py-3">
+        <div className="d-flex justify-content-between gap-2 mb-2">
+          <span className="small text-body-secondary">ID {a.id}</span>
+          <span className="small">{a.leida ? 'Leída' : 'Pendiente'}</span>
+        </div>
+        <div className="fw-medium mb-1">{a.tipo || '—'}</div>
+        <div className="small mb-2">{a.descripcion || '—'}</div>
+        <dl className="row small mb-3 gx-2">
+          <dt className="col-5 text-body-secondary">Nota</dt>
+          <dd className="col-7 mb-1">{a.nota_id || '—'}</dd>
+          <dt className="col-5 text-body-secondary">Estado nota</dt>
+          <dd className="col-7 mb-0">{a.estado || '—'}</dd>
+        </dl>
+        <div className="d-flex flex-wrap gap-2">
+          {a.nota_id ? (
+            <Link className="btn btn-sm btn-outline-primary" to={ROUTES.detalleNota(a.nota_id)}>
+              Ver nota
+            </Link>
+          ) : null}
+          {!a.leida ? (
+            <button
+              className="btn btn-sm btn-outline-secondary"
+              onClick={() => onMarcarLeida(a.id)}
+              type="button"
+            >
+              Marcar leída
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function NotificacionesPage({ initialTab = 'notificaciones' }) {
   const { user } = useAuth()
   const canCredito = user?.isSuperuser || ['ADMIN', 'CREDITO'].includes(user?.rol)
@@ -88,10 +153,10 @@ export default function NotificacionesPage({ initialTab = 'notificaciones' }) {
       ) : null}
       {error ? <div className="alert alert-warning">{error}</div> : null}
       <div className="card">
-        <div className="table-responsive">
-          <table className="table table-sm table-hover align-middle mb-0">
-            {tab === 'notificaciones' ? (
-              <>
+        {tab === 'notificaciones' ? (
+          <>
+            <div className="d-none d-md-block table-responsive">
+              <table className="table table-sm table-hover align-middle mb-0">
                 <thead className="table-light">
                   <tr>
                     <th>Fecha</th>
@@ -135,9 +200,26 @@ export default function NotificacionesPage({ initialTab = 'notificaciones' }) {
                     </tr>
                   )}
                 </tbody>
-              </>
-            ) : (
-              <>
+              </table>
+            </div>
+            <div className="d-md-none p-2 p-sm-3">
+              {loading ? (
+                <p className="text-center text-body-secondary py-4 mb-0">Cargando...</p>
+              ) : items.length ? (
+                <div className="d-flex flex-column gap-2">
+                  {items.map((n) => (
+                    <NotificacionCardMovil key={`${n.tipo}-${n.id}`} n={n} onMarcar={marcar} />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center text-body-secondary py-4 mb-0">Sin notificaciones</p>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="d-none d-md-block table-responsive">
+              <table className="table table-sm table-hover align-middle mb-0">
                 <thead className="table-light">
                   <tr>
                     <th>ID</th>
@@ -191,10 +273,23 @@ export default function NotificacionesPage({ initialTab = 'notificaciones' }) {
                     </tr>
                   )}
                 </tbody>
-              </>
-            )}
-          </table>
-        </div>
+              </table>
+            </div>
+            <div className="d-md-none p-2 p-sm-3">
+              {loadingAlertas ? (
+                <p className="text-center text-body-secondary py-4 mb-0">Cargando...</p>
+              ) : alertas.length ? (
+                <div className="d-flex flex-column gap-2">
+                  {alertas.map((a) => (
+                    <AlertaNotifCardMovil key={a.id} a={a} onMarcarLeida={marcarAlertaLeida} />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center text-body-secondary py-4 mb-0">Sin alertas</p>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </section>
   )

@@ -8,6 +8,7 @@ import {
   FaFileInvoiceDollar,
   FaFileLines,
   FaHeartPulse,
+  FaImage,
   FaRoad,
   FaRoute,
   FaSliders,
@@ -49,6 +50,14 @@ const SHORTCUT_DEFS = [
     title: 'Notas de crédito',
     description: 'Listado principal de notas.',
     icon: FaFileInvoiceDollar,
+    show: () => true,
+  },
+  {
+    id: 'enlaces-imagenes',
+    to: ROUTES.enlacesImagenes,
+    title: 'Enlaces imágenes',
+    description: 'Comprimir, subir a Cloudinary y copiar enlaces.',
+    icon: FaImage,
     show: () => true,
   },
   {
