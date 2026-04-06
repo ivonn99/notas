@@ -1,4 +1,5 @@
 import { apiUrl } from '../utils/apiUrl.js'
+import { getApiAuthorizationHeader } from '../utils/apiAuthHeaders.js'
 import { canAdmin, getSupabaseAuthMeta } from '../lib/supabaseAuth.js'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
 import { http } from './http.js'
@@ -81,6 +82,7 @@ export const importacionesApi = {
     const res = await fetch(apiUrl('/api/importaciones/preview'), {
       method: 'POST',
       credentials: 'include',
+      headers: { ...(getApiAuthorizationHeader() || {}) },
       body: fd,
     })
     const text = await res.text()
@@ -94,12 +96,18 @@ export const importacionesApi = {
     return data
   },
   downloadErroresTxt: async (id) => {
-    const res = await fetch(apiUrl(`/api/importaciones/${id}/errores-txt`), { credentials: 'include' })
+    const res = await fetch(apiUrl(`/api/importaciones/${id}/errores-txt`), {
+      credentials: 'include',
+      headers: { ...(getApiAuthorizationHeader() || {}) },
+    })
     if (!res.ok) throw new Error(`Error HTTP ${res.status}`)
     return res.text()
   },
   downloadMuestra: async () => {
-    const res = await fetch(apiUrl('/api/importaciones/muestra'), { credentials: 'include' })
+    const res = await fetch(apiUrl('/api/importaciones/muestra'), {
+      credentials: 'include',
+      headers: { ...(getApiAuthorizationHeader() || {}) },
+    })
     if (!res.ok) throw new Error(`Error HTTP ${res.status}`)
     return res.text()
   },
@@ -110,6 +118,7 @@ export const importacionesApi = {
     const res = await fetch(apiUrl('/api/importaciones/upload'), {
       method: 'POST',
       credentials: 'include',
+      headers: { ...(getApiAuthorizationHeader() || {}) },
       body: fd,
     })
     const text = await res.text()

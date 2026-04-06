@@ -1,4 +1,5 @@
 import { apiUrl } from '../utils/apiUrl.js'
+import { getApiAuthorizationHeader } from '../utils/apiAuthHeaders.js'
 
 function parseJson(text) {
   if (!text) return {}
@@ -10,10 +11,15 @@ function parseJson(text) {
 }
 
 export async function http(path, options = {}) {
+  const { headers: optHeaders, ...rest } = options
   const res = await fetch(apiUrl(path), {
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(getApiAuthorizationHeader() || {}),
+      ...(optHeaders || {}),
+    },
+    ...rest,
   })
   const data = parseJson(await res.text())
   if (!res.ok) {

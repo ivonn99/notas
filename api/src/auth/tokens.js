@@ -21,7 +21,7 @@ export function signUserToken(payload) {
 }
 
 export function verifyUserToken(token) {
-  return jwt.verify(token, getSecret())
+  return jwt.verify(token, getSecret(), { algorithms: ['HS256'] })
 }
 
 export { COOKIE_NAME }
