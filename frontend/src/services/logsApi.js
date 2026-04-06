@@ -21,6 +21,18 @@ export const logsApi = {
       items: (data || []).map((it) => ({ ...it, usuario_username: it.usuarios?.username || null })),
     }
   },
-  /** Últimas líneas de api/logs/app.log (tipo django.log). */
-  archivo: (lines = 200) => http(`/api/logs-sistema/archivo?lines=${lines}`),
+  /** Últimas líneas de api/logs/app.log (solo con API Node). */
+  archivo: async (lines = 200) => {
+    if (isSupabaseConfigured) {
+      return {
+        ok: true,
+        message:
+          'El archivo app.log solo existe en el servidor Node. Con despliegue solo Supabase usa las pestañas Auditoría e Importaciones.',
+        path: null,
+        lineCount: 0,
+        lines: [],
+      }
+    }
+    return http(`/api/logs-sistema/archivo?lines=${lines}`)
+  },
 }
