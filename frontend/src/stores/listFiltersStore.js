@@ -19,6 +19,46 @@ const initialSeguimiento = {
   orden: 'default',
 }
 
+function normalizeNotasSort(sort) {
+  const raw = String(sort || '').trim()
+  if (raw === 'fecha_corriente_desc') return 'fecha_nota_desc'
+  if (raw === 'fecha_corriente_asc') return 'fecha_nota_asc'
+  return [
+    'fecha_nota_desc',
+    'fecha_nota_asc',
+    'saldo_desc',
+    'saldo_asc',
+    'estado_asc',
+    'atencion_desc',
+  ].includes(raw)
+    ? raw
+    : initialNotas.sort
+}
+
+function normalizeSeguimientoOrden(orden) {
+  const raw = String(orden || '').trim().toLowerCase()
+  if (raw === 'fecha_corriente_desc') return 'fecha_nota_desc'
+  if (raw === 'fecha_corriente_asc') return 'fecha_nota_asc'
+  return [
+    'default',
+    'atencion',
+    'fecha_ultima_desc',
+    'fecha_ultima_asc',
+    'fecha_nota_desc',
+    'fecha_nota_asc',
+    'id_desc',
+    'id_asc',
+    'serie_folio_asc',
+    'serie_folio_desc',
+    'cliente_asc',
+    'cliente_desc',
+    'saldo_desc',
+    'saldo_asc',
+  ].includes(raw)
+    ? raw
+    : initialSeguimiento.orden
+}
+
 export const useListFiltersStore = create(
   persist(
     (set) => ({
@@ -39,6 +79,33 @@ export const useListFiltersStore = create(
     }),
     {
       name: 'nc_list_filters_v1',
+      version: 2,
+      migrate: (persisted, version) => {
+        if (!persisted || typeof persisted !== 'object') return persisted
+        const state = persisted
+        const notas = state.notas && typeof state.notas === 'object' ? state.notas : {}
+        const seguimiento =
+          state.seguimiento && typeof state.seguimiento === 'object'
+            ? state.seguimiento
+            : {}
+
+        const migrated = {
+          ...state,
+          notas: {
+            ...initialNotas,
+            ...notas,
+            sort: normalizeNotasSort(notas.sort),
+          },
+          seguimiento: {
+            ...initialSeguimiento,
+            ...seguimiento,
+            orden: normalizeSeguimientoOrden(seguimiento.orden),
+          },
+        }
+
+        if (version < 2) return migrated
+        return migrated
+      },
       partialize: (state) => ({
         notas: state.notas,
         seguimiento: state.seguimiento,
