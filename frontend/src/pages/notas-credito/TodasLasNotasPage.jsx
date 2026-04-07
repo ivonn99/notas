@@ -6,12 +6,13 @@ import { fetchNotasCredito } from '../../services/notasApi.js'
 import { useListCacheStore } from '../../stores/listCacheStore.js'
 import { useListFiltersStore } from '../../stores/listFiltersStore.js'
 import { estadoBadgeClass } from '../../utils/estadoBadge.js'
+import { formatDiasNotaCorriente } from '../../utils/diasCorriente.js'
 
 const PAGE_SIZE = 20
 
 const SORT_OPTIONS = [
-  { value: 'fecha_corriente_desc', label: 'Fecha corriente (recientes)' },
-  { value: 'fecha_corriente_asc', label: 'Fecha corriente (antiguas)' },
+  { value: 'fecha_nota_desc', label: 'Fecha nota (más reciente)' },
+  { value: 'fecha_nota_asc', label: 'Fecha nota (más antigua)' },
   { value: 'saldo_desc', label: 'Saldo (mayor a menor)' },
   { value: 'saldo_asc', label: 'Saldo (menor a mayor)' },
   { value: 'estado_asc', label: 'Estado (A–Z)' },
@@ -84,6 +85,10 @@ function NotaCreditoCardMovil({ n }) {
           <dd className="col-7 mb-1">{n.ruta_codigo || '—'}</dd>
           <dt className="col-5 text-body-secondary">Fecha nota</dt>
           <dd className="col-7 mb-1">{formatFechaNota(n.fecha_nota)}</dd>
+          <dt className="col-5 text-body-secondary">Días</dt>
+          <dd className="col-7 mb-1" title="Entre fecha nota y fecha corriente (o hoy)">
+            {formatDiasNotaCorriente(n.fecha_nota, n.fecha_corriente)}
+          </dd>
           <dt className="col-5 text-body-secondary">Monto</dt>
           <dd className="col-7 mb-1 text-end">{money(n.monto)}</dd>
           <dt className="col-5 text-body-secondary">Abono</dt>
@@ -326,6 +331,9 @@ export default function TodasLasNotasPage() {
                 <th>Empresa</th>
                 <th>Ruta</th>
                 <th>Fecha nota</th>
+                <th className="text-end" title="Días entre fecha nota y fecha corriente (o hoy)">
+                  Días
+                </th>
                 <th className="text-end">Monto</th>
                 <th className="text-end">Abono</th>
                 <th className="text-end">Saldo</th>
@@ -337,7 +345,7 @@ export default function TodasLasNotasPage() {
             <tbody>
               {loading && shown === 0 ? (
                 <tr>
-                  <td colSpan="12" className="text-center py-4">
+                  <td colSpan="13" className="text-center py-4">
                     Cargando…
                   </td>
                 </tr>
@@ -350,6 +358,9 @@ export default function TodasLasNotasPage() {
                     <td>{n.empresa || '—'}</td>
                     <td>{n.ruta_codigo || '—'}</td>
                     <td className="text-nowrap">{formatFechaNota(n.fecha_nota)}</td>
+                    <td className="text-end text-nowrap" title="Entre fecha nota y fecha corriente (o hoy)">
+                      {formatDiasNotaCorriente(n.fecha_nota, n.fecha_corriente)}
+                    </td>
                     <td className="text-end">{money(n.monto)}</td>
                     <td className="text-end">{money(n.abono)}</td>
                     <td className="text-end">{money(n.saldo)}</td>
@@ -379,7 +390,7 @@ export default function TodasLasNotasPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="12" className="text-center py-4">
+                  <td colSpan="13" className="text-center py-4">
                     Sin resultados
                   </td>
                 </tr>

@@ -29,6 +29,35 @@ function criterioTexto(payload, diasMinFallback) {
   return `>= ${payload?.diasMin ?? diasMinFallback} días`
 }
 
+/** Texto multilínea con resumen del API /send-batch (incluye motivo de cada fallo). */
+function textoResumenLoteWhatsapp(r, totalEsperado) {
+  const enviados = r?.enviados ?? 0
+  const fallidos = r?.fallidos ?? 0
+  const total = r?.total ?? totalEsperado
+  const lines = [
+    `Lote terminado. Enviados: ${enviados}, fallidos: ${fallidos}, total: ${total}.`,
+  ]
+  const results = Array.isArray(r?.results) ? r.results : []
+  const failures = results.filter((x) => x && x.ok === false)
+  if (failures.length) {
+    lines.push('')
+    lines.push('Detalle de fallos:')
+    for (const f of failures) {
+      const idx = Number(f.index)
+      const who =
+        f.username != null && String(f.username).trim()
+          ? `@${String(f.username).trim()}`
+          : f.usuarioId != null
+            ? `Usuario #${f.usuarioId}`
+            : `Mensaje #${Number.isFinite(idx) ? idx + 1 : '?'}`
+      const dest = f.to != null && String(f.to).trim() ? ` → ${String(f.to).trim()}` : ''
+      const err = f.error != null && String(f.error).trim() ? String(f.error).trim() : 'Error desconocido'
+      lines.push(`• ${who}${dest}: ${err}`)
+    }
+  }
+  return lines.join('\n')
+}
+
 function buildEmpresaSection(titulo, rutas = []) {
   const lines = []
   lines.push(`${titulo}:`)
@@ -291,9 +320,7 @@ export default function WhatsappCobranzaPage() {
         })),
       }
       const r = await postWhatsappSendBatch(payload)
-      setBatchInfo(
-        `Lote terminado. Enviados: ${r?.enviados ?? 0}, fallidos: ${r?.fallidos ?? 0}, total: ${r?.total ?? selected.length}.`,
-      )
+      setBatchInfo(textoResumenLoteWhatsapp(r, selected.length))
     } catch (e) {
       setBatchInfo(e?.message || 'No se pudo enviar el lote')
     } finally {
@@ -678,7 +705,12 @@ export default function WhatsappCobranzaPage() {
                       </button>
                     </div>
                     {batchInfo ? (
-                      <div className="small text-body-secondary mt-2">{batchInfo}</div>
+                      <div
+                        className="small text-body-secondary mt-2 text-break"
+                        style={{ whiteSpace: 'pre-wrap' }}
+                      >
+                        {batchInfo}
+                      </div>
                     ) : null}
                   </div>
                 </div>

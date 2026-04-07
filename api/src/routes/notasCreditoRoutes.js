@@ -12,8 +12,11 @@ function parsePositiveInt(value, fallback) {
 
 /** Orden permitido (evita inyección en ORDER BY). */
 const SORT_SQL = {
-  fecha_corriente_desc: 'n.fecha_corriente DESC NULLS LAST, n.id DESC',
-  fecha_corriente_asc: 'n.fecha_corriente ASC NULLS LAST, n.id ASC',
+  // Compatibilidad con sort legado: ahora ambos apuntan a fecha_nota.
+  fecha_corriente_desc: 'n.fecha_nota DESC NULLS LAST, n.id DESC',
+  fecha_corriente_asc: 'n.fecha_nota ASC NULLS LAST, n.id ASC',
+  fecha_nota_desc: 'n.fecha_nota DESC NULLS LAST, n.id DESC',
+  fecha_nota_asc: 'n.fecha_nota ASC NULLS LAST, n.id ASC',
   saldo_desc: 'n.saldo DESC NULLS LAST, n.id DESC',
   saldo_asc: 'n.saldo ASC NULLS LAST, n.id DESC',
   estado_asc: 'n.estado ASC, n.id DESC',
@@ -72,12 +75,12 @@ router.get('/', requireAuth, async (req, res, next) => {
     if (diasFiltered != null) {
       params.push(diasFiltered)
       where.push(
-        `COALESCE(n.fecha_corriente, n.fecha_nota, n.created_at) >= (NOW() - ($${params.length} * INTERVAL '1 day'))`,
+        `n.fecha_nota >= (CURRENT_DATE - $${params.length})`,
       )
     }
 
     const sortKeyRaw = String(req.query.sort ?? '').trim()
-    const sortKey = SORT_SQL[sortKeyRaw] ? sortKeyRaw : 'fecha_corriente_desc'
+    const sortKey = SORT_SQL[sortKeyRaw] ? sortKeyRaw : 'fecha_nota_desc'
     const orderBy = SORT_SQL[sortKey]
 
     // Regla de guía: VENDEDOR solo ve notas de sus rutas asignadas.

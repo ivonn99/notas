@@ -48,14 +48,19 @@ async function getCurrentAuthMeta() {
 }
 
 function normalizeSort(sort) {
-  const key = String(sort || '').trim().toLowerCase()
+  const raw = String(sort || '').trim().toLowerCase()
+  // Compatibilidad con filtros guardados previamente.
+  const key =
+    raw === 'fecha_corriente_desc'
+      ? 'fecha_nota_desc'
+      : raw === 'fecha_corriente_asc'
+        ? 'fecha_nota_asc'
+        : raw
   const allowed = new Set([
     'default',
     'atencion',
     'fecha_ultima_desc',
     'fecha_ultima_asc',
-    'fecha_corriente_desc',
-    'fecha_corriente_asc',
     'fecha_nota_desc',
     'fecha_nota_asc',
     'id_desc',
@@ -94,8 +99,6 @@ function applySort(query, sort) {
   }
   if (sort === 'fecha_ultima_desc') return query.order('fecha_ultima_actualizacion', { ascending: false, nullsFirst: false }).order('id', { ascending: false, nullsFirst: false })
   if (sort === 'fecha_ultima_asc') return query.order('fecha_ultima_actualizacion', { ascending: true, nullsFirst: false }).order('id', { ascending: true, nullsFirst: false })
-  if (sort === 'fecha_corriente_desc') return query.order('fecha_corriente', { ascending: false, nullsFirst: false }).order('id', { ascending: false, nullsFirst: false })
-  if (sort === 'fecha_corriente_asc') return query.order('fecha_corriente', { ascending: true, nullsFirst: false }).order('id', { ascending: true, nullsFirst: false })
   if (sort === 'fecha_nota_desc') return query.order('fecha_nota', { ascending: false, nullsFirst: false }).order('id', { ascending: false, nullsFirst: false })
   if (sort === 'fecha_nota_asc') return query.order('fecha_nota', { ascending: true, nullsFirst: false }).order('id', { ascending: true, nullsFirst: false })
   if (sort === 'id_desc') return query.order('id', { ascending: false, nullsFirst: false })
@@ -107,6 +110,17 @@ function applySort(query, sort) {
   if (sort === 'saldo_desc') return query.order('saldo', { ascending: false, nullsFirst: false }).order('id', { ascending: false, nullsFirst: false })
   if (sort === 'saldo_asc') return query.order('saldo', { ascending: true, nullsFirst: false }).order('id', { ascending: true, nullsFirst: false })
   return query.order('id', { ascending: false, nullsFirst: false })
+}
+
+function applySeguimientoListFilters(query, { estado, empresa, q, atencion, allowedFinal }) {
+  let qy = query
+  if (estado) qy = qy.eq('estado', estado)
+  if (empresa) qy = qy.eq('empresa', empresa)
+  if (q) qy = qy.or(`serie_folio.ilike.%${q}%,cliente.ilike.%${q}%,usuario_vendedor_pv.ilike.%${q}%`)
+  if (['si', 'sí', 'true', '1'].includes(atencion)) qy = qy.eq('requiere_atencion', true)
+  if (['no', 'false', '0'].includes(atencion)) qy = qy.eq('requiere_atencion', false)
+  if (Array.isArray(allowedFinal)) qy = qy.in('ruta_id', allowedFinal)
+  return qy
 }
 
 export function fetchSeguimientoList(params = {}) {
@@ -279,8 +293,6 @@ async function fetchSeguimientoListSupabase(params = {}) {
   const allowedRutaIds = await resolveAllowedRutaIds(meta)
   const page = Math.max(1, Number.parseInt(String(params.page ?? 1), 10) || 1)
   const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(params.pageSize ?? 20), 10) || 20))
-  const from = (page - 1) * pageSize
-  const to = from + pageSize - 1
   const estado = String(params.estado ?? '').trim().toUpperCase()
   const empresa = String(params.empresa ?? '').trim().toUpperCase()
   const ruta = String(params.ruta ?? '').trim().toUpperCase()
@@ -312,6 +324,20 @@ async function fetchSeguimientoListSupabase(params = {}) {
     allowedFinal = rutaIdsFiltro
   }
 
+  const filterArgs = { estado, empresa, q, atencion, allowedFinal }
+
+  const { count: totalCount, error: countError } = await applySeguimientoListFilters(
+    supabase.from('notas_credito').select('id', { count: 'exact', head: true }),
+    filterArgs,
+  )
+  if (countError) throw new Error(countError.message || 'No se pudo cargar seguimiento')
+
+  const total = totalCount ?? 0
+  const totalPages = total > 0 ? Math.ceil(total / pageSize) : 1
+  const safePage = total === 0 ? 1 : Math.min(page, totalPages)
+  const fromSafe = (safePage - 1) * pageSize
+  const toSafe = fromSafe + pageSize - 1
+
   let baseQuery = supabase
     .from('notas_credito')
     .select(
@@ -323,16 +349,10 @@ async function fetchSeguimientoListSupabase(params = {}) {
     `,
       { count: 'exact' },
     )
+  baseQuery = applySeguimientoListFilters(baseQuery, filterArgs)
 
-  if (estado) baseQuery = baseQuery.eq('estado', estado)
-  if (empresa) baseQuery = baseQuery.eq('empresa', empresa)
-  if (q) baseQuery = baseQuery.or(`serie_folio.ilike.%${q}%,cliente.ilike.%${q}%,usuario_vendedor_pv.ilike.%${q}%`)
-  if (['si', 'sí', 'true', '1'].includes(atencion)) baseQuery = baseQuery.eq('requiere_atencion', true)
-  if (['no', 'false', '0'].includes(atencion)) baseQuery = baseQuery.eq('requiere_atencion', false)
-  if (Array.isArray(allowedFinal)) baseQuery = baseQuery.in('ruta_id', allowedFinal)
-
-  let listQuery = applySort(baseQuery, sort).range(from, to)
-  const { data: rows, count, error } = await listQuery
+  let listQuery = applySort(baseQuery, sort).range(fromSafe, toSafe)
+  const { data: rows, error } = await listQuery
   if (error) throw new Error(error.message || 'No se pudo cargar seguimiento')
 
   const items = (rows || []).map((n) => ({
@@ -341,7 +361,6 @@ async function fetchSeguimientoListSupabase(params = {}) {
     vendedor_username: n.vendedor?.username || null,
   }))
 
-  const total = count || 0
   const requiereAtencion = items.filter((x) => x.requiere_atencion).length
   const porRutaMap = new Map()
   for (const row of items) {
@@ -377,10 +396,10 @@ async function fetchSeguimientoListSupabase(params = {}) {
 
   return {
     ok: true,
-    page,
+    page: safePage,
     pageSize,
     total,
-    totalPages: total > 0 ? Math.ceil(total / pageSize) : 1,
+    totalPages,
     filters: {
       empresa: empresa || null,
       estado: estado || null,

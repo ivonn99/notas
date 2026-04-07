@@ -199,12 +199,30 @@ export function detectMappingFromHeaders(records) {
   return { headers, mapping }
 }
 
-export function validateNormalized(row, _rutaMap) {
+/** @returns {'DISTRIBUIDORA' | 'RODRIGO' | null} */
+export function parseEmpresaImportacion(raw) {
+  const e = String(raw ?? '')
+    .trim()
+    .toUpperCase()
+  return EMPRESAS_VALIDAS.has(e) ? e : null
+}
+
+export function validateNormalized(row, _rutaMap, empresaScope = null) {
   const errors = []
   if (!row.serieFolio) errors.push('serie_folio obligatorio')
   if (!row.empresa) errors.push('empresa obligatoria')
   if (row.empresa && !EMPRESAS_VALIDAS.has(row.empresa)) {
     errors.push(`empresa inválida: ${row.empresa}`)
+  }
+  if (empresaScope) {
+    const got = String(row.empresa || '')
+      .trim()
+      .toUpperCase()
+    if (got !== empresaScope) {
+      errors.push(
+        `empresa de la fila (${got || 'vacía'}) debe coincidir con la empresa elegida para esta importación (${empresaScope})`,
+      )
+    }
   }
   if (row.estado && !ESTADOS_VALIDOS.has(row.estado)) {
     errors.push(`estado inválido: ${row.estado}`)
@@ -372,6 +390,7 @@ export async function ejecutarImportacionSupabase({
   usuarioId,
   username,
   mapping,
+  empresaScope,
 }) {
   const job = { total: records.length, processed: 0, errorCount: 0 }
   let nuevos = 0
@@ -389,6 +408,9 @@ export async function ejecutarImportacionSupabase({
   }
 
   try {
+    const scope = parseEmpresaImportacion(empresaScope)
+    if (!scope) throw new Error('empresa_scope inválido o faltante (DISTRIBUIDORA o RODRIGO)')
+
     /** Igual que el API Node al insertar: NOW() para fechas obligatorias. */
     const importNow = new Date().toISOString()
 
@@ -411,7 +433,7 @@ export async function ejecutarImportacionSupabase({
       const raw = records[i]
       const rowNum = i + 2
       const row = normalizeRowWithMapping(raw, mapping)
-      const rowErrors = validateNormalized(row, rutaMap)
+      const rowErrors = validateNormalized(row, rutaMap, scope)
       if (rowErrors.length > 0) {
         if (errores.length < 100) errores.push(`Fila ${rowNum}: ${rowErrors.join('; ')}`)
         job.processed += 1
@@ -478,26 +500,34 @@ export async function ejecutarImportacionSupabase({
       })
     }
 
-    if (errores.length === 0 && empresasImportadas.size > 0) {
-      const seriesByEmpresa = new Map()
+    // Descarte solo para la empresa elegida y solo si hubo al menos una fila válida (evita marcar todo si el archivo viene vacío).
+    // PostgREST limita filas por defecto (~1000): hay que paginar o el descarte queda incompleto vs el análisis previo.
+    if (errores.length === 0 && validRows.length > 0) {
+      const foliosEnArchivo = new Set()
       for (const row of validRows) {
-        const emp = String(row.empresa || '').toUpperCase()
-        if (!seriesByEmpresa.has(emp)) seriesByEmpresa.set(emp, new Set())
-        seriesByEmpresa.get(emp).add(String(row.serie_folio || '').trim())
+        foliosEnArchivo.add(String(row.serie_folio || '').trim())
       }
+      foliosEnArchivo.delete('')
 
-      for (const [empresa, serieSet] of seriesByEmpresa.entries()) {
-        const series = Array.from(serieSet).filter(Boolean)
+      const pageSize = 1000
+      let rangeFrom = 0
+      const now = new Date().toISOString()
+
+      while (true) {
         const { data: candidatos, error: cErr } = await supabase
           .from('notas_credito')
           .select('id, serie_folio')
-          .eq('empresa', empresa)
+          .eq('empresa', scope)
           .neq('estado', 'RESUELTA')
+          .order('id', { ascending: true })
+          .range(rangeFrom, rangeFrom + pageSize - 1)
         if (cErr) throw new Error(cErr.message || 'No se pudo leer notas para descarte')
-        const idsToFix = (candidatos || [])
-          .filter((c) => !series.includes(String(c.serie_folio || '').trim()))
+
+        const pageRows = candidatos || []
+        const idsToFix = pageRows
+          .filter((c) => !foliosEnArchivo.has(String(c.serie_folio || '').trim()))
           .map((c) => c.id)
-        const now = new Date().toISOString()
+
         for (const idChunk of chunkArray(idsToFix, 80)) {
           if (idChunk.length === 0) continue
           const { error: uErr } = await supabase
@@ -513,13 +543,21 @@ export async function ejecutarImportacionSupabase({
           resueltosPorDescarte += idChunk.length
           resueltos += idChunk.length
         }
+
+        if (pageRows.length < pageSize) break
+        rangeFrom += pageSize
       }
     }
 
     const estadoFinal = errores.length > 0 ? 'PARCIAL' : 'COMPLETADA'
+    const aplicadas = nuevos + actualizados
     const obsLines = [
       `Importación CSV (${originalName})`,
+      `empresa_importacion=${scope}`,
       `empresas=${Array.from(empresasImportadas).sort().join('|') || 'N/A'}`,
+      resueltosPorDescarte > 0
+        ? `Resumen: del archivo se aplicaron ${aplicadas} notas (${nuevos} nuevas, ${actualizados} actualizadas). ${resueltosPorDescarte} notas ya no figuraban en el reporte y quedaron RESUELTAS automáticamente.`
+        : `Resumen: del archivo se aplicaron ${aplicadas} notas (${nuevos} nuevas, ${actualizados} actualizadas). Ninguna nota pendiente quedó RESUELTA por descarte.`,
       `nuevos=${nuevos}, actualizados=${actualizados}, resueltos=${resueltos}, resueltos_descarte=${resueltosPorDescarte}, errores=${errores.length}`,
     ]
     if (errores.length > 0) {
@@ -569,7 +607,10 @@ export async function ejecutarImportacionSupabase({
   }
 }
 
-export function buildPreviewPayload({ fileName, fileSize, records, mappingArg, rutaMap }) {
+export function buildPreviewPayload({ fileName, fileSize, records, mappingArg, rutaMap, empresaScope }) {
+  const scope = parseEmpresaImportacion(empresaScope)
+  if (!scope) throw new Error('Selecciona la empresa del reporte (DISTRIBUIDORA o RODRIGO)')
+
   const { headers, mapping: autoMapping } = detectMappingFromHeaders(records)
   const reqMapping = parseMappingInput(mappingArg)
   const activeMapping = reqMapping || autoMapping
@@ -581,7 +622,7 @@ export function buildPreviewPayload({ fileName, fileSize, records, mappingArg, r
   for (let i = 0; i < maxPreview; i += 1) {
     const raw = records[i]
     const normalized = normalizeRowWithMapping(raw, activeMapping)
-    const errors = validateNormalized(normalized, rutaMap)
+    const errors = validateNormalized(normalized, rutaMap, scope)
     if (errors.length > 0) invalidCount += 1
     else validCount += 1
     previewRows.push({
@@ -594,6 +635,7 @@ export function buildPreviewPayload({ fileName, fileSize, records, mappingArg, r
 
   return {
     ok: true,
+    empresa_importacion: scope,
     file: {
       name: fileName,
       size: fileSize ?? null,
@@ -607,6 +649,130 @@ export function buildPreviewPayload({ fileName, fileSize, records, mappingArg, r
       validCount,
       invalidCount,
       checkedRows: maxPreview,
+    },
+  }
+}
+
+/**
+ * Solo lectura: estima impacto antes de importar (misma validación que la importación real).
+ * Eficiencia: conteos en BD por chunks de folios; una pasada al archivo.
+ */
+export async function analizarImportacionPrevia({ supabase, records, mapping, empresaScope }) {
+  const scope = parseEmpresaImportacion(empresaScope)
+  if (!scope) throw new Error('Selecciona empresa (DISTRIBUIDORA o RODRIGO)')
+
+  const { data: rutasR, error: rutasErr } = await supabase.from('rutas').select('id, codigo')
+  if (rutasErr) throw new Error(rutasErr.message || 'No se pudieron cargar rutas')
+  const rutaMap = buildRutaMapFromRows(rutasR)
+
+  let filasConError = 0
+  const foliosValidos = new Set()
+
+  for (let i = 0; i < records.length; i += 1) {
+    const row = normalizeRowWithMapping(records[i], mapping)
+    const rowErrors = validateNormalized(row, rutaMap, scope)
+    if (rowErrors.length > 0) {
+      filasConError += 1
+      continue
+    }
+    foliosValidos.add(String(row.serieFolio).trim())
+  }
+
+  const filasValidas = records.length - filasConError
+  const foliosUnicos = Array.from(foliosValidos).filter(Boolean)
+  const tieneErrores = filasConError > 0
+  const sinFilasValidas = foliosUnicos.length === 0
+
+  const { count: totalBase, error: c1 } = await supabase
+    .from('notas_credito')
+    .select('id', { count: 'exact', head: true })
+    .eq('empresa', scope)
+  if (c1) throw new Error(c1.message || 'No se pudo contar notas en base')
+
+  const { count: abiertasBase, error: c2 } = await supabase
+    .from('notas_credito')
+    .select('id', { count: 'exact', head: true })
+    .eq('empresa', scope)
+    .neq('estado', 'RESUELTA')
+  if (c2) throw new Error(c2.message || 'No se pudo contar notas abiertas')
+
+  const totalBaseN = totalBase ?? 0
+  const abiertasN = abiertasBase ?? 0
+
+  const existingAny = new Set()
+  const existingAbierta = new Set()
+  for (const part of chunkArray(foliosUnicos, 80)) {
+    if (part.length === 0) continue
+    const { data, error: c3 } = await supabase
+      .from('notas_credito')
+      .select('serie_folio, estado')
+      .eq('empresa', scope)
+      .in('serie_folio', part)
+    if (c3) throw new Error(c3.message || 'No se pudieron leer notas para el análisis')
+    for (const r of data || []) {
+      const f = String(r.serie_folio || '').trim()
+      if (!f) continue
+      existingAny.add(f)
+      if (String(r.estado || '').toUpperCase() !== 'RESUELTA') existingAbierta.add(f)
+    }
+  }
+
+  let nuevas = 0
+  let actualizadas = 0
+  let abiertasQueSiguenEnArchivo = 0
+  for (const f of foliosUnicos) {
+    if (existingAbierta.has(f)) abiertasQueSiguenEnArchivo += 1
+    if (existingAny.has(f)) actualizadas += 1
+    else nuevas += 1
+  }
+
+  const descarteAplica = !tieneErrores && !sinFilasValidas
+  const resueltasPorDescarte = descarteAplica ? Math.max(0, abiertasN - abiertasQueSiguenEnArchivo) : null
+
+  /** Filas en BD con ese folio presente en el archivo (cada folio es único por empresa). */
+  const enBaseYEnArchivo = existingAny.size
+  /** Total en base − las que sí aparecen en el archivo ≈ “las que ya no vienen en el reporte”. */
+  const enBaseNoEnArchivo = Math.max(0, totalBaseN - enBaseYEnArchivo)
+  /** Abiertas (≠ RESUELTA) cuyo folio no está en el archivo: únicas que el descarte puede cerrar. */
+  const abiertasNoEnArchivo = Math.max(0, abiertasN - abiertasQueSiguenEnArchivo)
+  /** Las demás “fuera del archivo” ya están RESUELTA; el descarte no las toca. */
+  const yaResueltasNoEnArchivo = Math.max(0, enBaseNoEnArchivo - abiertasNoEnArchivo)
+
+  return {
+    ok: true,
+    empresa: scope,
+    archivo: {
+      filas_totales: records.length,
+      filas_validas: filasValidas,
+      filas_con_error: filasConError,
+      folios_unicos_validos: foliosUnicos.length,
+    },
+    base: {
+      total_notas_empresa: totalBaseN,
+      /** ≠ RESUELTA (PENDIENTE, CANCELADA, etc.): solo estas el descarte puede marcar RESUELTA. */
+      notas_sin_estado_resuelta: abiertasN,
+      notas_ya_resueltas: Math.max(0, totalBaseN - abiertasN),
+    },
+    comparacion: {
+      notas_en_base_cuyo_folio_si_esta_en_archivo: enBaseYEnArchivo,
+      notas_en_base_cuyo_folio_no_esta_en_archivo: enBaseNoEnArchivo,
+      de_esas_ya_resueltas_sin_tocar: yaResueltasNoEnArchivo,
+      de_esas_abiertas_se_marcarian_resueltas_si_aplica_descarte: abiertasNoEnArchivo,
+    },
+    estimado_al_importar: {
+      nuevas,
+      actualizadas,
+      resueltas_por_descarte: resueltasPorDescarte,
+      descarte_se_aplicaria: descarteAplica,
+      nota_descarte: !descarteAplica
+        ? tieneErrores
+          ? 'Con errores de validación la importación quedaría PARCIAL y no se aplica descarte automático.'
+          : 'Sin filas válidas no se aplica descarte (no hay lista de folios en el archivo para comparar).'
+        : (resueltasPorDescarte ?? 0) > 0
+          ? `Se marcarían ${resueltasPorDescarte} nota${resueltasPorDescarte === 1 ? '' : 's'} como RESUELTA por descarte (hoy sin RESUELTA y con folio que no viene en el archivo).`
+          : enBaseNoEnArchivo > 0
+            ? `Hay ${enBaseNoEnArchivo} nota${enBaseNoEnArchivo === 1 ? '' : 's'} en base cuyo folio no está en este archivo; ${yaResueltasNoEnArchivo} ya ${yaResueltasNoEnArchivo === 1 ? 'está' : 'están'} RESUELTA (el descarte no ${yaResueltasNoEnArchivo === 1 ? 'la' : 'las'} toca). Las ${abiertasN} sin RESUELTA tienen folio en el archivo, así que no queda ninguna abierta fuera del reporte y el descarte no cierra más.`
+            : null,
     },
   }
 }

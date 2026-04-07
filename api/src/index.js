@@ -70,7 +70,9 @@ async function markInterruptedImportaciones() {
 
 app.use(cors({ origin: true, credentials: true }))
 app.use(cookieParser())
-app.use(express.json())
+/** Default Express es ~100kb; lotes WhatsApp (/send-batch) con textos largos superan ese límite → 413. */
+const JSON_BODY_LIMIT = String(process.env.JSON_BODY_LIMIT || '15mb').trim() || '15mb'
+app.use(express.json({ limit: JSON_BODY_LIMIT }))
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')))
 
 app.use((req, res, next) => {

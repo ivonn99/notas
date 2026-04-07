@@ -10,13 +10,33 @@ const supabaseAnonKey = String(import.meta.env.VITE_SUPABASE_ANON_KEY || '').tri
  */
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
 
-function dbJwtAwareFetch(url, options = {}) {
-  const headers = new Headers(options.headers ?? undefined)
+/**
+ * Sustituye el Bearer por el JWT de db-login. Debe conservar apikey y el resto de cabeceras
+ * que ya añade supabase-js (incl. si el primer argumento es un objeto Request).
+ */
+function dbJwtAwareFetch(input, init = {}) {
+  const next = { ...init }
+  const headers = new Headers()
+
+  if (typeof Request !== 'undefined' && input instanceof Request) {
+    input.headers.forEach((value, key) => {
+      headers.set(key, value)
+    })
+  }
+  if (init.headers != null) {
+    new Headers(init.headers).forEach((value, key) => {
+      headers.set(key, value)
+    })
+  }
+
   if (isDbJwtLoginEnabled()) {
     const token = getDbJwtToken()
     if (token) headers.set('Authorization', `Bearer ${token}`)
   }
-  return fetch(url, { ...options, headers })
+
+  next.headers = headers
+  if (next.mode == null) next.mode = 'cors'
+  return fetch(input, next)
 }
 
 export const supabase = isSupabaseConfigured

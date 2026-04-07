@@ -30,19 +30,25 @@ export async function fetchNotasCredito(params = {}) {
 }
 
 function normalizeSort(sort) {
-  const s = String(sort || '').trim()
+  const raw = String(sort || '').trim()
+  const s =
+    raw === 'fecha_corriente_desc'
+      ? 'fecha_nota_desc'
+      : raw === 'fecha_corriente_asc'
+        ? 'fecha_nota_asc'
+        : raw
   return (
     s &&
     [
-      'fecha_corriente_desc',
-      'fecha_corriente_asc',
+      'fecha_nota_desc',
+      'fecha_nota_asc',
       'saldo_desc',
       'saldo_asc',
       'estado_asc',
       'atencion_desc',
     ].includes(s)
       ? s
-      : 'fecha_corriente_desc'
+      : 'fecha_nota_desc'
   )
 }
 
@@ -85,7 +91,7 @@ async function fetchNotasCreditoSupabase(params = {}) {
     const now = Date.now()
     const daysMs = dias * 24 * 60 * 60 * 1000
     const sinceIso = new Date(now - daysMs).toISOString()
-    query = query.gte('fecha_corriente', sinceIso)
+    query = query.gte('fecha_nota', sinceIso)
   }
   if (rol === 'VENDEDOR' && !isSuperuser) {
     if (usuarioId == null) {
@@ -148,8 +154,8 @@ async function fetchNotasCreditoSupabase(params = {}) {
     query = query.in('ruta_id', rutaIds)
   }
 
-  if (sort === 'fecha_corriente_desc') query = query.order('fecha_corriente', { ascending: false, nullsFirst: false })
-  if (sort === 'fecha_corriente_asc') query = query.order('fecha_corriente', { ascending: true, nullsFirst: false })
+  if (sort === 'fecha_nota_desc') query = query.order('fecha_nota', { ascending: false, nullsFirst: false })
+  if (sort === 'fecha_nota_asc') query = query.order('fecha_nota', { ascending: true, nullsFirst: false })
   if (sort === 'saldo_desc') query = query.order('saldo', { ascending: false, nullsFirst: false })
   if (sort === 'saldo_asc') query = query.order('saldo', { ascending: true, nullsFirst: false })
   if (sort === 'estado_asc') query = query.order('estado', { ascending: true, nullsFirst: false })

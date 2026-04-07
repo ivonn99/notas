@@ -1,10 +1,12 @@
 import { apiUrl } from '../utils/apiUrl.js'
 import { getApiAuthorizationHeader } from '../utils/apiAuthHeaders.js'
 import {
+  analizarImportacionPrevia,
   buildPreviewPayload,
   buildRutaMapFromRows,
   detectMappingFromHeaders,
   ejecutarImportacionSupabase,
+  parseEmpresaImportacion,
   parseMappingInput,
   parseRecordsFromFile,
   sampleCsv,
@@ -95,10 +97,13 @@ export const importacionesApi = {
       importacion: imp,
     }
   },
-  preview: async (file, mapping = null) => {
+  preview: async (file, mapping = null, empresaImportacion = null) => {
+    const scope = parseEmpresaImportacion(empresaImportacion)
+    if (!scope) throw new Error('Selecciona la empresa del reporte (DISTRIBUIDORA o RODRIGO)')
     if (!isSupabaseConfigured) {
       const fd = new FormData()
       fd.append('file', file)
+      fd.append('empresa_scope', scope)
       if (mapping) fd.append('mapping', JSON.stringify(mapping))
       const res = await fetch(apiUrl('/api/importaciones/preview'), {
         method: 'POST',
@@ -129,6 +134,47 @@ export const importacionesApi = {
       records,
       mappingArg: mapping,
       rutaMap,
+      empresaScope: scope,
+    })
+  },
+  /** Estima notas en base, en archivo y descarte (sin escribir datos). */
+  analizarAntesDeImportar: async (file, mapping = null, empresaImportacion = null) => {
+    const scope = parseEmpresaImportacion(empresaImportacion)
+    if (!scope) throw new Error('Selecciona la empresa del reporte (DISTRIBUIDORA o RODRIGO)')
+    if (!isSupabaseConfigured) {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('empresa_scope', scope)
+      if (mapping) fd.append('mapping', JSON.stringify(mapping))
+      const res = await fetch(apiUrl('/api/importaciones/analizar'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { ...(getApiAuthorizationHeader() || {}) },
+        body: fd,
+      })
+      const text = await res.text()
+      let data = {}
+      try {
+        data = text ? JSON.parse(text) : {}
+      } catch {
+        data = {}
+      }
+      if (!res.ok) throw new Error(data.error || `Error HTTP ${res.status}`)
+      return data
+    }
+
+    const meta = await getSupabaseAuthMeta()
+    if (!canAdmin(meta)) throw new Error('Sin permiso')
+
+    const records = await parseRecordsFromFile(file)
+    const { mapping: autoMapping } = detectMappingFromHeaders(records)
+    const activeMapping = parseMappingInput(mapping) || autoMapping
+
+    return analizarImportacionPrevia({
+      supabase,
+      records,
+      mapping: activeMapping,
+      empresaScope: scope,
     })
   },
   downloadErroresTxt: async (id) => {
@@ -175,10 +221,13 @@ export const importacionesApi = {
     if (!canAdmin(meta)) throw new Error('Sin permiso')
     return sampleCsv()
   },
-  uploadCsv: async (file, mapping = null) => {
+  uploadCsv: async (file, mapping = null, empresaImportacion = null) => {
+    const scope = parseEmpresaImportacion(empresaImportacion)
+    if (!scope) throw new Error('Selecciona la empresa del reporte (DISTRIBUIDORA o RODRIGO)')
     if (!isSupabaseConfigured) {
       const fd = new FormData()
       fd.append('file', file)
+      fd.append('empresa_scope', scope)
       if (mapping) fd.append('mapping', JSON.stringify(mapping))
       const res = await fetch(apiUrl('/api/importaciones/upload'), {
         method: 'POST',
@@ -214,7 +263,7 @@ export const importacionesApi = {
         registros_actualizados: 0,
         registros_resueltos: 0,
         estado: 'EN_PROCESO',
-        observaciones: `Inicio de importación ${new Date().toISOString()}`,
+        observaciones: `Inicio de importación ${new Date().toISOString()}\nempresa_importacion=${scope}`,
         usuario_id: meta.usuarioId,
       })
       .select('id')
@@ -231,6 +280,7 @@ export const importacionesApi = {
       usuarioId: meta.usuarioId,
       username: meta.username,
       mapping: activeMapping,
+      empresaScope: scope,
     })
 
     return {

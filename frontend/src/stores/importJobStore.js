@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { importacionesApi } from '../services/importacionesApi.js'
+import { buildImportacionResumenMessage } from '../utils/importacionResumen.js'
 
 const POLL_MS = 1200
 
@@ -22,8 +23,10 @@ export const useImportJobStore = create((set, get) => ({
   resetMessages: () => set({ error: '', okMessage: '' }),
 
   pollProgress: async (importacionId) => {
+    let last = null
     while (true) {
       const p = await importacionesApi.progreso(importacionId)
+      last = p
       if (p.inMemory) {
         set({
           currentImportacionId: importacionId,
@@ -51,9 +54,10 @@ export const useImportJobStore = create((set, get) => ({
       }
       await new Promise((r) => setTimeout(r, POLL_MS))
     }
+    return last
   },
 
-  startImport: async ({ file, mapping }) => {
+  startImport: async ({ file, mapping, empresaImportacion }) => {
     set({
       loading: true,
       error: '',
@@ -66,10 +70,10 @@ export const useImportJobStore = create((set, get) => ({
       pct: 0,
     })
     try {
-      const r = await importacionesApi.uploadCsv(file, mapping)
-      await get().pollProgress(r.importacionId)
+      const r = await importacionesApi.uploadCsv(file, mapping, empresaImportacion)
+      const lastPoll = await get().pollProgress(r.importacionId)
       set({
-        okMessage: `Importación #${r.importacionId} finalizada. Revisa historial para detalle.`,
+        okMessage: buildImportacionResumenMessage(r.importacionId, lastPoll),
       })
       return r
     } catch (e) {

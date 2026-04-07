@@ -7,7 +7,7 @@ const initialNotas = {
   ruta: '',
   q: '',
   dias: '',
-  sort: 'fecha_corriente_desc',
+  sort: 'fecha_nota_desc',
 }
 
 const initialSeguimiento = {

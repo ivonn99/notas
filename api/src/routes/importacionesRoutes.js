@@ -15,6 +15,13 @@ const progressByImportId = new Map()
 const EMPRESAS_VALIDAS = new Set(['DISTRIBUIDORA', 'RODRIGO'])
 const ESTADOS_VALIDOS = new Set(['PENDIENTE', 'RESUELTA', 'CANCELADA'])
 
+function parseEmpresaScope(raw) {
+  const e = String(raw ?? '')
+    .trim()
+    .toUpperCase()
+  return EMPRESAS_VALIDAS.has(e) ? e : null
+}
+
 function toNum(value) {
   const n = Number(String(value ?? '').replace(/,/g, '').trim())
   return Number.isFinite(n) ? n : null
@@ -22,7 +29,7 @@ function toNum(value) {
 
 function toBool(value) {
   const s = String(value ?? '').trim().toLowerCase()
-  return ['1', 'true', 'si', 'sí', 'yes', 'y'].includes(s)
+  return ['1', 'true', 'si', 's?', 'yes', 'y'].includes(s)
 }
 
 function excelSerialToIsoDate(value) {
@@ -107,7 +114,7 @@ function normalizeRow(row) {
   const empresa = String(pickField(row, ['empresa'], 'DISTRIBUIDORA'))
     .trim()
     .toUpperCase()
-  const cliente = String(pickField(row, ['cliente', 'razon_social', 'razón_social'])).trim()
+  const cliente = String(pickField(row, ['cliente', 'razon_social', 'raz?n_social'])).trim()
   const estadoRaw = String(pickField(row, ['estado'], 'PENDIENTE'))
     .trim()
     .toUpperCase()
@@ -192,7 +199,7 @@ function detectMappingFromHeaders(records) {
   }
   const aliases = {
     serie_folio: ['serie_folio', 'serie', 'folio', 'serie/folio', 'seriefolio'],
-    cliente: ['cliente', 'razon_social', 'razón_social'],
+    cliente: ['cliente', 'razon_social', 'raz?n_social'],
     empresa: ['empresa'],
     ruta: ['ruta', 'rutas', 'ruta_codigo'],
     monto: ['monto', 'importe'],
@@ -215,19 +222,29 @@ function detectMappingFromHeaders(records) {
   return { headers, mapping }
 }
 
-function validateNormalized(row, rutaMap) {
+function validateNormalized(row, rutaMap, empresaScope = null) {
   const errors = []
   if (!row.serieFolio) errors.push('serie_folio obligatorio')
   if (!row.empresa) errors.push('empresa obligatoria')
   if (row.empresa && !EMPRESAS_VALIDAS.has(row.empresa)) {
-    errors.push(`empresa inválida: ${row.empresa}`)
+    errors.push(`empresa inv?lida: ${row.empresa}`)
+  }
+  if (empresaScope) {
+    const got = String(row.empresa || '')
+      .trim()
+      .toUpperCase()
+    if (got !== empresaScope) {
+      errors.push(
+        `empresa de la fila (${got || 'vac?a'}) debe coincidir con la empresa elegida para esta importaci?n (${empresaScope})`,
+      )
+    }
   }
   if (row.estado && !ESTADOS_VALIDOS.has(row.estado)) {
-    errors.push(`estado inválido: ${row.estado}`)
+    errors.push(`estado inv?lido: ${row.estado}`)
   }
-  if (row.monto == null) errors.push('monto inválido')
-  if (row.abono == null) errors.push('abono inválido')
-  if (!row.fechaNota) errors.push('fecha_nota inválida (usa dd/mm/aaaa o yyyy-mm-dd)')
+  if (row.monto == null) errors.push('monto inv?lido')
+  if (row.abono == null) errors.push('abono inv?lido')
+  if (!row.fechaNota) errors.push('fecha_nota inv?lida (usa dd/mm/aaaa o yyyy-mm-dd)')
   return errors
 }
 
@@ -294,6 +311,7 @@ async function runImportJob({
   originalName,
   userId,
   mapping,
+  empresaScope,
 }) {
   const job = progressByImportId.get(importacionId)
   if (!job) return
@@ -307,6 +325,11 @@ async function runImportJob({
   const empresasImportadas = new Set()
 
   try {
+    const scope = parseEmpresaScope(empresaScope)
+    if (!scope) {
+      throw new Error('empresa_scope inv?lido o faltante (DISTRIBUIDORA o RODRIGO)')
+    }
+
     const records = parseRecordsFromUpload(fileBuffer, originalName)
     job.total = records.length
     job.status = 'EN_PROCESO'
@@ -340,8 +363,8 @@ async function runImportJob({
           finalCodigo,
           finalCodigo === 'SIN_RUTA' ? 'Sin ruta especificada' : `Ruta ${finalCodigo}`,
           finalCodigo === 'SIN_RUTA'
-            ? 'Creada automáticamente por importación (sin ruta en archivo)'
-            : 'Creada automáticamente por importación',
+            ? 'Creada autom?ticamente por importaci?n (sin ruta en archivo)'
+            : 'Creada autom?ticamente por importaci?n',
         ],
       )
       const id = created.rows[0].id
@@ -361,7 +384,7 @@ async function runImportJob({
       const raw = records[i]
       const rowNum = i + 2 // +1 por headers y +1 por index 0
       const row = normalizeRowWithMapping(raw, mapping)
-      const rowErrors = validateNormalized(row, rutaMap)
+      const rowErrors = validateNormalized(row, rutaMap, scope)
       if (rowErrors.length > 0) {
         if (errores.length < 100) errores.push(`Fila ${rowNum}: ${rowErrors.join('; ')}`)
         job.processed += 1
@@ -582,28 +605,24 @@ async function runImportJob({
             nuevos,
             actualizados,
             resueltos,
-            `Procesando ${job.processed}/${records.length} ��� ${originalName}`,
+            `Procesando ${job.processed}/${records.length} ��� ${originalName}`,
             importacionId,
           ],
         )
       }
     }
 
-    // Regla de negocio: comparación de matriz contra matriz.
+    // Regla de negocio: comparaci?n de matriz contra matriz.
     // Si una nota existente ya no viene en el nuevo reporte de la misma empresa,
-    // se marca como RESUELTA por descarte (solo si no hubo errores de validación).
-    if (errores.length === 0 && empresasImportadas.size > 0) {
-      const seriesByEmpresa = new Map()
+    // se marca como RESUELTA por descarte (solo si no hubo errores de validaci?n).
+    if (errores.length === 0 && validRows.length > 0) {
+      const serieSet = new Set()
       for (const row of validRows) {
-        const emp = String(row.empresa || '').toUpperCase()
-        if (!seriesByEmpresa.has(emp)) seriesByEmpresa.set(emp, new Set())
-        seriesByEmpresa.get(emp).add(String(row.serie_folio || '').trim())
+        serieSet.add(String(row.serie_folio || '').trim())
       }
-
-      for (const [empresa, serieSet] of seriesByEmpresa.entries()) {
-        const series = Array.from(serieSet).filter(Boolean)
-        const upd = await pool.query(
-          `
+      const series = Array.from(serieSet).filter(Boolean)
+      const upd = await pool.query(
+        `
           UPDATE notas_credito n
           SET
             estado = 'RESUELTA',
@@ -618,22 +637,26 @@ async function runImportJob({
               WHERE t.serie_folio = n.serie_folio
             )
         `,
-          [empresa, series],
-        )
-        const changed = Number(upd.rowCount || 0)
-        resueltosPorDescarte += changed
-        resueltos += changed
-      }
+        [scope, series],
+      )
+      const changed = Number(upd.rowCount || 0)
+      resueltosPorDescarte += changed
+      resueltos += changed
     }
 
     const estadoFinal = errores.length > 0 ? 'PARCIAL' : 'COMPLETADA'
+    const aplicadas = nuevos + actualizados
     const obsLines = [
-      `Importación CSV (${originalName})`,
+      `Importaci?n CSV (${originalName})`,
+      `empresa_importacion=${scope}`,
       `empresas=${Array.from(empresasImportadas).sort().join('|') || 'N/A'}`,
+      resueltosPorDescarte > 0
+        ? `Resumen: del archivo se aplicaron ${aplicadas} notas (${nuevos} nuevas, ${actualizados} actualizadas). ${resueltosPorDescarte} notas ya no figuraban en el reporte y quedaron RESUELTAS autom?ticamente.`
+        : `Resumen: del archivo se aplicaron ${aplicadas} notas (${nuevos} nuevas, ${actualizados} actualizadas). Ninguna nota pendiente qued? RESUELTA por descarte.`,
       `nuevos=${nuevos}, actualizados=${actualizados}, resueltos=${resueltos}, resueltos_descarte=${resueltosPorDescarte}, errores=${errores.length}`,
     ]
     if (errores.length > 0) {
-      obsLines.push('Errores (máx 100):')
+      obsLines.push('Errores (m?x 100):')
       obsLines.push(...errores)
     }
 
@@ -675,11 +698,14 @@ async function runImportJob({
       },
     })
 
+    job.registros_nuevos = nuevos
+    job.registros_actualizados = actualizados
+    job.registros_resueltos = resueltos
     job.status = estadoFinal
     job.done = true
     job.errorCount = errores.length
   } catch (e) {
-    const msg = e?.message || 'Error inesperado en importación'
+    const msg = e?.message || 'Error inesperado en importaci?n'
     await pool.query(
       `
       UPDATE importaciones
@@ -696,6 +722,9 @@ async function runImportJob({
       usuarioId: userId,
       detalle: { archivo: originalName, error: msg },
     })
+    job.registros_nuevos = 0
+    job.registros_actualizados = 0
+    job.registros_resueltos = 0
     job.status = 'FALLIDA'
     job.done = true
     job.error = msg
@@ -704,6 +733,121 @@ async function runImportJob({
     setTimeout(() => {
       progressByImportId.delete(importacionId)
     }, 10 * 60 * 1000)
+  }
+}
+
+function chunkArrayForAnalisis(arr, size) {
+  const out = []
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+  return out
+}
+
+async function analyzeImportBuffer({ fileBuffer, originalName, empresaScope, mappingInput }) {
+  const scope = parseEmpresaScope(empresaScope)
+  if (!scope) throw Object.assign(new Error('empresa_scope inv?lido'), { statusCode: 400 })
+
+  const records = parseRecordsFromUpload(fileBuffer, originalName)
+  const pool = getPool()
+  const rutasR = await pool.query('SELECT id, codigo FROM rutas')
+  const rutaMap = new Map(rutasR.rows.map((r) => [String(r.codigo).toUpperCase(), r.id]))
+  const { mapping: autoMapping } = detectMappingFromHeaders(records)
+  const activeMapping = parseMappingInput(mappingInput) || autoMapping
+
+  let filasConError = 0
+  const foliosValidos = new Set()
+  for (let i = 0; i < records.length; i += 1) {
+    const normalized = normalizeRowWithMapping(records[i], activeMapping)
+    const errors = validateNormalized(normalized, rutaMap, scope)
+    if (errors.length > 0) {
+      filasConError += 1
+      continue
+    }
+    foliosValidos.add(String(normalized.serieFolio).trim())
+  }
+
+  const filasValidas = records.length - filasConError
+  const foliosUnicos = [...foliosValidos].filter(Boolean)
+  const tieneErrores = filasConError > 0
+  const sinFilasValidas = foliosUnicos.length === 0
+
+  const totalR = await pool.query(`SELECT COUNT(*)::int AS c FROM notas_credito WHERE empresa = $1`, [
+    scope,
+  ])
+  const abiertasR = await pool.query(
+    `SELECT COUNT(*)::int AS c FROM notas_credito WHERE empresa = $1 AND estado <> 'RESUELTA'`,
+    [scope],
+  )
+  const totalBaseN = totalR.rows[0]?.c ?? 0
+  const abiertasN = abiertasR.rows[0]?.c ?? 0
+
+  const existingAny = new Set()
+  const existingAbierta = new Set()
+  for (const part of chunkArrayForAnalisis(foliosUnicos, 80)) {
+    if (part.length === 0) continue
+    const r = await pool.query(
+      `SELECT serie_folio, estado FROM notas_credito WHERE empresa = $1 AND serie_folio = ANY($2::text[])`,
+      [scope, part],
+    )
+    for (const row of r.rows) {
+      const f = String(row.serie_folio || '').trim()
+      if (!f) continue
+      existingAny.add(f)
+      if (String(row.estado || '').toUpperCase() !== 'RESUELTA') existingAbierta.add(f)
+    }
+  }
+
+  let nuevas = 0
+  let actualizadas = 0
+  let abiertasQueSiguenEnArchivo = 0
+  for (const f of foliosUnicos) {
+    if (existingAbierta.has(f)) abiertasQueSiguenEnArchivo += 1
+    if (existingAny.has(f)) actualizadas += 1
+    else nuevas += 1
+  }
+
+  const descarteAplica = !tieneErrores && !sinFilasValidas
+  const resueltasPorDescarte = descarteAplica ? Math.max(0, abiertasN - abiertasQueSiguenEnArchivo) : null
+
+  const enBaseYEnArchivo = existingAny.size
+  const enBaseNoEnArchivo = Math.max(0, totalBaseN - enBaseYEnArchivo)
+  const abiertasNoEnArchivo = Math.max(0, abiertasN - abiertasQueSiguenEnArchivo)
+  const yaResueltasNoEnArchivo = Math.max(0, enBaseNoEnArchivo - abiertasNoEnArchivo)
+
+  return {
+    ok: true,
+    empresa: scope,
+    archivo: {
+      filas_totales: records.length,
+      filas_validas: filasValidas,
+      filas_con_error: filasConError,
+      folios_unicos_validos: foliosUnicos.length,
+    },
+    base: {
+      total_notas_empresa: totalBaseN,
+      notas_sin_estado_resuelta: abiertasN,
+      notas_ya_resueltas: Math.max(0, totalBaseN - abiertasN),
+    },
+    comparacion: {
+      notas_en_base_cuyo_folio_si_esta_en_archivo: enBaseYEnArchivo,
+      notas_en_base_cuyo_folio_no_esta_en_archivo: enBaseNoEnArchivo,
+      de_esas_ya_resueltas_sin_tocar: yaResueltasNoEnArchivo,
+      de_esas_abiertas_se_marcarian_resueltas_si_aplica_descarte: abiertasNoEnArchivo,
+    },
+    estimado_al_importar: {
+      nuevas,
+      actualizadas,
+      resueltas_por_descarte: resueltasPorDescarte,
+      descarte_se_aplicaria: descarteAplica,
+      nota_descarte: !descarteAplica
+        ? tieneErrores
+          ? 'Con errores de validaci?n la importaci?n quedar?a PARCIAL y no se aplica descarte autom?tico.'
+          : 'Sin filas v?lidas no se aplica descarte (no hay lista de folios en el archivo para comparar).'
+        : (resueltasPorDescarte ?? 0) > 0
+          ? `Se marcar?an ${resueltasPorDescarte} nota${resueltasPorDescarte === 1 ? '' : 's'} como RESUELTA por descarte (hoy sin RESUELTA y con folio que no viene en el archivo).`
+          : enBaseNoEnArchivo > 0
+            ? `Hay ${enBaseNoEnArchivo} nota${enBaseNoEnArchivo === 1 ? '' : 's'} en base cuyo folio no est? en este archivo; ${yaResueltasNoEnArchivo} ya ${yaResueltasNoEnArchivo === 1 ? 'est?' : 'est?n'} RESUELTA (el descarte no ${yaResueltasNoEnArchivo === 1 ? 'la' : 'las'} toca). Las ${abiertasN} sin RESUELTA tienen folio en el archivo, as? que no queda ninguna abierta fuera del reporte y el descarte no cierra m?s.`
+            : null,
+    },
   }
 }
 
@@ -742,6 +886,39 @@ router.get('/muestra', requireAuth, requireRoles('ADMIN', 'CREDITO'), (_req, res
 })
 
 router.post(
+  '/analizar',
+  requireAuth,
+  requireRoles('ADMIN', 'CREDITO'),
+  upload.single('file'),
+  async (req, res, next) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ ok: false, error: 'Archivo requerido (campo file)' })
+      }
+      const scope = parseEmpresaScope(req.body?.empresa_scope)
+      if (!scope) {
+        return res.status(400).json({
+          ok: false,
+          error: 'empresa_scope requerido: DISTRIBUIDORA o RODRIGO',
+        })
+      }
+      const out = await analyzeImportBuffer({
+        fileBuffer: req.file.buffer,
+        originalName: req.file.originalname,
+        empresaScope: scope,
+        mappingInput: req.body?.mapping,
+      })
+      return res.json(out)
+    } catch (e) {
+      if (e.statusCode === 400) {
+        return res.status(400).json({ ok: false, error: e.message })
+      }
+      next(e)
+    }
+  },
+)
+
+router.post(
   '/preview',
   requireAuth,
   requireRoles('ADMIN', 'CREDITO'),
@@ -750,6 +927,13 @@ router.post(
     try {
       if (!req.file) {
         return res.status(400).json({ ok: false, error: 'Archivo requerido (campo file)' })
+      }
+      const scope = parseEmpresaScope(req.body?.empresa_scope)
+      if (!scope) {
+        return res.status(400).json({
+          ok: false,
+          error: 'empresa_scope requerido: DISTRIBUIDORA o RODRIGO',
+        })
       }
       const records = parseRecordsFromUpload(req.file.buffer, req.file.originalname)
       const pool = getPool()
@@ -766,7 +950,7 @@ router.post(
       for (let i = 0; i < maxPreview; i += 1) {
         const raw = records[i]
         const normalized = normalizeRowWithMapping(raw, activeMapping)
-        const errors = validateNormalized(normalized, rutaMap)
+        const errors = validateNormalized(normalized, rutaMap, scope)
         if (errors.length > 0) invalidCount += 1
         else validCount += 1
         previewRows.push({
@@ -779,6 +963,7 @@ router.post(
 
       return res.json({
         ok: true,
+        empresa_importacion: scope,
         file: {
           name: req.file.originalname,
           size: req.file.size || null,
@@ -804,7 +989,7 @@ router.get('/:id/progreso', requireAuth, requireRoles('ADMIN', 'CREDITO'), async
   try {
     const id = Number.parseInt(String(req.params.id ?? ''), 10)
     if (!Number.isFinite(id) || id <= 0) {
-      return res.status(400).json({ ok: false, error: 'ID inválido' })
+      return res.status(400).json({ ok: false, error: 'ID inv?lido' })
     }
     const inMemory = progressByImportId.get(id)
     if (inMemory) {
@@ -835,7 +1020,7 @@ router.get('/:id/progreso', requireAuth, requireRoles('ADMIN', 'CREDITO'), async
       [id],
     )
     if (r.rowCount === 0) {
-      return res.status(404).json({ ok: false, error: 'Importación no encontrada' })
+      return res.status(404).json({ ok: false, error: 'Importaci?n no encontrada' })
     }
     const imp = r.rows[0]
     const parsed = parseProgressFromObservaciones(imp.observaciones)
@@ -868,7 +1053,7 @@ router.get('/:id/errores-txt', requireAuth, requireRoles('ADMIN', 'CREDITO'), as
   try {
     const id = Number.parseInt(String(req.params.id ?? ''), 10)
     if (!Number.isFinite(id) || id <= 0) {
-      return res.status(400).json({ ok: false, error: 'ID inválido' })
+      return res.status(400).json({ ok: false, error: 'ID inv?lido' })
     }
     const pool = getPool()
     const r = await pool.query(
@@ -876,14 +1061,14 @@ router.get('/:id/errores-txt', requireAuth, requireRoles('ADMIN', 'CREDITO'), as
       [id],
     )
     if (r.rowCount === 0) {
-      return res.status(404).json({ ok: false, error: 'Importación no encontrada' })
+      return res.status(404).json({ ok: false, error: 'Importaci?n no encontrada' })
     }
     const imp = r.rows[0]
     const lines = String(imp.observaciones || '')
       .split(/\r?\n/)
       .filter((l) => l.trim().startsWith('Fila '))
     const content = [
-      `Importación #${imp.id} (${imp.estado})`,
+      `Importaci?n #${imp.id} (${imp.estado})`,
       `Archivo: ${imp.nombre_archivo || '-'}`,
       '',
       ...(lines.length > 0 ? lines : ['Sin errores por fila.']),
@@ -906,6 +1091,13 @@ router.post(
       if (!req.file) {
         return res.status(400).json({ ok: false, error: 'Archivo requerido (campo file)' })
       }
+      const scope = parseEmpresaScope(req.body?.empresa_scope)
+      if (!scope) {
+        return res.status(400).json({
+          ok: false,
+          error: 'empresa_scope requerido: DISTRIBUIDORA o RODRIGO',
+        })
+      }
       const pool = getPool()
       const importacionR = await pool.query(
         `
@@ -919,7 +1111,7 @@ router.post(
       `,
         [
           req.file.originalname,
-          `Inicio de importación ${new Date().toISOString()}`,
+          `Inicio de importaci?n ${new Date().toISOString()}\nempresa_importacion=${scope}`,
           req.user.sub,
         ],
       )
@@ -949,6 +1141,7 @@ router.post(
         originalName: req.file.originalname,
         userId: req.user.sub,
         mapping: parseMappingInput(req.body?.mapping),
+        empresaScope: scope,
       }).catch((err) => {
         console.error('[importaciones] runImportJob:', err)
       })

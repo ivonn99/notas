@@ -37,8 +37,9 @@ const SEGUIMIENTO_ORDER_BY = {
     'n.requiere_atencion DESC, n.fecha_ultima_actualizacion DESC NULLS LAST, n.id DESC',
   fecha_ultima_desc: 'n.fecha_ultima_actualizacion DESC NULLS LAST, n.id DESC',
   fecha_ultima_asc: 'n.fecha_ultima_actualizacion ASC NULLS LAST, n.id ASC',
-  fecha_corriente_desc: 'n.fecha_corriente DESC NULLS LAST, n.id DESC',
-  fecha_corriente_asc: 'n.fecha_corriente ASC NULLS LAST, n.id ASC',
+  // Compatibilidad: si llega el sort viejo de fecha_corriente, usar fecha_nota.
+  fecha_corriente_desc: 'n.fecha_nota DESC NULLS LAST, n.id DESC',
+  fecha_corriente_asc: 'n.fecha_nota ASC NULLS LAST, n.id ASC',
   fecha_nota_desc: 'n.fecha_nota DESC NULLS LAST, n.id DESC',
   fecha_nota_asc: 'n.fecha_nota ASC NULLS LAST, n.id ASC',
   id_desc: 'n.id DESC',

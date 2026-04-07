@@ -6,6 +6,7 @@ import { fetchSeguimientoList } from '../../services/seguimientoApi.js'
 import { useListCacheStore } from '../../stores/listCacheStore.js'
 import { useListFiltersStore } from '../../stores/listFiltersStore.js'
 import { estadoBadgeClass } from '../../utils/estadoBadge.js'
+import { formatDiasNotaCorriente } from '../../utils/diasCorriente.js'
 
 const PAGE_SIZE = 20
 const BUCKET_LABELS = {
@@ -75,6 +76,10 @@ function NotaSeguimientoCardMovil({ n }) {
         <dl className="row small mb-0 gx-2">
           <dt className="col-5 text-body-secondary">Fecha nota</dt>
           <dd className="col-7 mb-1">{formatFechaNota(n.fecha_nota)}</dd>
+          <dt className="col-5 text-body-secondary">Días</dt>
+          <dd className="col-7 mb-1" title="Entre fecha nota y fecha corriente (o hoy)">
+            {formatDiasNotaCorriente(n.fecha_nota, n.fecha_corriente)}
+          </dd>
           <dt className="col-5 text-body-secondary">Cliente</dt>
           <dd className="col-7 mb-1 text-break">{n.cliente || '—'}</dd>
           <dt className="col-5 text-body-secondary">Empresa</dt>
@@ -169,7 +174,7 @@ export default function SeguimientoPage() {
         ...r,
         items: merged,
       })
-      setPage(targetPage)
+      setPage(typeof r.page === 'number' ? r.page : targetPage)
     } catch (e) {
       setError(e?.message || 'No se pudo cargar seguimiento')
     } finally {
@@ -315,8 +320,6 @@ export default function SeguimientoPage() {
                 <option value="default">Atención y última actividad (predeterminado)</option>
                 <option value="fecha_ultima_desc">Última actualización — más reciente</option>
                 <option value="fecha_ultima_asc">Última actualización — más antigua</option>
-                <option value="fecha_corriente_desc">Fecha corriente — más reciente</option>
-                <option value="fecha_corriente_asc">Fecha corriente — más antigua</option>
                 <option value="fecha_nota_desc">Fecha nota — más reciente</option>
                 <option value="fecha_nota_asc">Fecha nota — más antigua</option>
                 <option value="id_desc">ID — mayor primero</option>
@@ -449,6 +452,9 @@ export default function SeguimientoPage() {
                 <th>ID</th>
                 <th>Serie/Folio</th>
                 <th>Fecha nota</th>
+                <th className="text-end" title="Días entre fecha nota y fecha corriente (o hoy)">
+                  Días
+                </th>
                 <th>Cliente</th>
                 <th>Empresa</th>
                 <th>Ruta</th>
@@ -463,7 +469,7 @@ export default function SeguimientoPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="12" className="text-center py-4">
+                  <td colSpan="13" className="text-center py-4">
                     Cargando...
                   </td>
                 </tr>
@@ -473,6 +479,9 @@ export default function SeguimientoPage() {
                     <td>{n.id}</td>
                     <td>{n.serie_folio || '—'}</td>
                     <td className="text-nowrap small">{formatFechaNota(n.fecha_nota)}</td>
+                    <td className="text-end text-nowrap small" title="Entre fecha nota y fecha corriente (o hoy)">
+                      {formatDiasNotaCorriente(n.fecha_nota, n.fecha_corriente)}
+                    </td>
                     <td>{n.cliente || '—'}</td>
                     <td>{n.empresa || '—'}</td>
                     <td>{n.ruta_codigo || '—'}</td>
@@ -492,7 +501,7 @@ export default function SeguimientoPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="12" className="text-center py-4">
+                  <td colSpan="13" className="text-center py-4">
                     Sin resultados
                   </td>
                 </tr>

@@ -1,0 +1,38 @@
+/**
+ * Días calendario entre fecha_nota y fecha_corriente ("día corriente" en BD).
+ * Si no hay fecha_corriente, se usa la fecha local de hoy.
+ * @param {unknown} fechaNota
+ * @param {unknown} fechaCorriente
+ * @returns {number | null}
+ */
+export function diasEntreNotaYCorriente(fechaNota, fechaCorriente) {
+  const ymdNota = ymdFromDbValue(fechaNota)
+  if (!ymdNota) return null
+  const ymdCor = ymdFromDbValue(fechaCorriente) ?? ymdTodayLocal()
+  const t0 = Date.UTC(ymdNota.y, ymdNota.m - 1, ymdNota.d)
+  const t1 = Date.UTC(ymdCor.y, ymdCor.m - 1, ymdCor.d)
+  return Math.round((t1 - t0) / 86400000)
+}
+
+function ymdFromDbValue(v) {
+  if (v == null || v === '') return null
+  const s = String(v).trim()
+  const m = s.slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!m) return null
+  const y = Number(m[1])
+  const mo = Number(m[2])
+  const d = Number(m[3])
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return null
+  return { y, m: mo, d }
+}
+
+function ymdTodayLocal() {
+  const t = new Date()
+  return { y: t.getFullYear(), m: t.getMonth() + 1, d: t.getDate() }
+}
+
+export function formatDiasNotaCorriente(fechaNota, fechaCorriente) {
+  const n = diasEntreNotaYCorriente(fechaNota, fechaCorriente)
+  if (n == null) return '—'
+  return String(n)
+}
