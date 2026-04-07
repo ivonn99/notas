@@ -112,6 +112,7 @@ export default function SeguimientoPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [loadingMore, setLoadingMore] = useState(false)
+  const requestSeqRef = useRef(0)
   const loadMoreRef = useRef(null)
   const syncMountRef = useRef(false)
   const getCacheEntry = useListCacheStore((s) => s.getEntry)
@@ -144,8 +145,10 @@ export default function SeguimientoPage() {
   const hasMore = page < (data.totalPages || 1)
 
   const cargarPagina = useCallback(async (targetPage, append = false) => {
+    const requestSeq = ++requestSeqRef.current
     const cached = getCacheEntry('seguimiento', cacheKey)
     if (cached?.pages?.[targetPage]) {
+      if (requestSeq !== requestSeqRef.current) return
       const merged = mergeCachedPages(cached, targetPage)
       setData({
         items: merged,
@@ -167,6 +170,7 @@ export default function SeguimientoPage() {
     }
     try {
       const r = await fetchSeguimientoList({ ...filtros, page: targetPage })
+      if (requestSeq !== requestSeqRef.current) return
       setCachePage('seguimiento', cacheKey, targetPage, r)
       const nextCached = getCacheEntry('seguimiento', cacheKey)
       const merged = nextCached ? mergeCachedPages(nextCached, targetPage) : r.items || []
@@ -176,10 +180,13 @@ export default function SeguimientoPage() {
       })
       setPage(typeof r.page === 'number' ? r.page : targetPage)
     } catch (e) {
+      if (requestSeq !== requestSeqRef.current) return
       setError(e?.message || 'No se pudo cargar seguimiento')
     } finally {
-      setLoading(false)
-      setLoadingMore(false)
+      if (requestSeq === requestSeqRef.current) {
+        setLoading(false)
+        setLoadingMore(false)
+      }
     }
   }, [filtros, getCacheEntry, cacheKey, setCachePage])
 
