@@ -8,7 +8,7 @@ import {
   postSeguimientoRuta,
 } from '../../services/seguimientoApi.js'
 import { useDomainSyncStore } from '../../stores/domainSyncStore.js'
-import { estadoBadgeClass } from '../../utils/estadoBadge.js'
+import { estadoBadgeClass, notaMuestraAtencion } from '../../utils/estadoBadge.js'
 
 function money(value) {
   const n = Number(value)
@@ -189,11 +189,11 @@ export default function DetalleNotaPage() {
                 </div>
               </div>
               <div className="row g-3 mt-1">
-                <div className="col-md-4">
+                <div className="col-md-3">
                   <small className="text-body-secondary d-block">Empresa</small>
                   <strong>{detalle.nota.empresa || '—'}</strong>
                 </div>
-                <div className="col-md-4">
+                <div className="col-md-3">
                   <small className="text-body-secondary d-block">Vendedor asignado</small>
                   <strong>
                     {detalle.nota.vendedor_username ||
@@ -201,7 +201,11 @@ export default function DetalleNotaPage() {
                       '—'}
                   </strong>
                 </div>
-                <div className="col-md-4">
+                <div className="col-md-3">
+                  <small className="text-body-secondary d-block">Requiere atención</small>
+                  <strong>{notaMuestraAtencion(detalle.nota) ? 'Sí' : 'No'}</strong>
+                </div>
+                <div className="col-md-3">
                   <small className="text-body-secondary d-block">Resolución automática</small>
                   {detalle.nota.resuelta_automaticamente ? (
                     <span className="badge text-bg-info">Sí (importación)</span>

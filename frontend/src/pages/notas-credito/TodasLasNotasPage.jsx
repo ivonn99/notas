@@ -5,7 +5,7 @@ import { useDomainSyncStore } from '../../stores/domainSyncStore.js'
 import { fetchNotasCredito } from '../../services/notasApi.js'
 import { useListCacheStore } from '../../stores/listCacheStore.js'
 import { useListFiltersStore } from '../../stores/listFiltersStore.js'
-import { estadoBadgeClass } from '../../utils/estadoBadge.js'
+import { estadoBadgeClass, notaMuestraAtencion } from '../../utils/estadoBadge.js'
 import { formatDiasNotaCorriente } from '../../utils/diasCorriente.js'
 
 const PAGE_SIZE = 20
@@ -98,7 +98,7 @@ function NotaCreditoCardMovil({ n }) {
           <dt className="col-5 text-body-secondary">Estado</dt>
           <dd className="col-7 mb-1">
             <span className={`badge ${estadoBadgeClass(n.estado)}`}>{n.estado || '—'}</span>
-            {n.requiere_atencion ? (
+            {notaMuestraAtencion(n) ? (
               <span className="badge text-bg-warning ms-1">Atención</span>
             ) : null}
             {n.resuelta_automaticamente ? (
@@ -152,6 +152,12 @@ export default function TodasLasNotasPage() {
     ],
   )
   const cacheKey = useMemo(() => JSON.stringify(baseParams), [baseParams])
+
+  // Misma causa que en Seguimiento: al volver del detalle la lista se remonta y el caché
+  // seguía sirviendo filas obsoletas si notasVersion no cambió o el efecto se saltaba.
+  useEffect(() => {
+    clearScreenCache('notas')
+  }, [clearScreenCache])
 
   useEffect(() => {
     if (!didMountSyncRef.current) {
@@ -366,7 +372,7 @@ export default function TodasLasNotasPage() {
                     <td className="text-end">{money(n.saldo)}</td>
                     <td>
                       <span className={`badge ${estadoBadgeClass(n.estado)}`}>{n.estado || '—'}</span>
-                      {n.requiere_atencion ? (
+                      {notaMuestraAtencion(n) ? (
                         <span className="badge text-bg-warning ms-1">Atención</span>
                       ) : null}
                       {n.resuelta_automaticamente ? (

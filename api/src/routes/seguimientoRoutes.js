@@ -96,10 +96,12 @@ router.get('/', requireAuth, async (req, res, next) => {
     }
 
     const atencion = String(req.query.atencion ?? '').trim().toLowerCase()
+    // Atención solo tiene sentido con estado PENDIENTE (evita RESUELTA + bandera en true).
     if (['si', 'sí', 'true', '1'].includes(atencion)) {
+      where.push(`n.estado = 'PENDIENTE'`)
       where.push('n.requiere_atencion = true')
     } else if (['no', 'false', '0'].includes(atencion)) {
-      where.push('n.requiere_atencion = false')
+      where.push('NOT (n.estado = \'PENDIENTE\' AND n.requiere_atencion = true)')
     }
 
     const q = String(req.query.q ?? '').trim()
@@ -131,7 +133,7 @@ router.get('/', requireAuth, async (req, res, next) => {
       `
       SELECT
         COUNT(*)::int AS total_filtrado,
-        COUNT(*) FILTER (WHERE n.requiere_atencion = true)::int AS requiere_atencion
+        COUNT(*) FILTER (WHERE n.estado = 'PENDIENTE' AND n.requiere_atencion = true)::int AS requiere_atencion
       FROM notas_credito n
       LEFT JOIN rutas r ON r.id = n.ruta_id
       ${whereSql}

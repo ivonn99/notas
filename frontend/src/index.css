@@ -227,6 +227,38 @@ body,
   --bs-btn-focus-shadow-rgb: 108, 169, 111;
 }
 
+/* Seguimiento: exportar Excel — sólido y contorno luminoso al hover */
+.btn-nc-export-excel {
+  transition:
+    box-shadow 0.22s ease,
+    border-color 0.22s ease;
+  border-width: 2px;
+}
+
+.btn-nc-export-excel:hover:not(:disabled):not(.disabled) {
+  box-shadow:
+    0 0 0 2px rgba(var(--bs-success-rgb), 0.42),
+    0 0 20px rgba(var(--bs-success-rgb), 0.5);
+}
+
+.btn-nc-export-excel:focus-visible {
+  box-shadow:
+    0 0 0 2px rgba(var(--bs-success-rgb), 0.42),
+    0 0 20px rgba(var(--bs-success-rgb), 0.45);
+}
+
+[data-theme='dark'] .btn-nc-export-excel:hover:not(:disabled):not(.disabled) {
+  box-shadow:
+    0 0 0 2px rgba(140, 220, 155, 0.55),
+    0 0 24px rgba(120, 210, 140, 0.48);
+}
+
+[data-theme='dark'] .btn-nc-export-excel:focus-visible {
+  box-shadow:
+    0 0 0 2px rgba(140, 220, 155, 0.5),
+    0 0 22px rgba(120, 210, 140, 0.42);
+}
+
 /* Resplandores / bordes de foco: Bootstrap usa #86b7fe + rgba(13,110,253) — pasamos a verde */
 .form-control:focus,
 .form-select:focus,

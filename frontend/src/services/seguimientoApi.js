@@ -117,8 +117,12 @@ function applySeguimientoListFilters(query, { estado, empresa, q, atencion, allo
   if (estado) qy = qy.eq('estado', estado)
   if (empresa) qy = qy.eq('empresa', empresa)
   if (q) qy = qy.or(`serie_folio.ilike.%${q}%,cliente.ilike.%${q}%,usuario_vendedor_pv.ilike.%${q}%`)
-  if (['si', 'sí', 'true', '1'].includes(atencion)) qy = qy.eq('requiere_atencion', true)
-  if (['no', 'false', '0'].includes(atencion)) qy = qy.eq('requiere_atencion', false)
+  if (['si', 'sí', 'true', '1'].includes(atencion)) {
+    qy = qy.eq('estado', 'PENDIENTE').eq('requiere_atencion', true)
+  }
+  if (['no', 'false', '0'].includes(atencion)) {
+    qy = qy.or('estado.neq.PENDIENTE,requiere_atencion.eq.false')
+  }
   if (Array.isArray(allowedFinal)) qy = qy.in('ruta_id', allowedFinal)
   return qy
 }
@@ -361,7 +365,9 @@ async function fetchSeguimientoListSupabase(params = {}) {
     vendedor_username: n.vendedor?.username || null,
   }))
 
-  const requiereAtencion = items.filter((x) => x.requiere_atencion).length
+  const requiereAtencion = items.filter(
+    (x) => String(x.estado || '').toUpperCase() === 'PENDIENTE' && x.requiere_atencion,
+  ).length
   const porRutaMap = new Map()
   for (const row of items) {
     const key = String(row.ruta_codigo || '(sin ruta)')

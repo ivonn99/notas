@@ -227,6 +227,13 @@ export function validateNormalized(row, _rutaMap, empresaScope = null) {
   if (row.estado && !ESTADOS_VALIDOS.has(row.estado)) {
     errors.push(`estado inválido: ${row.estado}`)
   }
+  if (
+    row.estado &&
+    ['RESUELTA', 'CANCELADA'].includes(row.estado) &&
+    row.requiereAtencion
+  ) {
+    errors.push('no puede haber requiere_atencion en true si estado es RESUELTA o CANCELADA')
+  }
   if (row.monto == null) errors.push('monto inválido')
   if (row.abono == null) errors.push('abono inválido')
   if (!row.fechaNota) errors.push('fecha_nota inválida (usa dd/mm/aaaa o yyyy-mm-dd)')
@@ -237,7 +244,7 @@ export function sampleCsv() {
   return [
     'serie_folio,cliente,empresa,ruta,monto,abono,fecha_nota,estado,usuario_vendedor_pv,requiere_atencion',
     'NC-0001,Cliente Demo,DISTRIBUIDORA,R01,1500.00,0.00,25/03/2026,PENDIENTE,vendedor_demo,false',
-    'NC-0002,Cliente Demo 2,RODRIGO,R02,980.50,300.00,24/03/2026,RESUELTA,vendedor_demo,true',
+    'NC-0002,Cliente Demo 2,RODRIGO,R02,980.50,300.00,24/03/2026,RESUELTA,vendedor_demo,false',
   ].join('\n')
 }
 
@@ -537,6 +544,7 @@ export async function ejecutarImportacionSupabase({
               fecha_resolucion: now,
               fecha_ultima_actualizacion: now,
               resuelta_automaticamente: true,
+              requiere_atencion: false,
             })
             .in('id', idChunk)
           if (uErr) throw new Error(uErr.message || 'No se pudo aplicar descarte')

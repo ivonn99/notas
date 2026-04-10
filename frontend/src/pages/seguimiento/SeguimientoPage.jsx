@@ -3,9 +3,10 @@ import { Link } from 'react-router-dom'
 import { ROUTES } from '../../constants/routes.js'
 import { useDomainSyncStore } from '../../stores/domainSyncStore.js'
 import { fetchSeguimientoList } from '../../services/seguimientoApi.js'
+import { exportarSeguimientoExcelConFiltros } from '../../utils/exportSeguimientoExcel.js'
 import { useListCacheStore } from '../../stores/listCacheStore.js'
 import { useListFiltersStore } from '../../stores/listFiltersStore.js'
-import { estadoBadgeClass } from '../../utils/estadoBadge.js'
+import { estadoBadgeClass, notaMuestraAtencion } from '../../utils/estadoBadge.js'
 import { formatDiasNotaCorriente } from '../../utils/diasCorriente.js'
 
 const PAGE_SIZE = 20
@@ -97,7 +98,7 @@ function NotaSeguimientoCardMovil({ n }) {
             <span className={`badge ${estadoBadgeClass(n.estado)}`}>{n.estado || '—'}</span>
           </dd>
           <dt className="col-5 text-body-secondary">Atención</dt>
-          <dd className="col-7 mb-0">{n.requiere_atencion ? 'Sí' : 'No'}</dd>
+          <dd className="col-7 mb-0">{notaMuestraAtencion(n) ? 'Sí' : 'No'}</dd>
         </dl>
       </div>
     </div>
@@ -112,6 +113,7 @@ export default function SeguimientoPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [loadingMore, setLoadingMore] = useState(false)
+  const [exportandoExcel, setExportandoExcel] = useState(false)
   const requestSeqRef = useRef(0)
   const loadMoreRef = useRef(null)
   const syncMountRef = useRef(false)
@@ -139,6 +141,18 @@ export default function SeguimientoPage() {
       seguimientoFilters.q,
       seguimientoFilters.orden,
     ],
+  )
+
+  const filtrosExportacion = useMemo(
+    () => ({
+      empresa: filtros.empresa,
+      estado: filtros.estado,
+      atencion: filtros.atencion,
+      ruta: filtros.ruta,
+      q: filtros.q,
+      sort: filtros.sort,
+    }),
+    [filtros],
   )
   const cacheKey = useMemo(() => JSON.stringify(filtros), [filtros])
 
@@ -189,6 +203,12 @@ export default function SeguimientoPage() {
       }
     }
   }, [filtros, getCacheEntry, cacheKey, setCachePage])
+
+  // Al volver desde el detalle la pantalla se remonta; el caché global seguía vivo y
+  // el efecto de notasVersion se saltaba la limpieza en el primer render (syncMountRef).
+  useEffect(() => {
+    clearScreenCache('seguimiento')
+  }, [clearScreenCache])
 
   useEffect(() => {
     if (!syncMountRef.current) {
@@ -338,6 +358,30 @@ export default function SeguimientoPage() {
                 <option value="saldo_desc">Saldo — mayor primero</option>
                 <option value="saldo_asc">Saldo — menor primero</option>
               </select>
+            </div>
+            <div className="col-12 col-md-6 col-lg-7 d-flex align-items-end justify-content-md-end mt-2 mt-md-0">
+              <button
+                type="button"
+                className="btn btn-success btn-nc-export-excel"
+                disabled={exportandoExcel || loading}
+                onClick={async () => {
+                  setExportandoExcel(true)
+                  try {
+                    const r = await exportarSeguimientoExcelConFiltros(filtrosExportacion)
+                    if (r.truncated) {
+                      window.alert(
+                        `Se exportaron ${r.rowCount.toLocaleString('es-MX')} filas. El total filtrado es ${r.totalReported.toLocaleString('es-MX')}; el archivo se cortó por límite de seguridad (máx. 30000 filas).`,
+                      )
+                    }
+                  } catch (e) {
+                    window.alert(e?.message || 'No se pudo exportar a Excel')
+                  } finally {
+                    setExportandoExcel(false)
+                  }
+                }}
+              >
+                {exportandoExcel ? 'Exportando…' : 'Exportar Excel (filtros actuales)'}
+              </button>
             </div>
           </div>
         </div>
@@ -498,7 +542,7 @@ export default function SeguimientoPage() {
                     <td>
                       <span className={`badge ${estadoBadgeClass(n.estado)}`}>{n.estado || '—'}</span>
                     </td>
-                    <td>{n.requiere_atencion ? 'Sí' : 'No'}</td>
+                    <td>{notaMuestraAtencion(n) ? 'Sí' : 'No'}</td>
                     <td>
                       <Link className="btn btn-sm btn-outline-primary" to={ROUTES.detalleNota(String(n.id))}>
                         Ver detalle
