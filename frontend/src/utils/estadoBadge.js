@@ -6,7 +6,10 @@ export function estadoBadgeClass(estado) {
   return 'text-bg-secondary'
 }
 
-/** La bandera requiere_atencion solo aplica a notas en trámite; RESUELTA/CANCELADA no deben mostrarse como “en atención”. */
+/**
+ * Atención se determina por regla de negocio visible:
+ * nota pendiente + al menos un comentario registrado.
+ */
 export function notaMuestraAtencion(nota) {
-  return String(nota?.estado || '').toUpperCase() === 'PENDIENTE' && Boolean(nota?.requiere_atencion)
+  return String(nota?.estado || '').toUpperCase() === 'PENDIENTE' && Boolean(nota?.tiene_comentarios)
 }

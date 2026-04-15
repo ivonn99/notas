@@ -261,6 +261,7 @@ export default function TodasLasNotasPage() {
               <label className="form-label mb-1">Últimos días</label>
               <select
                 className="form-select"
+                title="Filtra por fecha de la nota (desde hoy hacia atrás)"
                 value={notasFilters.dias}
                 onChange={(e) => updateDias(e.target.value)}
               >

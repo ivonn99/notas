@@ -132,6 +132,7 @@ export default function SeguimientoPage() {
       ruta: seguimientoFilters.ruta,
       q: seguimientoFilters.q,
       sort: seguimientoFilters.orden,
+      ...(seguimientoFilters.dias ? { dias: seguimientoFilters.dias } : {}),
     }),
     [
       seguimientoFilters.empresaActiva,
@@ -139,6 +140,7 @@ export default function SeguimientoPage() {
       seguimientoFilters.atencion,
       seguimientoFilters.ruta,
       seguimientoFilters.q,
+      seguimientoFilters.dias,
       seguimientoFilters.orden,
     ],
   )
@@ -151,6 +153,7 @@ export default function SeguimientoPage() {
       ruta: filtros.ruta,
       q: filtros.q,
       sort: filtros.sort,
+      ...(filtros.dias ? { dias: filtros.dias } : {}),
     }),
     [filtros],
   )
@@ -276,7 +279,25 @@ export default function SeguimientoPage() {
       <div className="card mb-3">
         <div className="card-body">
           <div className="row g-2">
-            <div className="col-12 col-md-2">
+            <div className="col-12 col-md-6 col-lg-2">
+              <label className="form-label mb-1">Últimos días</label>
+              <select
+                className="form-select"
+                title="Filtra por fecha de la nota (desde hoy hacia atrás)"
+                value={seguimientoFilters.dias}
+                onChange={(e) => {
+                  setSeguimientoFilters({ dias: e.target.value })
+                  setPage(1)
+                }}
+              >
+                <option value="">Sin límite</option>
+                <option value="7">7 días</option>
+                <option value="30">30 días</option>
+                <option value="90">90 días</option>
+                <option value="365">365 días</option>
+              </select>
+            </div>
+            <div className="col-12 col-md-6 col-lg-2">
               <label className="form-label mb-1">Estado</label>
               <select
                 className="form-select"
@@ -292,7 +313,7 @@ export default function SeguimientoPage() {
                 <option value="CANCELADA">CANCELADA</option>
               </select>
             </div>
-            <div className="col-12 col-md-2">
+            <div className="col-12 col-md-6 col-lg-2">
               <label className="form-label mb-1">Atención</label>
               <select
                 className="form-select"
@@ -307,7 +328,7 @@ export default function SeguimientoPage() {
                 <option value="no">No</option>
               </select>
             </div>
-            <div className="col-12 col-md-2">
+            <div className="col-12 col-md-6 col-lg-2">
               <label className="form-label mb-1">Ruta (código exacto)</label>
               <input
                 className="form-control"
@@ -320,7 +341,7 @@ export default function SeguimientoPage() {
                 }}
               />
             </div>
-            <div className="col-12 col-md-6">
+            <div className="col-12 col-lg-4">
               <label className="form-label mb-1">Buscar</label>
               <input
                 className="form-control"

@@ -16,6 +16,7 @@ const initialSeguimiento = {
   atencion: '',
   ruta: '',
   q: '',
+  dias: '',
   orden: 'default',
 }
 
@@ -79,8 +80,8 @@ export const useListFiltersStore = create(
     }),
     {
       name: 'nc_list_filters_v1',
-      version: 2,
-      migrate: (persisted, version) => {
+      version: 3,
+      migrate: (persisted) => {
         if (!persisted || typeof persisted !== 'object') return persisted
         const state = persisted
         const notas = state.notas && typeof state.notas === 'object' ? state.notas : {}
@@ -99,11 +100,11 @@ export const useListFiltersStore = create(
           seguimiento: {
             ...initialSeguimiento,
             ...seguimiento,
+            dias: seguimiento.dias != null ? seguimiento.dias : initialSeguimiento.dias,
             orden: normalizeSeguimientoOrden(seguimiento.orden),
           },
         }
 
-        if (version < 2) return migrated
         return migrated
       },
       partialize: (state) => ({

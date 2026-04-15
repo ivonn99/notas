@@ -32,9 +32,9 @@ function canManageRoute(user) {
 /** Orden SQL permitido (evita inyección). Clave = query param `sort`. */
 const SEGUIMIENTO_ORDER_BY = {
   default:
-    'n.requiere_atencion DESC, n.fecha_ultima_actualizacion DESC NULLS LAST, n.id DESC',
+    '((n.estado = \'PENDIENTE\') AND EXISTS (SELECT 1 FROM aclaraciones a WHERE a.nota_id = n.id)) DESC, n.fecha_ultima_actualizacion DESC NULLS LAST, n.id DESC',
   atencion:
-    'n.requiere_atencion DESC, n.fecha_ultima_actualizacion DESC NULLS LAST, n.id DESC',
+    '((n.estado = \'PENDIENTE\') AND EXISTS (SELECT 1 FROM aclaraciones a WHERE a.nota_id = n.id)) DESC, n.fecha_ultima_actualizacion DESC NULLS LAST, n.id DESC',
   fecha_ultima_desc: 'n.fecha_ultima_actualizacion DESC NULLS LAST, n.id DESC',
   fecha_ultima_asc: 'n.fecha_ultima_actualizacion ASC NULLS LAST, n.id ASC',
   // Compatibilidad: si llega el sort viejo de fecha_corriente, usar fecha_nota.
@@ -96,12 +96,12 @@ router.get('/', requireAuth, async (req, res, next) => {
     }
 
     const atencion = String(req.query.atencion ?? '').trim().toLowerCase()
-    // Atención solo tiene sentido con estado PENDIENTE (evita RESUELTA + bandera en true).
+    // Atención: nota pendiente con al menos un comentario/aclaración.
     if (['si', 'sí', 'true', '1'].includes(atencion)) {
       where.push(`n.estado = 'PENDIENTE'`)
-      where.push('n.requiere_atencion = true')
+      where.push('EXISTS (SELECT 1 FROM aclaraciones a WHERE a.nota_id = n.id)')
     } else if (['no', 'false', '0'].includes(atencion)) {
-      where.push('NOT (n.estado = \'PENDIENTE\' AND n.requiere_atencion = true)')
+      where.push('NOT (n.estado = \'PENDIENTE\' AND EXISTS (SELECT 1 FROM aclaraciones a WHERE a.nota_id = n.id))')
     }
 
     const q = String(req.query.q ?? '').trim()
@@ -110,6 +110,14 @@ router.get('/', requireAuth, async (req, res, next) => {
       where.push(
         `(n.serie_folio ILIKE $${params.length} OR n.cliente ILIKE $${params.length} OR n.usuario_vendedor_pv ILIKE $${params.length})`,
       )
+    }
+
+    const diasRaw = Number.parseInt(String(req.query.dias ?? '').trim(), 10)
+    const diasFiltered =
+      Number.isFinite(diasRaw) && diasRaw > 0 && diasRaw <= 3650 ? diasRaw : null
+    if (diasFiltered != null) {
+      params.push(diasFiltered)
+      where.push(`n.fecha_nota >= (CURRENT_DATE - $${params.length})`)
     }
 
     const whereSql = `WHERE ${where.join(' AND ')}`
@@ -133,7 +141,10 @@ router.get('/', requireAuth, async (req, res, next) => {
       `
       SELECT
         COUNT(*)::int AS total_filtrado,
-        COUNT(*) FILTER (WHERE n.estado = 'PENDIENTE' AND n.requiere_atencion = true)::int AS requiere_atencion
+        COUNT(*) FILTER (
+          WHERE n.estado = 'PENDIENTE'
+            AND EXISTS (SELECT 1 FROM aclaraciones a WHERE a.nota_id = n.id)
+        )::int AS requiere_atencion
       FROM notas_credito n
       LEFT JOIN rutas r ON r.id = n.ruta_id
       ${whereSql}
@@ -220,7 +231,8 @@ router.get('/', requireAuth, async (req, res, next) => {
         n.empresa,
         n.usuario_vendedor_pv,
         vu.username AS vendedor_username,
-        r.codigo AS ruta_codigo
+        r.codigo AS ruta_codigo,
+        EXISTS (SELECT 1 FROM aclaraciones a WHERE a.nota_id = n.id) AS tiene_comentarios
       FROM notas_credito n
       LEFT JOIN rutas r ON r.id = n.ruta_id
       LEFT JOIN usuarios vu ON vu.id = n.usuario_id
@@ -244,6 +256,7 @@ router.get('/', requireAuth, async (req, res, next) => {
         ruta: ruta || null,
         atencion: atencion || null,
         q: q || null,
+        dias: diasFiltered,
         sort: sortKeyRaw && SEGUIMIENTO_ORDER_BY[sortKeyRaw] ? sortKeyRaw : 'default',
       },
       resumen: resumenR.rows[0] || { total_filtrado: total, requiere_atencion: 0 },

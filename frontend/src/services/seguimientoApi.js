@@ -93,7 +93,6 @@ async function resolveAllowedRutaIds(meta) {
 function applySort(query, sort) {
   if (sort === 'default' || sort === 'atencion') {
     return query
-      .order('requiere_atencion', { ascending: false, nullsFirst: false })
       .order('fecha_ultima_actualizacion', { ascending: false, nullsFirst: false })
       .order('id', { ascending: false, nullsFirst: false })
   }
@@ -112,18 +111,19 @@ function applySort(query, sort) {
   return query.order('id', { ascending: false, nullsFirst: false })
 }
 
-function applySeguimientoListFilters(query, { estado, empresa, q, atencion, allowedFinal }) {
+function applySeguimientoListFilters(query, { estado, empresa, q, atencion, allowedFinal, fechaNotaDesde }) {
   let qy = query
   if (estado) qy = qy.eq('estado', estado)
   if (empresa) qy = qy.eq('empresa', empresa)
   if (q) qy = qy.or(`serie_folio.ilike.%${q}%,cliente.ilike.%${q}%,usuario_vendedor_pv.ilike.%${q}%`)
   if (['si', 'sí', 'true', '1'].includes(atencion)) {
-    qy = qy.eq('estado', 'PENDIENTE').eq('requiere_atencion', true)
+    qy = qy.eq('estado', 'PENDIENTE').not('aclaraciones', 'is', null)
   }
   if (['no', 'false', '0'].includes(atencion)) {
-    qy = qy.or('estado.neq.PENDIENTE,requiere_atencion.eq.false')
+    qy = qy.or('estado.neq.PENDIENTE,aclaraciones.is.null')
   }
   if (Array.isArray(allowedFinal)) qy = qy.in('ruta_id', allowedFinal)
+  if (fechaNotaDesde) qy = qy.gte('fecha_nota', fechaNotaDesde)
   return qy
 }
 
@@ -303,6 +303,11 @@ async function fetchSeguimientoListSupabase(params = {}) {
   const atencion = String(params.atencion ?? '').trim().toLowerCase()
   const q = String(params.q ?? '').trim()
   const sort = normalizeSort(params.sort)
+  const dias = Number.parseInt(String(params.dias ?? ''), 10)
+  const hasDias = Number.isFinite(dias) && dias > 0 && dias <= 3650
+  const fechaNotaDesde = hasDias
+    ? new Date(Date.now() - dias * 24 * 60 * 60 * 1000).toISOString()
+    : null
 
   let rutaIdsFiltro = null
   if (ruta) {
@@ -313,7 +318,26 @@ async function fetchSeguimientoListSupabase(params = {}) {
     if (rutaErr) throw new Error(rutaErr.message || 'No se pudo filtrar por ruta')
     rutaIdsFiltro = (rutasByCode || []).map((r) => r.id)
     if (rutaIdsFiltro.length === 0) {
-      return { ok: true, page, pageSize, total: 0, totalPages: 1, resumen: { total_filtrado: 0, requiere_atencion: 0 }, porRuta: [], porAntiguedad: [], items: [] }
+      return {
+        ok: true,
+        page,
+        pageSize,
+        total: 0,
+        totalPages: 1,
+        resumen: { total_filtrado: 0, requiere_atencion: 0 },
+        porRuta: [],
+        porAntiguedad: [],
+        items: [],
+        filters: {
+          empresa: empresa || null,
+          estado: estado || null,
+          ruta: ruta || null,
+          atencion: atencion || null,
+          q: q || null,
+          dias: hasDias ? dias : null,
+          sort,
+        },
+      }
     }
   }
 
@@ -322,16 +346,35 @@ async function fetchSeguimientoListSupabase(params = {}) {
     const set = new Set(allowedFinal)
     allowedFinal = rutaIdsFiltro.filter((id) => set.has(id))
     if (allowedFinal.length === 0) {
-      return { ok: true, page, pageSize, total: 0, totalPages: 1, resumen: { total_filtrado: 0, requiere_atencion: 0 }, porRuta: [], porAntiguedad: [], items: [] }
+      return {
+        ok: true,
+        page,
+        pageSize,
+        total: 0,
+        totalPages: 1,
+        resumen: { total_filtrado: 0, requiere_atencion: 0 },
+        porRuta: [],
+        porAntiguedad: [],
+        items: [],
+        filters: {
+          empresa: empresa || null,
+          estado: estado || null,
+          ruta: ruta || null,
+          atencion: atencion || null,
+          q: q || null,
+          dias: hasDias ? dias : null,
+          sort,
+        },
+      }
     }
   } else if (rutaIdsFiltro) {
     allowedFinal = rutaIdsFiltro
   }
 
-  const filterArgs = { estado, empresa, q, atencion, allowedFinal }
+  const filterArgs = { estado, empresa, q, atencion, allowedFinal, fechaNotaDesde }
 
   const { count: totalCount, error: countError } = await applySeguimientoListFilters(
-    supabase.from('notas_credito').select('id', { count: 'exact', head: true }),
+    supabase.from('notas_credito').select('id, aclaraciones(id)', { count: 'exact', head: true }),
     filterArgs,
   )
   if (countError) throw new Error(countError.message || 'No se pudo cargar seguimiento')
@@ -349,7 +392,8 @@ async function fetchSeguimientoListSupabase(params = {}) {
       id, serie_folio, fecha_nota, cliente, estado, requiere_atencion, resuelta_automaticamente,
       fecha_corriente, fecha_ultima_actualizacion, monto, abono, saldo, empresa, usuario_vendedor_pv, ruta_id,
       rutas:ruta_id(codigo),
-      vendedor:usuario_id(username)
+      vendedor:usuario_id(username),
+      aclaraciones:aclaraciones(id)
     `,
       { count: 'exact' },
     )
@@ -363,10 +407,11 @@ async function fetchSeguimientoListSupabase(params = {}) {
     ...n,
     ruta_codigo: n.rutas?.codigo || null,
     vendedor_username: n.vendedor?.username || null,
+    tiene_comentarios: Array.isArray(n.aclaraciones) && n.aclaraciones.length > 0,
   }))
 
   const requiereAtencion = items.filter(
-    (x) => String(x.estado || '').toUpperCase() === 'PENDIENTE' && x.requiere_atencion,
+    (x) => String(x.estado || '').toUpperCase() === 'PENDIENTE' && x.tiene_comentarios,
   ).length
   const porRutaMap = new Map()
   for (const row of items) {
@@ -412,6 +457,7 @@ async function fetchSeguimientoListSupabase(params = {}) {
       ruta: ruta || null,
       atencion: atencion || null,
       q: q || null,
+      dias: hasDias ? dias : null,
       sort,
     },
     resumen: {

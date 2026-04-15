@@ -34,6 +34,7 @@ function safeFilePart(value) {
  * @param {string} [filtros.ruta]
  * @param {string} [filtros.q]
  * @param {string} [filtros.sort]
+ * @param {string|number} [filtros.dias]
  * @returns {Promise<{ rowCount: number, truncated: boolean, totalReported: number }>}
  */
 export async function exportarSeguimientoExcelConFiltros(filtros = {}) {
@@ -45,6 +46,7 @@ export async function exportarSeguimientoExcelConFiltros(filtros = {}) {
     ruta: filtros.ruta,
     q: filtros.q,
     sort: filtros.sort,
+    ...(filtros.dias ? { dias: filtros.dias } : {}),
   }
 
   const allItems = []
