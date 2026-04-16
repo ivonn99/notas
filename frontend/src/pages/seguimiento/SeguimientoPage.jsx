@@ -56,19 +56,51 @@ function mergeCachedPages(entry, upToPage) {
   return merged
 }
 
-function NotaSeguimientoCardMovil({ n }) {
+async function copyText(text) {
+  const value = String(text ?? '').trim()
+  if (!value) return
+  if (navigator?.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value)
+    return
+  }
+  const textarea = document.createElement('textarea')
+  textarea.value = value
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'absolute'
+  textarea.style.left = '-9999px'
+  document.body.appendChild(textarea)
+  textarea.select()
+  document.execCommand('copy')
+  document.body.removeChild(textarea)
+}
+
+function NotaSeguimientoCardMovil({ n, onCopySerieFolio }) {
   return (
     <div className="card border shadow-sm">
       <div className="card-body py-3">
         <div className="d-flex justify-content-between align-items-start gap-2 mb-2">
           <div className="min-w-0">
-            <div className="fw-semibold text-truncate" title={n.serie_folio || ''}>
-              {n.serie_folio || '—'}
+            <div className="d-flex align-items-center gap-1">
+              <div className="fw-semibold text-truncate" title={n.serie_folio || ''}>
+                {n.serie_folio || '—'}
+              </div>
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary py-0 px-2"
+                aria-label="Copiar Serie/Folio"
+                title="Copiar Serie/Folio"
+                disabled={!n.serie_folio}
+                onClick={() => {
+                  void onCopySerieFolio(n.serie_folio)
+                }}
+              >
+                <span aria-hidden="true">📋</span>
+              </button>
             </div>
             <div className="small text-body-secondary">ID {n.id}</div>
           </div>
           <Link
-            className="btn btn-sm btn-outline-primary flex-shrink-0"
+            className="btn btn-sm btn-primary flex-shrink-0"
             to={ROUTES.detalleNota(String(n.id))}
           >
             Ver detalle
@@ -114,6 +146,7 @@ export default function SeguimientoPage() {
   const [error, setError] = useState('')
   const [loadingMore, setLoadingMore] = useState(false)
   const [exportandoExcel, setExportandoExcel] = useState(false)
+  const [copyToast, setCopyToast] = useState('')
   const requestSeqRef = useRef(0)
   const loadMoreRef = useRef(null)
   const syncMountRef = useRef(false)
@@ -245,6 +278,21 @@ export default function SeguimientoPage() {
     obs.observe(node)
     return () => obs.disconnect()
   }, [page, hasMore, loading, loadingMore, error, cargarPagina])
+
+  async function handleCopySerieFolio(value) {
+    try {
+      await copyText(value)
+      setCopyToast(`Serie/Folio copiado: ${value}`)
+    } catch {
+      window.alert('No se pudo copiar Serie/Folio')
+    }
+  }
+
+  useEffect(() => {
+    if (!copyToast) return
+    const t = setTimeout(() => setCopyToast(''), 1800)
+    return () => clearTimeout(t)
+  }, [copyToast])
 
   return (
     <section className="container-fluid px-0">
@@ -549,7 +597,23 @@ export default function SeguimientoPage() {
                 data.items.map((n) => (
                   <tr key={n.id}>
                     <td>{n.id}</td>
-                    <td>{n.serie_folio || '—'}</td>
+                    <td>
+                      <div className="d-inline-flex align-items-center gap-1">
+                        <span>{n.serie_folio || '—'}</span>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-secondary py-0 px-2"
+                          aria-label="Copiar Serie/Folio"
+                          title="Copiar Serie/Folio"
+                          disabled={!n.serie_folio}
+                          onClick={() => {
+                            void handleCopySerieFolio(n.serie_folio)
+                          }}
+                        >
+                          <span aria-hidden="true">📋</span>
+                        </button>
+                      </div>
+                    </td>
                     <td className="text-nowrap small">{formatFechaNota(n.fecha_nota)}</td>
                     <td className="text-end text-nowrap small" title="Entre fecha nota y fecha corriente (o hoy)">
                       {formatDiasNotaCorriente(n.fecha_nota, n.fecha_corriente)}
@@ -565,7 +629,7 @@ export default function SeguimientoPage() {
                     </td>
                     <td>{notaMuestraAtencion(n) ? 'Sí' : 'No'}</td>
                     <td>
-                      <Link className="btn btn-sm btn-outline-primary" to={ROUTES.detalleNota(String(n.id))}>
+                      <Link className="btn btn-sm btn-primary" to={ROUTES.detalleNota(String(n.id))}>
                         Ver detalle
                       </Link>
                     </td>
@@ -587,7 +651,7 @@ export default function SeguimientoPage() {
           ) : data.items?.length ? (
             <div className="d-flex flex-column gap-2">
               {data.items.map((n) => (
-                <NotaSeguimientoCardMovil key={n.id} n={n} />
+                <NotaSeguimientoCardMovil key={n.id} n={n} onCopySerieFolio={handleCopySerieFolio} />
               ))}
             </div>
           ) : (
@@ -604,6 +668,21 @@ export default function SeguimientoPage() {
       <div ref={loadMoreRef} className="py-3 text-center small text-body-secondary">
         {loadingMore ? 'Cargando más...' : hasMore ? 'Desplázate para cargar más' : 'Fin de resultados'}
       </div>
+      {copyToast ? (
+        <div className="toast-container position-fixed top-0 end-0 p-3" style={{ zIndex: 1080 }}>
+          <div className="toast show align-items-center text-bg-success border-0" role="status" aria-live="polite" aria-atomic="true">
+            <div className="d-flex">
+              <div className="toast-body">{copyToast}</div>
+              <button
+                type="button"
+                className="btn-close btn-close-white me-2 m-auto"
+                aria-label="Cerrar"
+                onClick={() => setCopyToast('')}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }

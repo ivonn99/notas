@@ -58,14 +58,46 @@ function mergeCachedPages(entry, upToPage) {
   return merged
 }
 
-function NotaCreditoCardMovil({ n }) {
+async function copyText(text) {
+  const value = String(text ?? '').trim()
+  if (!value) return
+  if (navigator?.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value)
+    return
+  }
+  const textarea = document.createElement('textarea')
+  textarea.value = value
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'absolute'
+  textarea.style.left = '-9999px'
+  document.body.appendChild(textarea)
+  textarea.select()
+  document.execCommand('copy')
+  document.body.removeChild(textarea)
+}
+
+function NotaCreditoCardMovil({ n, onCopySerieFolio }) {
   return (
     <div className="card border shadow-sm">
       <div className="card-body py-3">
         <div className="d-flex justify-content-between align-items-start gap-2 mb-2">
           <div className="min-w-0">
-            <div className="fw-semibold text-truncate" title={n.serie_folio || ''}>
-              {n.serie_folio || '—'}
+            <div className="d-flex align-items-center gap-1">
+              <div className="fw-semibold text-truncate" title={n.serie_folio || ''}>
+                {n.serie_folio || '—'}
+              </div>
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary py-0 px-2"
+                aria-label="Copiar Serie/Folio"
+                title="Copiar Serie/Folio"
+                disabled={!n.serie_folio}
+                onClick={() => {
+                  void onCopySerieFolio(n.serie_folio)
+                }}
+              >
+                <span aria-hidden="true">📋</span>
+              </button>
             </div>
             <div className="small text-body-secondary">ID {n.id}</div>
           </div>
@@ -125,6 +157,7 @@ export default function TodasLasNotasPage() {
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
   const [refreshNonce, setRefreshNonce] = useState(0)
+  const [copyToast, setCopyToast] = useState('')
   const getCacheEntry = useListCacheStore((s) => s.getEntry)
   const setCachePage = useListCacheStore((s) => s.setPage)
   const clearCacheEntry = useListCacheStore((s) => s.clearEntry)
@@ -220,6 +253,21 @@ export default function TodasLasNotasPage() {
     setPage(1)
     setNotasFilters({ sort: value })
   }
+
+  async function handleCopySerieFolio(value) {
+    try {
+      await copyText(value)
+      setCopyToast(`Serie/Folio copiado: ${value}`)
+    } catch {
+      window.alert('No se pudo copiar Serie/Folio')
+    }
+  }
+
+  useEffect(() => {
+    if (!copyToast) return
+    const t = setTimeout(() => setCopyToast(''), 1800)
+    return () => clearTimeout(t)
+  }, [copyToast])
 
   const canLoadMore = !loading && page < totalPages
   const shown = items.length
@@ -360,7 +408,23 @@ export default function TodasLasNotasPage() {
                 items.map((n) => (
                   <tr key={n.id}>
                     <td>{n.id}</td>
-                    <td>{n.serie_folio || '—'}</td>
+                    <td>
+                      <div className="d-inline-flex align-items-center gap-1">
+                        <span>{n.serie_folio || '—'}</span>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-secondary py-0 px-2"
+                          aria-label="Copiar Serie/Folio"
+                          title="Copiar Serie/Folio"
+                          disabled={!n.serie_folio}
+                          onClick={() => {
+                            void handleCopySerieFolio(n.serie_folio)
+                          }}
+                        >
+                          <span aria-hidden="true">📋</span>
+                        </button>
+                      </div>
+                    </td>
                     <td>{n.cliente || '—'}</td>
                     <td>{n.empresa || '—'}</td>
                     <td>{n.ruta_codigo || '—'}</td>
@@ -411,7 +475,7 @@ export default function TodasLasNotasPage() {
           ) : items.length ? (
             <div className="d-flex flex-column gap-2">
               {items.map((n) => (
-                <NotaCreditoCardMovil key={n.id} n={n} />
+                <NotaCreditoCardMovil key={n.id} n={n} onCopySerieFolio={handleCopySerieFolio} />
               ))}
             </div>
           ) : (
@@ -447,6 +511,21 @@ export default function TodasLasNotasPage() {
           </div>
         </div>
       </div>
+      {copyToast ? (
+        <div className="toast-container position-fixed top-0 end-0 p-3" style={{ zIndex: 1080 }}>
+          <div className="toast show align-items-center text-bg-success border-0" role="status" aria-live="polite" aria-atomic="true">
+            <div className="d-flex">
+              <div className="toast-body">{copyToast}</div>
+              <button
+                type="button"
+                className="btn-close btn-close-white me-2 m-auto"
+                aria-label="Cerrar"
+                onClick={() => setCopyToast('')}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }

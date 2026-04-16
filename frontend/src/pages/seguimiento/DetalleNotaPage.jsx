@@ -20,6 +20,24 @@ function money(value) {
   }).format(n)
 }
 
+async function copyText(text) {
+  const value = String(text ?? '').trim()
+  if (!value) return
+  if (navigator?.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value)
+    return
+  }
+  const textarea = document.createElement('textarea')
+  textarea.value = value
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'absolute'
+  textarea.style.left = '-9999px'
+  document.body.appendChild(textarea)
+  textarea.select()
+  document.execCommand('copy')
+  document.body.removeChild(textarea)
+}
+
 export default function DetalleNotaPage() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -36,6 +54,7 @@ export default function DetalleNotaPage() {
   const [sendingRuta, setSendingRuta] = useState(false)
   const [docFile, setDocFile] = useState(null)
   const [sendingDoc, setSendingDoc] = useState(false)
+  const [copyToast, setCopyToast] = useState('')
   const emitNotaChanged = useDomainSyncStore((s) => s.emitNotaChanged)
 
   async function load() {
@@ -126,6 +145,21 @@ export default function DetalleNotaPage() {
     }
   }
 
+  async function handleCopySerieFolio(value) {
+    try {
+      await copyText(value)
+      setCopyToast(`Serie/Folio copiado: ${value}`)
+    } catch {
+      setError('No se pudo copiar Serie/Folio')
+    }
+  }
+
+  useEffect(() => {
+    if (!copyToast) return
+    const t = setTimeout(() => setCopyToast(''), 1800)
+    return () => clearTimeout(t)
+  }, [copyToast])
+
   return (
     <section className="container-fluid px-0">
       <div className="d-flex align-items-center justify-content-between gap-2 mb-3">
@@ -157,7 +191,21 @@ export default function DetalleNotaPage() {
               <div className="row g-3">
                 <div className="col-md-3">
                   <small className="text-body-secondary d-block">Serie/Folio</small>
-                  <strong>{detalle.nota.serie_folio || '—'}</strong>
+                  <div className="d-inline-flex align-items-center gap-2">
+                    <strong>{detalle.nota.serie_folio || '—'}</strong>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-secondary py-0 px-2"
+                      aria-label="Copiar Serie/Folio"
+                      title="Copiar Serie/Folio"
+                      disabled={!detalle.nota.serie_folio}
+                      onClick={() => {
+                        void handleCopySerieFolio(detalle.nota.serie_folio)
+                      }}
+                    >
+                      <span aria-hidden="true">📋</span>
+                    </button>
+                  </div>
                 </div>
                 <div className="col-md-5">
                   <small className="text-body-secondary d-block">Cliente</small>
@@ -411,6 +459,21 @@ export default function DetalleNotaPage() {
           </div>
         </>
       )}
+      {copyToast ? (
+        <div className="toast-container position-fixed top-0 end-0 p-3" style={{ zIndex: 1080 }}>
+          <div className="toast show align-items-center text-bg-success border-0" role="status" aria-live="polite" aria-atomic="true">
+            <div className="d-flex">
+              <div className="toast-body">{copyToast}</div>
+              <button
+                type="button"
+                className="btn-close btn-close-white me-2 m-auto"
+                aria-label="Cerrar"
+                onClick={() => setCopyToast('')}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }
