@@ -20,6 +20,57 @@ function money(value) {
   }).format(n)
 }
 
+function formatFechaNota(value) {
+  const s = String(value ?? '').trim()
+  if (!s) return '—'
+  const iso = s.slice(0, 10)
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return '—'
+  const day = String(d.getDate()).padStart(2, '0')
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const year = d.getFullYear()
+  return `${day}/${month}/${year}`
+}
+
+function formatFechaHora(value) {
+  const s = String(value ?? '').trim()
+  if (!s) return '—'
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return '—'
+  return new Intl.DateTimeFormat('es-MX', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(d)
+}
+
+function formatDiasDesdeHoy(fechaNota) {
+  const s = String(fechaNota ?? '').trim()
+  if (!s) return '—'
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return '—'
+  const now = new Date()
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const startNota = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  const diff = Math.floor((startToday.getTime() - startNota.getTime()) / (24 * 60 * 60 * 1000))
+  return Number.isFinite(diff) ? String(diff) : '—'
+}
+
+/** El API de detalle no envía `tiene_comentarios`; se infiere de aclaraciones. */
+function notaDetalleMuestraAtencion(detalle) {
+  if (!detalle?.nota) return false
+  return notaMuestraAtencion({
+    ...detalle.nota,
+    tiene_comentarios:
+      Array.isArray(detalle.aclaraciones) && detalle.aclaraciones.length > 0,
+  })
+}
+
 async function copyText(text) {
   const value = String(text ?? '').trim()
   if (!value) return
@@ -161,9 +212,9 @@ export default function DetalleNotaPage() {
   }, [copyToast])
 
   return (
-    <section className="container-fluid px-0">
-      <div className="d-flex align-items-center justify-content-between gap-2 mb-3">
-        <h1 className="h3 mb-0">Detalle de nota #{id}</h1>
+    <section className="container-fluid px-2 px-sm-3">
+      <div className="d-flex align-items-center justify-content-between gap-2 mb-2">
+        <h1 className="fs-6 fs-md-5 fw-semibold mb-0 text-truncate me-2">Detalle #{id}</h1>
         <button
           type="button"
           className="btn btn-primary btn-sm"
@@ -180,97 +231,140 @@ export default function DetalleNotaPage() {
 
       {loading ? (
         <div className="card">
-          <div className="card-body">Cargando...</div>
+          <div className="card-body p-2">Cargando...</div>
         </div>
       ) : !detalle?.nota ? (
         <div className="alert alert-secondary">Sin información</div>
       ) : (
         <>
-          <div className="card mb-3">
-            <div className="card-body">
-              <div className="row g-3">
-                <div className="col-md-3">
-                  <small className="text-body-secondary d-block">Serie/Folio</small>
-                  <div className="d-inline-flex align-items-center gap-2">
-                    <strong>{detalle.nota.serie_folio || '—'}</strong>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-secondary py-0 px-2"
-                      aria-label="Copiar Serie/Folio"
-                      title="Copiar Serie/Folio"
-                      disabled={!detalle.nota.serie_folio}
-                      onClick={() => {
-                        void handleCopySerieFolio(detalle.nota.serie_folio)
-                      }}
-                    >
-                      <span aria-hidden="true">📋</span>
-                    </button>
-                  </div>
-                </div>
-                <div className="col-md-5">
-                  <small className="text-body-secondary d-block">Cliente</small>
-                  <strong>{detalle.nota.cliente || '—'}</strong>
-                </div>
-                <div className="col-md-2">
-                  <small className="text-body-secondary d-block">Estado</small>
-                  <span className={`badge ${estadoBadgeClass(detalle.nota.estado)}`}>
-                    {detalle.nota.estado || '—'}
+          <div className="card mb-2 border-0 shadow-sm overflow-hidden">
+            <div className="px-2 py-2 border-bottom bg-body-tertiary">
+              <div className="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                <div className="d-flex flex-wrap align-items-center gap-2 min-w-0 flex-grow-1">
+                  <span className="text-body-secondary small text-uppercase fw-semibold text-nowrap">
+                    Serie / folio
+                  </span>
+                  <span className="fw-semibold text-break" style={{ letterSpacing: '0.02em' }}>
+                    {detalle.nota.serie_folio || '—'}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-secondary flex-shrink-0 py-0 px-2"
+                    aria-label="Copiar Serie/Folio"
+                    title="Copiar Serie/Folio"
+                    disabled={!detalle.nota.serie_folio}
+                    onClick={() => {
+                      void handleCopySerieFolio(detalle.nota.serie_folio)
+                    }}
+                  >
+                    <span aria-hidden="true">📋</span>
+                  </button>
+                  <span className="text-body-secondary small text-nowrap" aria-hidden="true">
+                    ·
+                  </span>
+                  <span className="text-body-secondary small text-nowrap">
+                    ID <span className="text-body fw-medium">{detalle.nota.id}</span>
                   </span>
                 </div>
-                <div className="col-md-2">
-                  <small className="text-body-secondary d-block">Ruta</small>
-                  <strong>{detalle.nota.ruta_codigo || '—'}</strong>
+                <span className={`badge flex-shrink-0 ${estadoBadgeClass(detalle.nota.estado)}`}>
+                  {detalle.nota.estado || '—'}
+                </span>
+              </div>
+            </div>
+            <div className="card-body p-2">
+              <div className="row g-2 g-lg-3">
+                <div className="col-lg-6">
+                  <div className="small text-uppercase text-body-secondary fw-semibold mb-1">
+                    Cliente y asignación
+                  </div>
+                  <div className="vstack gap-0">
+                    <div className="d-flex justify-content-between align-items-baseline gap-2 py-1 border-bottom">
+                      <span className="text-body-secondary small flex-shrink-0">Cliente</span>
+                      <span className="fw-medium text-break text-end">{detalle.nota.cliente || '—'}</span>
+                    </div>
+                    <div className="d-flex justify-content-between align-items-baseline gap-2 py-1 border-bottom">
+                      <span className="text-body-secondary small flex-shrink-0">Empresa</span>
+                      <span className="fw-medium text-break text-end">{detalle.nota.empresa || '—'}</span>
+                    </div>
+                    <div className="d-flex justify-content-between align-items-baseline gap-2 py-1 border-bottom">
+                      <span className="text-body-secondary small flex-shrink-0">Ruta</span>
+                      <span className="fw-medium font-monospace text-end">{detalle.nota.ruta_codigo || '—'}</span>
+                    </div>
+                    <div className="d-flex justify-content-between align-items-baseline gap-2 py-1">
+                      <span className="text-body-secondary small flex-shrink-0">Vendedor</span>
+                      <span className="fw-medium text-break text-end">
+                        {detalle.nota.vendedor_username ||
+                          detalle.nota.usuario_vendedor_pv ||
+                          '—'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="col-lg-6">
+                  <div className="small text-uppercase text-body-secondary fw-semibold mb-1">
+                    Importes y fechas
+                  </div>
+                  <div className="row g-1 mb-2">
+                    <div className="col-4">
+                      <div className="rounded-2 border bg-body-tertiary px-1 py-1 text-center h-100">
+                        <div className="small text-body-secondary lh-sm">Monto</div>
+                        <div className="fw-semibold small text-nowrap lh-sm">{money(detalle.nota.monto)}</div>
+                      </div>
+                    </div>
+                    <div className="col-4">
+                      <div className="rounded-2 border bg-body-tertiary px-1 py-1 text-center h-100">
+                        <div className="small text-body-secondary lh-sm">Abono</div>
+                        <div className="fw-semibold small text-nowrap lh-sm">{money(detalle.nota.abono)}</div>
+                      </div>
+                    </div>
+                    <div className="col-4">
+                      <div className="rounded-2 border border-2 border-secondary bg-body-secondary px-1 py-1 text-center h-100">
+                        <div className="small text-body-secondary lh-sm">Saldo</div>
+                        <div className="fw-bold small text-body-emphasis text-nowrap lh-sm">{money(detalle.nota.saldo)}</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="vstack gap-0">
+                    <div className="d-flex justify-content-between align-items-baseline gap-2 py-1 border-bottom">
+                      <span className="text-body-secondary small flex-shrink-0">Fecha nota</span>
+                      <span className="fw-medium text-end">{formatFechaNota(detalle.nota.fecha_nota)}</span>
+                    </div>
+                    <div className="d-flex justify-content-between align-items-baseline gap-2 py-1 border-bottom">
+                      <span className="text-body-secondary small flex-shrink-0">Días desde nota</span>
+                      <span className="fw-medium text-end">
+                        {formatDiasDesdeHoy(detalle.nota.fecha_nota)}
+                        <span className="text-body-secondary fw-normal small"> · hoy</span>
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="row g-3 mt-1">
-                <div className="col-md-4">
-                  <small className="text-body-secondary d-block">Monto</small>
-                  <strong>{money(detalle.nota.monto)}</strong>
-                </div>
-                <div className="col-md-4">
-                  <small className="text-body-secondary d-block">Abono</small>
-                  <strong>{money(detalle.nota.abono)}</strong>
-                </div>
-                <div className="col-md-4">
-                  <small className="text-body-secondary d-block">Saldo</small>
-                  <strong className="text-primary">{money(detalle.nota.saldo)}</strong>
-                </div>
-              </div>
-              <div className="row g-3 mt-1">
-                <div className="col-md-3">
-                  <small className="text-body-secondary d-block">Empresa</small>
-                  <strong>{detalle.nota.empresa || '—'}</strong>
-                </div>
-                <div className="col-md-3">
-                  <small className="text-body-secondary d-block">Vendedor asignado</small>
-                  <strong>
-                    {detalle.nota.vendedor_username ||
-                      detalle.nota.usuario_vendedor_pv ||
-                      '—'}
-                  </strong>
-                </div>
-                <div className="col-md-3">
-                  <small className="text-body-secondary d-block">Requiere atención</small>
-                  <strong>{notaMuestraAtencion(detalle.nota) ? 'Sí' : 'No'}</strong>
-                </div>
-                <div className="col-md-3">
-                  <small className="text-body-secondary d-block">Resolución automática</small>
+              <div className="mt-2 pt-2 border-top">
+                <div className="small text-uppercase text-body-secondary fw-semibold mb-1">Seguimiento</div>
+                <div className="d-flex flex-wrap gap-1 align-items-center">
+                  <span
+                    className={`badge rounded-pill ${
+                      notaDetalleMuestraAtencion(detalle) ? 'text-bg-warning' : 'text-bg-secondary'
+                    }`}
+                  >
+                    Atención: {notaDetalleMuestraAtencion(detalle) ? 'Sí' : 'No'}
+                  </span>
                   {detalle.nota.resuelta_automaticamente ? (
-                    <span className="badge text-bg-info">Sí (importación)</span>
+                    <span className="badge rounded-pill text-bg-info">Por importación</span>
                   ) : (
-                    <span className="badge text-bg-secondary">No</span>
+                    <span className="badge rounded-pill text-bg-light text-dark border">Manual</span>
                   )}
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="row g-3">
+          <div className="row g-2">
             <div className="col-12 col-lg-7">
-              <div className="card mb-3">
-                <div className="card-header">Comentarios / aclaraciones</div>
-                <div className="card-body">
-                  <form onSubmit={onSubmitComentario} className="mb-3">
+              <div className="card mb-2">
+                <div className="card-header py-2 px-2 small fw-semibold">Comentarios / aclaraciones</div>
+                <div className="card-body p-2">
+                  <form onSubmit={onSubmitComentario} className="mb-2">
                     <div className="row g-2">
                       <div className="col-md-4">
                         <select
@@ -302,12 +396,15 @@ export default function DetalleNotaPage() {
                   <div className="list-group">
                     {detalle.aclaraciones?.length ? (
                       detalle.aclaraciones.map((a) => (
-                        <div key={a.id} className="list-group-item">
+                        <div key={a.id} className="list-group-item py-2 px-2">
                           <div className="d-flex justify-content-between">
                             <strong>{a.tipo}</strong>
                             <small className="text-body-secondary">
                               {a.usuario_nombre || a.usuario_username || 'Usuario'}
                             </small>
+                          </div>
+                          <div className="small text-body-secondary">
+                            {formatFechaHora(a.created_at)}
                           </div>
                           <div>{a.comentario}</div>
                         </div>
@@ -321,9 +418,9 @@ export default function DetalleNotaPage() {
             </div>
 
             <div className="col-12 col-lg-5">
-              <div className="card mb-3">
-                <div className="card-header">Cambio de ruta</div>
-                <div className="card-body">
+              <div className="card mb-2">
+                <div className="card-header py-2 px-2 small fw-semibold">Cambio de ruta</div>
+                <div className="card-body p-2">
                   {detalle.canManageRoute ? (
                     <form onSubmit={onSubmitRuta}>
                       <div className="mb-2">
@@ -355,9 +452,9 @@ export default function DetalleNotaPage() {
                 </div>
               </div>
 
-              <div className="card mb-3">
-                <div className="card-header">Cambio de estado</div>
-                <div className="card-body">
+              <div className="card mb-2">
+                <div className="card-header py-2 px-2 small fw-semibold">Cambio de estado</div>
+                <div className="card-body p-2">
                   {detalle.canManageState ? (
                     <form onSubmit={onSubmitEstado}>
                       <div className="mb-2">
@@ -374,7 +471,7 @@ export default function DetalleNotaPage() {
                       <div className="mb-2">
                         <textarea
                           className="form-control"
-                          rows="3"
+                          rows="2"
                           placeholder="Observación (opcional)"
                           value={obsEstado}
                           onChange={(e) => setObsEstado(e.target.value)}
@@ -392,15 +489,18 @@ export default function DetalleNotaPage() {
                 </div>
               </div>
 
-              <div className="card">
-                <div className="card-header">Historial</div>
-                <div className="card-body">
+              <div className="card mb-2">
+                <div className="card-header py-2 px-2 small fw-semibold">Historial</div>
+                <div className="card-body p-2">
                   <div className="list-group">
                     {detalle.historial?.length ? (
                       detalle.historial.map((h) => (
-                        <div key={h.id} className="list-group-item">
+                        <div key={h.id} className="list-group-item py-2 px-2">
                           <div className="small text-body-secondary mb-1">
                             {h.usuario_nombre || h.usuario_username || 'Usuario'}
+                          </div>
+                          <div className="small text-body-secondary mb-1">
+                            {formatFechaHora(h.created_at)}
                           </div>
                           <div>
                             <strong>{h.campo_modificado}</strong>: {h.valor_anterior || '—'} →{' '}
@@ -418,10 +518,10 @@ export default function DetalleNotaPage() {
                 </div>
               </div>
 
-              <div className="card mt-3">
-                <div className="card-header">Documentos adjuntos</div>
-                <div className="card-body">
-                  <form onSubmit={onSubmitDocumento} className="mb-3">
+              <div className="card">
+                <div className="card-header py-2 px-2 small fw-semibold">Documentos adjuntos</div>
+                <div className="card-body p-2">
+                  <form onSubmit={onSubmitDocumento} className="mb-2">
                     <div className="input-group">
                       <input
                         className="form-control"
@@ -441,7 +541,7 @@ export default function DetalleNotaPage() {
                           href={d.ruta_archivo}
                           target="_blank"
                           rel="noreferrer"
-                          className="list-group-item list-group-item-action d-flex justify-content-between"
+                          className="list-group-item list-group-item-action d-flex justify-content-between py-2 px-2"
                         >
                           <span>{d.nombre_archivo}</span>
                           <small className="text-body-secondary">
@@ -460,7 +560,7 @@ export default function DetalleNotaPage() {
         </>
       )}
       {copyToast ? (
-        <div className="toast-container position-fixed top-0 end-0 p-3" style={{ zIndex: 1080 }}>
+        <div className="toast-container position-fixed top-0 end-0 p-2" style={{ zIndex: 1080 }}>
           <div className="toast show align-items-center text-bg-success border-0" role="status" aria-live="polite" aria-atomic="true">
             <div className="d-flex">
               <div className="toast-body">{copyToast}</div>

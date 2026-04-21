@@ -142,6 +142,19 @@ export function fetchSeguimientoDetalle(id) {
   return request(`/api/seguimiento/nota/${id}`)
 }
 
+export function fetchHistorialEstadosNotas(params = {}) {
+  if (isSupabaseConfigured) {
+    return fetchHistorialEstadosNotasSupabase(params)
+  }
+  const query = buildQuery({
+    limit: params.limit,
+    modo: params.modo,
+  })
+  return request(
+    query ? `/api/seguimiento/historial-estados?${query}` : '/api/seguimiento/historial-estados',
+  )
+}
+
 export function postSeguimientoComentario(id, payload) {
   if (isSupabaseConfigured) {
     return postSeguimientoComentarioSupabase(id, payload)
@@ -292,6 +305,53 @@ async function postSeguimientoDocumentoSupabase(id, file, bucket) {
   return { ok: true, item: insRows?.[0] || null }
 }
 
+async function fetchHistorialEstadosNotasSupabase(params = {}) {
+  const limitRaw = Number.parseInt(String(params.limit ?? 150), 10)
+  const limit = Math.min(500, Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 150))
+  const modo = String(params.modo ?? 'pendiente_resuelta').trim().toLowerCase()
+
+  let q = supabase
+    .from('historial_notas')
+    .select(
+      `
+      id, nota_id, valor_anterior, valor_nuevo, observacion, created_at,
+      usuario:usuario_id(username, nombre_completo),
+      notas_credito:nota_id(id, serie_folio, cliente, empresa)
+    `,
+    )
+    .eq('campo_modificado', 'estado')
+    .order('created_at', { ascending: false, nullsFirst: false })
+    .limit(limit)
+
+  if (modo !== 'todos') {
+    q = q.eq('valor_anterior', 'PENDIENTE').eq('valor_nuevo', 'RESUELTA')
+  }
+
+  const { data, error } = await q
+  if (error) throw new Error(error.message || 'No se pudo cargar historial de estados')
+
+  const items = (data || []).map((row) => ({
+    id: row.id,
+    nota_id: row.nota_id,
+    valor_anterior: row.valor_anterior,
+    valor_nuevo: row.valor_nuevo,
+    observacion: row.observacion,
+    created_at: row.created_at,
+    serie_folio: row.notas_credito?.serie_folio ?? null,
+    cliente: row.notas_credito?.cliente ?? null,
+    empresa: row.notas_credito?.empresa ?? null,
+    usuario_username: row.usuario?.username ?? null,
+    usuario_nombre: row.usuario?.nombre_completo ?? null,
+  }))
+
+  return {
+    ok: true,
+    modo: modo === 'todos' ? 'todos' : 'pendiente_resuelta',
+    limit,
+    items,
+  }
+}
+
 async function fetchSeguimientoListSupabase(params = {}) {
   const meta = await getCurrentAuthMeta()
   const allowedRutaIds = await resolveAllowedRutaIds(meta)
@@ -302,6 +362,8 @@ async function fetchSeguimientoListSupabase(params = {}) {
   const ruta = String(params.ruta ?? '').trim().toUpperCase()
   const atencion = String(params.atencion ?? '').trim().toLowerCase()
   const q = String(params.q ?? '').trim()
+  const includeAggregatesRaw = String(params.includeAggregates ?? 'true').trim().toLowerCase()
+  const includeAggregates = !['false', '0', 'no'].includes(includeAggregatesRaw)
   const sort = normalizeSort(params.sort)
   const dias = Number.parseInt(String(params.dias ?? ''), 10)
   const hasDias = Number.isFinite(dias) && dias > 0 && dias <= 3650
@@ -379,6 +441,25 @@ async function fetchSeguimientoListSupabase(params = {}) {
   )
   if (countError) throw new Error(countError.message || 'No se pudo cargar seguimiento')
 
+  /** Misma regla que el API SQL: entre el total filtrado, cuántas están PENDIENTE con al menos un comentario. */
+  let requiereAtencionTotal = 0
+  if (includeAggregates) {
+    const atencionNorm = String(atencion ?? '').trim().toLowerCase()
+    const estadoNorm = String(estado ?? '').trim().toUpperCase()
+    if (!['no', 'false', '0'].includes(atencionNorm) && estadoNorm !== 'RESUELTA' && estadoNorm !== 'CANCELADA') {
+      const { count: raCount, error: raErr } = await applySeguimientoListFilters(
+        supabase.from('notas_credito').select('id, aclaraciones(id)', { count: 'exact', head: true }),
+        {
+          ...filterArgs,
+          estado: 'PENDIENTE',
+          atencion: 'si',
+        },
+      )
+      if (raErr) throw new Error(raErr.message || 'No se pudo calcular notas que requieren atención')
+      requiereAtencionTotal = raCount ?? 0
+    }
+  }
+
   const total = totalCount ?? 0
   const totalPages = total > 0 ? Math.ceil(total / pageSize) : 1
   const safePage = total === 0 ? 1 : Math.min(page, totalPages)
@@ -410,40 +491,41 @@ async function fetchSeguimientoListSupabase(params = {}) {
     tiene_comentarios: Array.isArray(n.aclaraciones) && n.aclaraciones.length > 0,
   }))
 
-  const requiereAtencion = items.filter(
-    (x) => String(x.estado || '').toUpperCase() === 'PENDIENTE' && x.tiene_comentarios,
-  ).length
-  const porRutaMap = new Map()
-  for (const row of items) {
-    const key = String(row.ruta_codigo || '(sin ruta)')
-    porRutaMap.set(key, (porRutaMap.get(key) || 0) + 1)
-  }
-  const porRuta = Array.from(porRutaMap.entries())
-    .map(([ruta_codigo, registros]) => ({ ruta_codigo, registros }))
-    .sort((a, b) => b.registros - a.registros || String(a.ruta_codigo).localeCompare(String(b.ruta_codigo)))
-
-  const bucketOrder = ['negativo', 'd0_30', 'd31_45', 'd46_60', 'd61_90', 'd91_180', 'd181_365', 'd366_plus']
-  const bucketMap = new Map(bucketOrder.map((k) => [k, 0]))
-  const now = Date.now()
-  for (const row of items) {
-    if (!row.fecha_nota) {
-      bucketMap.set('negativo', (bucketMap.get('negativo') || 0) + 1)
-      continue
+  let porRuta = []
+  let porAntiguedad = []
+  if (includeAggregates) {
+    const porRutaMap = new Map()
+    for (const row of items) {
+      const key = String(row.ruta_codigo || '(sin ruta)')
+      porRutaMap.set(key, (porRutaMap.get(key) || 0) + 1)
     }
-    const dias = Math.floor((now - new Date(row.fecha_nota).getTime()) / (24 * 60 * 60 * 1000))
-    let key = 'd366_plus'
-    if (!Number.isFinite(dias) || dias < 0) key = 'negativo'
-    else if (dias <= 30) key = 'd0_30'
-    else if (dias <= 45) key = 'd31_45'
-    else if (dias <= 60) key = 'd46_60'
-    else if (dias <= 90) key = 'd61_90'
-    else if (dias <= 180) key = 'd91_180'
-    else if (dias <= 365) key = 'd181_365'
-    bucketMap.set(key, (bucketMap.get(key) || 0) + 1)
+    porRuta = Array.from(porRutaMap.entries())
+      .map(([ruta_codigo, registros]) => ({ ruta_codigo, registros }))
+      .sort((a, b) => b.registros - a.registros || String(a.ruta_codigo).localeCompare(String(b.ruta_codigo)))
+
+    const bucketOrder = ['negativo', 'd0_30', 'd31_45', 'd46_60', 'd61_90', 'd91_180', 'd181_365', 'd366_plus']
+    const bucketMap = new Map(bucketOrder.map((k) => [k, 0]))
+    const now = Date.now()
+    for (const row of items) {
+      if (!row.fecha_nota) {
+        bucketMap.set('negativo', (bucketMap.get('negativo') || 0) + 1)
+        continue
+      }
+      const dias = Math.floor((now - new Date(row.fecha_nota).getTime()) / (24 * 60 * 60 * 1000))
+      let key = 'd366_plus'
+      if (!Number.isFinite(dias) || dias < 0) key = 'negativo'
+      else if (dias <= 30) key = 'd0_30'
+      else if (dias <= 45) key = 'd31_45'
+      else if (dias <= 60) key = 'd46_60'
+      else if (dias <= 90) key = 'd61_90'
+      else if (dias <= 180) key = 'd91_180'
+      else if (dias <= 365) key = 'd181_365'
+      bucketMap.set(key, (bucketMap.get(key) || 0) + 1)
+    }
+    porAntiguedad = bucketOrder
+      .map((bucket_id) => ({ bucket_id, registros: bucketMap.get(bucket_id) || 0 }))
+      .filter((r) => r.registros > 0)
   }
-  const porAntiguedad = bucketOrder
-    .map((bucket_id) => ({ bucket_id, registros: bucketMap.get(bucket_id) || 0 }))
-    .filter((r) => r.registros > 0)
 
   return {
     ok: true,
@@ -462,7 +544,7 @@ async function fetchSeguimientoListSupabase(params = {}) {
     },
     resumen: {
       total_filtrado: total,
-      requiere_atencion: requiereAtencion,
+      requiere_atencion: requiereAtencionTotal,
     },
     porRuta,
     porAntiguedad,
@@ -500,44 +582,48 @@ async function fetchSeguimientoDetalleSupabase(id) {
     throw new Error('Nota no encontrada')
   }
 
-  const { data: historial, error: histErr } = await supabase
-    .from('historial_notas')
-    .select('id, campo_modificado, valor_anterior, valor_nuevo, observacion, created_at, usuario_id, usuarios:usuario_id(username,nombre_completo)')
-    .eq('nota_id', noteId)
-    .order('created_at', { ascending: false })
-    .limit(100)
-  if (histErr) throw new Error(histErr.message || 'No se pudo cargar historial')
+  const [histRes, aclaracionesRes, documentosRes, rutasRes] = await Promise.all([
+    supabase
+      .from('historial_notas')
+      .select('id, campo_modificado, valor_anterior, valor_nuevo, observacion, created_at, usuario_id, usuarios:usuario_id(username,nombre_completo)')
+      .eq('nota_id', noteId)
+      .order('created_at', { ascending: false })
+      .limit(100),
+    supabase
+      .from('aclaraciones')
+      .select('id, comentario, tipo, leida, created_at, usuario_id, usuarios:usuario_id(username,nombre_completo)')
+      .eq('nota_id', noteId)
+      .order('created_at', { ascending: false })
+      .limit(200),
+    supabase
+      .from('documentos')
+      .select('id, nombre_archivo, ruta_archivo, tipo_mime, tamanio, created_at, usuario_id, usuarios:usuario_id(username,nombre_completo)')
+      .eq('nota_id', noteId)
+      .order('created_at', { ascending: false })
+      .limit(100),
+    canManageRoute
+      ? supabase
+          .from('rutas')
+          .select('id, codigo, nombre')
+          .eq('activa', true)
+          .order('codigo', { ascending: true })
+      : Promise.resolve({ data: [], error: null }),
+  ])
+  if (histRes.error) throw new Error(histRes.error.message || 'No se pudo cargar historial')
+  if (aclaracionesRes.error) {
+    throw new Error(aclaracionesRes.error.message || 'No se pudieron cargar comentarios')
+  }
+  if (documentosRes.error) throw new Error(documentosRes.error.message || 'No se pudieron cargar documentos')
+  if (rutasRes.error) throw new Error(rutasRes.error.message || 'No se pudieron cargar rutas')
 
-  const { data: aclaraciones, error: aErr } = await supabase
-    .from('aclaraciones')
-    .select('id, comentario, tipo, leida, created_at, usuario_id, usuarios:usuario_id(username,nombre_completo)')
-    .eq('nota_id', noteId)
-    .order('created_at', { ascending: false })
-    .limit(200)
-  if (aErr) throw new Error(aErr.message || 'No se pudieron cargar comentarios')
-
-  const { data: documentos, error: dErr } = await supabase
-    .from('documentos')
-    .select('id, nombre_archivo, ruta_archivo, tipo_mime, tamanio, created_at, usuario_id, usuarios:usuario_id(username,nombre_completo)')
-    .eq('nota_id', noteId)
-    .order('created_at', { ascending: false })
-    .limit(100)
-  if (dErr) throw new Error(dErr.message || 'No se pudieron cargar documentos')
-  const documentosConUrl = await withSignedDocumentoUrls(documentos || [])
+  const historial = histRes.data || []
+  const aclaraciones = aclaracionesRes.data || []
+  const documentos = documentosRes.data || []
+  const rutasDisponibles = rutasRes.data || []
+  const documentosConUrl = await withSignedDocumentoUrls(documentos)
 
   if (canManageState) {
-    await supabase.from('aclaraciones').update({ leida: true }).eq('nota_id', noteId).eq('leida', false)
-  }
-
-  let rutasDisponibles = []
-  if (canManageRoute) {
-    const { data: rutas, error: rErr } = await supabase
-      .from('rutas')
-      .select('id, codigo, nombre')
-      .eq('activa', true)
-      .order('codigo', { ascending: true })
-    if (rErr) throw new Error(rErr.message || 'No se pudieron cargar rutas')
-    rutasDisponibles = rutas || []
+    void supabase.from('aclaraciones').update({ leida: true }).eq('nota_id', noteId).eq('leida', false)
   }
 
   return {
@@ -606,26 +692,9 @@ async function postSeguimientoComentarioSupabase(id, payload) {
   if (insErr) throw new Error(insErr.message || 'No se pudo guardar comentario')
 
   const prevEstado = String(note.estado || '').toUpperCase()
-  if (prevEstado !== 'PENDIENTE') {
-    await supabase
-      .from('notas_credito')
-      .update({
-        estado: 'PENDIENTE',
-        fecha_ultima_actualizacion: new Date().toISOString(),
-        fecha_resolucion: null,
-        resuelta_automaticamente: false,
-        requiere_atencion: true,
-      })
-      .eq('id', noteId)
-    await supabase.from('historial_notas').insert({
-      campo_modificado: 'estado',
-      valor_anterior: note.estado || '',
-      valor_nuevo: 'PENDIENTE',
-      observacion: '',
-      nota_id: noteId,
-      usuario_id: meta.usuarioId,
-    })
-  } else {
+  // Regla de negocio: comentar no reabre notas RESUELTA/CANCELADA.
+  // Solo si estaba PENDIENTE, activamos atención.
+  if (prevEstado === 'PENDIENTE') {
     await supabase.from('notas_credito').update({ requiere_atencion: true }).eq('id', noteId)
   }
 

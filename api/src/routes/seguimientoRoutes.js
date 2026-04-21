@@ -122,6 +122,10 @@ router.get('/', requireAuth, async (req, res, next) => {
 
     const whereSql = `WHERE ${where.join(' AND ')}`
 
+    const includeAggregatesRaw = String(req.query.includeAggregates ?? 'true')
+      .trim()
+      .toLowerCase()
+    const includeAggregates = !['false', '0', 'no'].includes(includeAggregatesRaw)
     const sortKeyRaw = String(req.query.sort ?? '').trim().toLowerCase()
     const orderBy =
       SEGUIMIENTO_ORDER_BY[sortKeyRaw] || SEGUIMIENTO_ORDER_BY.default
@@ -137,8 +141,13 @@ router.get('/', requireAuth, async (req, res, next) => {
     )
     const total = countR.rows[0]?.total ?? 0
 
-    const resumenR = await pool.query(
-      `
+    let resumen = { total_filtrado: total, requiere_atencion: 0 }
+    let porRuta = []
+    let porAntiguedad = []
+    if (includeAggregates) {
+      const [resumenR, porRutaR, porAntiguedadR] = await Promise.all([
+        pool.query(
+          `
       SELECT
         COUNT(*)::int AS total_filtrado,
         COUNT(*) FILTER (
@@ -149,11 +158,10 @@ router.get('/', requireAuth, async (req, res, next) => {
       LEFT JOIN rutas r ON r.id = n.ruta_id
       ${whereSql}
     `,
-      params,
-    )
-
-    const porRutaR = await pool.query(
-      `
+          params,
+        ),
+        pool.query(
+          `
       SELECT
         COALESCE(NULLIF(TRIM(r.codigo), ''), '(sin ruta)') AS ruta_codigo,
         COUNT(*)::int AS registros
@@ -164,11 +172,10 @@ router.get('/', requireAuth, async (req, res, next) => {
       ORDER BY registros DESC, ruta_codigo ASC
       LIMIT 200
     `,
-      params,
-    )
-
-    const porAntiguedadR = await pool.query(
-      `
+          params,
+        ),
+        pool.query(
+          `
       WITH base AS (
         SELECT
           CASE
@@ -209,8 +216,13 @@ router.get('/', requireAuth, async (req, res, next) => {
           WHEN 'd366_plus' THEN 7
         END
     `,
-      params,
-    )
+          params,
+        ),
+      ])
+      resumen = resumenR.rows[0] || resumen
+      porRuta = porRutaR.rows
+      porAntiguedad = porAntiguedadR.rows
+    }
 
     const listParams = [...params, pageSize, offset]
     const listR = await pool.query(
@@ -259,9 +271,67 @@ router.get('/', requireAuth, async (req, res, next) => {
         dias: diasFiltered,
         sort: sortKeyRaw && SEGUIMIENTO_ORDER_BY[sortKeyRaw] ? sortKeyRaw : 'default',
       },
-      resumen: resumenR.rows[0] || { total_filtrado: total, requiere_atencion: 0 },
-      porRuta: porRutaR.rows,
-      porAntiguedad: porAntiguedadR.rows,
+      resumen,
+      porRuta,
+      porAntiguedad,
+      items: listR.rows,
+    })
+  } catch (e) {
+    next(e)
+  }
+})
+
+/** Últimos movimientos de estado en notas (p. ej. PENDIENTE → RESUELTA), respetando alcance por rol. */
+router.get('/historial-estados', requireAuth, async (req, res, next) => {
+  try {
+    const pool = getPool()
+    const limitRaw = parsePositiveInt(req.query.limit, 150)
+    const limit = Math.min(limitRaw, 500)
+    const modo = String(req.query.modo ?? 'pendiente_resuelta').trim().toLowerCase()
+
+    const params = []
+    const roleClause = whereByRole(req.user, params)
+    params.push(limit)
+    const limitIdx = params.length
+
+    const transicionSql =
+      modo === 'todos'
+        ? ''
+        : `
+      AND UPPER(TRIM(COALESCE(h.valor_anterior, ''))) = 'PENDIENTE'
+      AND UPPER(TRIM(COALESCE(h.valor_nuevo, ''))) = 'RESUELTA'
+    `
+
+    const listR = await pool.query(
+      `
+      SELECT
+        h.id,
+        h.nota_id,
+        h.valor_anterior,
+        h.valor_nuevo,
+        h.observacion,
+        h.created_at,
+        n.serie_folio,
+        n.cliente,
+        n.empresa,
+        u.username AS usuario_username,
+        u.nombre_completo AS usuario_nombre
+      FROM historial_notas h
+      INNER JOIN notas_credito n ON n.id = h.nota_id
+      LEFT JOIN usuarios u ON u.id = h.usuario_id
+      WHERE h.campo_modificado = 'estado'
+        AND (${roleClause})
+        ${transicionSql}
+      ORDER BY h.created_at DESC NULLS LAST, h.id DESC
+      LIMIT $${limitIdx}
+    `,
+      params,
+    )
+
+    res.json({
+      ok: true,
+      modo: modo === 'todos' ? 'todos' : 'pendiente_resuelta',
+      limit,
       items: listR.rows,
     })
   } catch (e) {
@@ -303,8 +373,16 @@ router.get('/nota/:id', requireAuth, async (req, res, next) => {
       return res.status(404).json({ ok: false, error: 'Nota no encontrada' })
     }
 
-    const historialR = await pool.query(
-      `
+    const canManageStateUser = canManageState(req.user)
+    const canManageRouteUser = canManageRoute(req.user)
+    const [
+      historialR,
+      aclaracionesR,
+      documentosR,
+      rutasR,
+    ] = await Promise.all([
+      pool.query(
+        `
       SELECT
         h.id, h.campo_modificado, h.valor_anterior, h.valor_nuevo,
         h.observacion, h.created_at,
@@ -316,11 +394,10 @@ router.get('/nota/:id', requireAuth, async (req, res, next) => {
       ORDER BY h.created_at DESC, h.id DESC
       LIMIT 100
     `,
-      [noteId],
-    )
-
-    const aclaracionesR = await pool.query(
-      `
+        [noteId],
+      ),
+      pool.query(
+        `
       SELECT
         a.id, a.comentario, a.tipo, a.leida, a.created_at,
         u.username AS usuario_username,
@@ -331,11 +408,10 @@ router.get('/nota/:id', requireAuth, async (req, res, next) => {
       ORDER BY a.created_at DESC, a.id DESC
       LIMIT 200
     `,
-      [noteId],
-    )
-
-    const documentosR = await pool.query(
-      `
+        [noteId],
+      ),
+      pool.query(
+        `
       SELECT
         d.id, d.nombre_archivo, d.ruta_archivo, d.tipo_mime, d.tamanio, d.created_at,
         u.username AS usuario_username,
@@ -346,38 +422,36 @@ router.get('/nota/:id', requireAuth, async (req, res, next) => {
       ORDER BY d.created_at DESC, d.id DESC
       LIMIT 100
     `,
-      [noteId],
-    )
-
-    // Crédito/Admin al abrir detalle marcan aclaraciones como leídas.
-    if (canManageState(req.user)) {
-      await pool.query('UPDATE aclaraciones SET leida = true WHERE nota_id = $1', [
-        noteId,
-      ])
-    }
-
-    let rutasDisponibles = []
-    if (canManageRoute(req.user)) {
-      const rutasR = await pool.query(
-        `
+        [noteId],
+      ),
+      canManageRouteUser
+        ? pool.query(
+            `
         SELECT id, codigo, nombre
         FROM rutas
         WHERE activa = true
         ORDER BY codigo ASC
       `,
-      )
-      rutasDisponibles = rutasR.rows
+          )
+        : Promise.resolve({ rows: [] }),
+    ])
+
+    // No bloquea la respuesta del detalle.
+    if (canManageStateUser) {
+      void pool.query('UPDATE aclaraciones SET leida = true WHERE nota_id = $1 AND leida = false', [
+        noteId,
+      ])
     }
 
     res.json({
       ok: true,
-      canManageState: canManageState(req.user),
-      canManageRoute: canManageRoute(req.user),
+      canManageState: canManageStateUser,
+      canManageRoute: canManageRouteUser,
       nota,
       historial: historialR.rows,
       aclaraciones: aclaracionesR.rows,
       documentos: documentosR.rows,
-      rutasDisponibles,
+      rutasDisponibles: rutasR.rows,
     })
   } catch (e) {
     next(e)
@@ -496,35 +570,10 @@ router.post('/nota/:id/comentarios', requireAuth, async (req, res, next) => {
     )
 
     // Regla de negocio:
-    // Si una nota ya estaba resuelta/cancelada y se agrega un comentario,
-    // se "reabre" marcando requiere_atencion=true y estado=PENDIENTE.
-    // Esto permite que Crédito la vuelva a ver como pendiente para resolver.
-    let reabierta = false
-    if (prev && String(prev.estado || '').toUpperCase() !== 'PENDIENTE') {
-      reabierta = true
-      await pool.query(
-        `
-        UPDATE notas_credito
-        SET estado = 'PENDIENTE',
-            fecha_ultima_actualizacion = NOW(),
-            fecha_resolucion = NULL,
-            resuelta_automaticamente = false,
-            requiere_atencion = true
-        WHERE id = $1
-      `,
-        [noteId],
-      )
-      await pool.query(
-        `
-        INSERT INTO historial_notas
-          (campo_modificado, valor_anterior, valor_nuevo, observacion, created_at, nota_id, usuario_id)
-        VALUES
-          ('estado', $1, 'PENDIENTE', '', NOW(), $2, $3)
-      `,
-        [prev.estado || '', noteId, req.user.sub],
-      )
-    } else {
-      // Si ya estaba pendiente, al comentar solo activamos la bandera.
+    // Comentar no reabre notas RESUELTA/CANCELADA.
+    // Solo si ya estaba PENDIENTE, activamos la bandera de atención.
+    const reabierta = false
+    if (prev && String(prev.estado || '').toUpperCase() === 'PENDIENTE') {
       await pool.query('UPDATE notas_credito SET requiere_atencion = true WHERE id = $1', [
         noteId,
       ])

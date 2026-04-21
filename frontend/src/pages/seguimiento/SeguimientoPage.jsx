@@ -147,6 +147,8 @@ export default function SeguimientoPage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [exportandoExcel, setExportandoExcel] = useState(false)
   const [copyToast, setCopyToast] = useState('')
+  const [rutaInput, setRutaInput] = useState(seguimientoFilters.ruta || '')
+  const [qInput, setQInput] = useState(seguimientoFilters.q || '')
   const requestSeqRef = useRef(0)
   const loadMoreRef = useRef(null)
   const syncMountRef = useRef(false)
@@ -195,16 +197,18 @@ export default function SeguimientoPage() {
   const hasMore = page < (data.totalPages || 1)
 
   const cargarPagina = useCallback(async (targetPage, append = false) => {
+    const includeAggregates = !append && targetPage === 1
     const requestSeq = ++requestSeqRef.current
     const cached = getCacheEntry('seguimiento', cacheKey)
     if (cached?.pages?.[targetPage]) {
       if (requestSeq !== requestSeqRef.current) return
       const merged = mergeCachedPages(cached, targetPage)
-      setData({
+      setData((prev) => ({
+        ...prev,
         items: merged,
         total: cached.total ?? 0,
         totalPages: cached.totalPages ?? 1,
-      })
+      }))
       setPage(targetPage)
       setLoading(false)
       setLoadingMore(false)
@@ -219,15 +223,22 @@ export default function SeguimientoPage() {
       setError('')
     }
     try {
-      const r = await fetchSeguimientoList({ ...filtros, page: targetPage })
+      const r = await fetchSeguimientoList({
+        ...filtros,
+        page: targetPage,
+        includeAggregates: includeAggregates ? 'true' : 'false',
+      })
       if (requestSeq !== requestSeqRef.current) return
       setCachePage('seguimiento', cacheKey, targetPage, r)
       const nextCached = getCacheEntry('seguimiento', cacheKey)
       const merged = nextCached ? mergeCachedPages(nextCached, targetPage) : r.items || []
-      setData({
+      setData((prev) => ({
         ...r,
+        resumen: includeAggregates ? r.resumen : prev.resumen,
+        porRuta: includeAggregates ? r.porRuta : prev.porRuta,
+        porAntiguedad: includeAggregates ? r.porAntiguedad : prev.porAntiguedad,
         items: merged,
-      })
+      }))
       setPage(typeof r.page === 'number' ? r.page : targetPage)
     } catch (e) {
       if (requestSeq !== requestSeqRef.current) return
@@ -239,12 +250,6 @@ export default function SeguimientoPage() {
       }
     }
   }, [filtros, getCacheEntry, cacheKey, setCachePage])
-
-  // Al volver desde el detalle la pantalla se remonta; el caché global seguía vivo y
-  // el efecto de notasVersion se saltaba la limpieza en el primer render (syncMountRef).
-  useEffect(() => {
-    clearScreenCache('seguimiento')
-  }, [clearScreenCache])
 
   useEffect(() => {
     if (!syncMountRef.current) {
@@ -262,6 +267,34 @@ export default function SeguimientoPage() {
     setData({ items: [], total: 0, totalPages: 1 })
     void cargarPagina(1, false)
   }, [cargarPagina])
+
+  useEffect(() => {
+    setRutaInput(seguimientoFilters.ruta || '')
+  }, [seguimientoFilters.ruta])
+
+  useEffect(() => {
+    setQInput(seguimientoFilters.q || '')
+  }, [seguimientoFilters.q])
+
+  useEffect(() => {
+    const next = String(rutaInput || '').trim().toUpperCase()
+    if (next === String(seguimientoFilters.ruta || '').trim().toUpperCase()) return
+    const t = setTimeout(() => {
+      setSeguimientoFilters({ ruta: next })
+      setPage(1)
+    }, 400)
+    return () => clearTimeout(t)
+  }, [rutaInput, seguimientoFilters.ruta, setSeguimientoFilters])
+
+  useEffect(() => {
+    const next = String(qInput || '').trim()
+    if (next === String(seguimientoFilters.q || '').trim()) return
+    const t = setTimeout(() => {
+      setSeguimientoFilters({ q: next })
+      setPage(1)
+    }, 400)
+    return () => clearTimeout(t)
+  }, [qInput, seguimientoFilters.q, setSeguimientoFilters])
 
   useEffect(() => {
     const node = loadMoreRef.current
@@ -382,11 +415,8 @@ export default function SeguimientoPage() {
                 className="form-control"
                 placeholder="Ej: DR201"
                 title="Debe coincidir exactamente con el código de ruta (sin búsqueda parcial)"
-                value={seguimientoFilters.ruta}
-                onChange={(e) => {
-                  setSeguimientoFilters({ ruta: e.target.value.toUpperCase() })
-                  setPage(1)
-                }}
+                value={rutaInput}
+                onChange={(e) => setRutaInput(e.target.value)}
               />
             </div>
             <div className="col-12 col-lg-4">
@@ -394,11 +424,8 @@ export default function SeguimientoPage() {
               <input
                 className="form-control"
                 placeholder="serie, cliente o vendedor"
-                value={seguimientoFilters.q}
-                onChange={(e) => {
-                  setSeguimientoFilters({ q: e.target.value })
-                  setPage(1)
-                }}
+                value={qInput}
+                onChange={(e) => setQInput(e.target.value)}
               />
             </div>
           </div>

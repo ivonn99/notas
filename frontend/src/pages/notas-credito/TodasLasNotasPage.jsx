@@ -158,6 +158,8 @@ export default function TodasLasNotasPage() {
   const [totalPages, setTotalPages] = useState(1)
   const [refreshNonce, setRefreshNonce] = useState(0)
   const [copyToast, setCopyToast] = useState('')
+  const [rutaInput, setRutaInput] = useState(notasFilters.ruta || '')
+  const [qInput, setQInput] = useState(notasFilters.q || '')
   const getCacheEntry = useListCacheStore((s) => s.getEntry)
   const setCachePage = useListCacheStore((s) => s.setPage)
   const clearCacheEntry = useListCacheStore((s) => s.clearEntry)
@@ -185,12 +187,6 @@ export default function TodasLasNotasPage() {
     ],
   )
   const cacheKey = useMemo(() => JSON.stringify(baseParams), [baseParams])
-
-  // Misma causa que en Seguimiento: al volver del detalle la lista se remonta y el caché
-  // seguía sirviendo filas obsoletas si notasVersion no cambió o el efecto se saltaba.
-  useEffect(() => {
-    clearScreenCache('notas')
-  }, [clearScreenCache])
 
   useEffect(() => {
     if (!didMountSyncRef.current) {
@@ -238,6 +234,34 @@ export default function TodasLasNotasPage() {
       cancel = true
     }
   }, [baseParams, page, refreshNonce, getCacheEntry, cacheKey, setCachePage])
+
+  useEffect(() => {
+    setRutaInput(notasFilters.ruta || '')
+  }, [notasFilters.ruta])
+
+  useEffect(() => {
+    setQInput(notasFilters.q || '')
+  }, [notasFilters.q])
+
+  useEffect(() => {
+    const next = String(rutaInput || '').trim()
+    if (next === String(notasFilters.ruta || '').trim()) return
+    const t = setTimeout(() => {
+      setPage(1)
+      setNotasFilters({ ruta: next })
+    }, 400)
+    return () => clearTimeout(t)
+  }, [rutaInput, notasFilters.ruta, setNotasFilters])
+
+  useEffect(() => {
+    const next = String(qInput || '').trim()
+    if (next === String(notasFilters.q || '').trim()) return
+    const t = setTimeout(() => {
+      setPage(1)
+      setNotasFilters({ q: next })
+    }, 400)
+    return () => clearTimeout(t)
+  }, [qInput, notasFilters.q, setNotasFilters])
 
   function updateFiltro(name, value) {
     setPage(1)
@@ -351,8 +375,8 @@ export default function TodasLasNotasPage() {
               <label className="form-label mb-1">Ruta (código)</label>
               <input
                 className="form-control"
-                value={notasFilters.ruta}
-                onChange={(e) => updateFiltro('ruta', e.target.value)}
+                value={rutaInput}
+                onChange={(e) => setRutaInput(e.target.value)}
                 placeholder="Ej: R01"
               />
             </div>
@@ -360,8 +384,8 @@ export default function TodasLasNotasPage() {
               <label className="form-label mb-1">Buscar</label>
               <input
                 className="form-control"
-                value={notasFilters.q}
-                onChange={(e) => updateFiltro('q', e.target.value)}
+                value={qInput}
+                onChange={(e) => setQInput(e.target.value)}
                 placeholder="serie, cliente o vendedor"
               />
             </div>

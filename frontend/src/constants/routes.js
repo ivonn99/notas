@@ -9,6 +9,7 @@ export const ROUTES = {
   notasCredito: '/notas-credito',
   alertas: '/alertas',
   seguimiento: '/seguimiento',
+  historialEstadosNotas: '/seguimiento/historial-estados',
   reporte: '/reporte',
   detalleNota: (id = ':id') => `/seguimiento/nota/${id}`,
   importarReporte: '/importar-reporte',

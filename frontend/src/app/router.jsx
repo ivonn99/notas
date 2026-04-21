@@ -9,6 +9,7 @@ import PaginaPrincipalPage from '../pages/dashboard/PaginaPrincipalPage.jsx'
 import TodasLasNotasPage from '../pages/notas-credito/TodasLasNotasPage.jsx'
 import SeguimientoPage from '../pages/seguimiento/SeguimientoPage.jsx'
 import DetalleNotaPage from '../pages/seguimiento/DetalleNotaPage.jsx'
+import HistorialEstadosNotasPage from '../pages/seguimiento/HistorialEstadosNotasPage.jsx'
 import ReportePage from '../pages/reporte/ReportePage.jsx'
 import ImportarReportePage from '../pages/admin/ImportarReportePage.jsx'
 import HistorialImportacionesPage from '../pages/admin/HistorialImportacionesPage.jsx'
@@ -50,6 +51,7 @@ export const router = createBrowserRouter([
         ),
       },
       { path: 'seguimiento', element: <SeguimientoPage /> },
+      { path: 'seguimiento/historial-estados', element: <HistorialEstadosNotasPage /> },
       { path: 'seguimiento/nota/:id', element: <DetalleNotaPage /> },
       {
         path: 'reporte',

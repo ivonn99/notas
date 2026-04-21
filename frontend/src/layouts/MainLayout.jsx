@@ -260,6 +260,18 @@ export default function MainLayout() {
               <span className="sidebar-nav-label">Seguimiento</span>
             </NavLink>
           ) : null}
+          {canSeguimiento ? (
+            <NavLink
+              to={ROUTES.historialEstadosNotas}
+              className={navLinkClass}
+              title="Historial de estados (notas)"
+            >
+              <NavIcon>
+                <FaClockRotateLeft size={18} />
+              </NavIcon>
+              <span className="sidebar-nav-label">Historial estados</span>
+            </NavLink>
+          ) : null}
           {canCredito ? (
             <NavLink to={ROUTES.reporte} className={navLinkClass} title="Reporte">
               <NavIcon>

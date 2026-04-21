@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { createElement, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   FaBell,
@@ -174,7 +174,7 @@ const SHORTCUT_DEFS = [
   },
 ]
 
-function ShortcutCard({ to, icon: Icon, title, description }) {
+function ShortcutCard({ to, icon, title, description }) {
   return (
     <div className="col-sm-6 col-xl-4">
       <Link
@@ -186,7 +186,7 @@ function ShortcutCard({ to, icon: Icon, title, description }) {
             className="rounded-3 d-inline-flex align-items-center justify-content-center flex-shrink-0 home-shortcut-icon text-primary"
             aria-hidden="true"
           >
-            <Icon size={22} />
+            {icon ? createElement(icon, { size: 22 }) : null}
           </span>
           <div className="min-w-0">
             <h2 className="h6 mb-1 text-body">{title}</h2>
