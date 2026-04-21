@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { FaComment, FaEye } from 'react-icons/fa6'
 import { ROUTES } from '../../constants/routes.js'
 import { useDomainSyncStore } from '../../stores/domainSyncStore.js'
 import { fetchSeguimientoList } from '../../services/seguimientoApi.js'
@@ -8,6 +9,7 @@ import { useListCacheStore } from '../../stores/listCacheStore.js'
 import { useListFiltersStore } from '../../stores/listFiltersStore.js'
 import { estadoBadgeClass, notaMuestraAtencion } from '../../utils/estadoBadge.js'
 import { formatDiasNotaCorriente } from '../../utils/diasCorriente.js'
+import ComentarioNotaRapidoModal from '../../components/ComentarioNotaRapidoModal.jsx'
 
 const PAGE_SIZE = 20
 const BUCKET_LABELS = {
@@ -74,7 +76,7 @@ async function copyText(text) {
   document.body.removeChild(textarea)
 }
 
-function NotaSeguimientoCardMovil({ n, onCopySerieFolio }) {
+function NotaSeguimientoCardMovil({ n, onCopySerieFolio, onAbrirComentario }) {
   return (
     <div className="card border shadow-sm">
       <div className="card-body py-3">
@@ -99,12 +101,31 @@ function NotaSeguimientoCardMovil({ n, onCopySerieFolio }) {
             </div>
             <div className="small text-body-secondary">ID {n.id}</div>
           </div>
-          <Link
-            className="btn btn-sm btn-primary flex-shrink-0"
-            to={ROUTES.detalleNota(String(n.id))}
-          >
-            Ver detalle
-          </Link>
+          <div className="d-flex flex-row flex-wrap gap-1 flex-shrink-0 align-items-center justify-content-end">
+            <Link
+              className="btn btn-sm btn-primary d-inline-flex align-items-center justify-content-center px-2"
+              to={ROUTES.detalleNota(String(n.id))}
+              title="Detalle"
+              aria-label="Ver detalle de la nota"
+            >
+              <FaEye className="fs-6" aria-hidden />
+            </Link>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center px-2"
+              title="Comentario"
+              aria-label="Agregar comentarios o aclaraciones"
+              onClick={() =>
+                onAbrirComentario({
+                  id: n.id,
+                  serie_folio: n.serie_folio,
+                  cliente: n.cliente,
+                })
+              }
+            >
+              <FaComment className="fs-6" aria-hidden />
+            </button>
+          </div>
         </div>
         <dl className="row small mb-0 gx-2">
           <dt className="col-5 text-body-secondary">Fecha nota</dt>
@@ -147,11 +168,11 @@ export default function SeguimientoPage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [exportandoExcel, setExportandoExcel] = useState(false)
   const [copyToast, setCopyToast] = useState('')
+  const [comentarioNota, setComentarioNota] = useState(null)
   const [rutaInput, setRutaInput] = useState(seguimientoFilters.ruta || '')
   const [qInput, setQInput] = useState(seguimientoFilters.q || '')
   const requestSeqRef = useRef(0)
   const loadMoreRef = useRef(null)
-  const syncMountRef = useRef(false)
   const getCacheEntry = useListCacheStore((s) => s.getEntry)
   const setCachePage = useListCacheStore((s) => s.setPage)
   const clearScreenCache = useListCacheStore((s) => s.clearScreen)
@@ -252,21 +273,11 @@ export default function SeguimientoPage() {
   }, [filtros, getCacheEntry, cacheKey, setCachePage])
 
   useEffect(() => {
-    if (!syncMountRef.current) {
-      syncMountRef.current = true
-      return
-    }
     clearScreenCache('seguimiento')
     setData({ items: [], total: 0, totalPages: 1 })
     setPage(1)
     void cargarPagina(1, false)
   }, [notasVersion, rutasVersion, clearScreenCache, cargarPagina])
-
-  useEffect(() => {
-    setPage(1)
-    setData({ items: [], total: 0, totalPages: 1 })
-    void cargarPagina(1, false)
-  }, [cargarPagina])
 
   useEffect(() => {
     setRutaInput(seguimientoFilters.ruta || '')
@@ -610,7 +621,7 @@ export default function SeguimientoPage() {
                 <th className="text-end">Saldo</th>
                 <th>Estado</th>
                 <th>Atención</th>
-                <th>Acción</th>
+                <th>Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -656,9 +667,31 @@ export default function SeguimientoPage() {
                     </td>
                     <td>{notaMuestraAtencion(n) ? 'Sí' : 'No'}</td>
                     <td>
-                      <Link className="btn btn-sm btn-primary" to={ROUTES.detalleNota(String(n.id))}>
-                        Ver detalle
-                      </Link>
+                      <div className="d-inline-flex flex-row flex-wrap gap-1 align-items-center">
+                        <Link
+                          className="btn btn-sm btn-primary d-inline-flex align-items-center justify-content-center px-2"
+                          to={ROUTES.detalleNota(String(n.id))}
+                          title="Detalle"
+                          aria-label="Ver detalle de la nota"
+                        >
+                          <FaEye className="fs-6" aria-hidden />
+                        </Link>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center px-2"
+                          title="Comentario"
+                          aria-label="Agregar comentarios o aclaraciones"
+                          onClick={() =>
+                            setComentarioNota({
+                              id: n.id,
+                              serie_folio: n.serie_folio,
+                              cliente: n.cliente,
+                            })
+                          }
+                        >
+                          <FaComment className="fs-6" aria-hidden />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -678,7 +711,12 @@ export default function SeguimientoPage() {
           ) : data.items?.length ? (
             <div className="d-flex flex-column gap-2">
               {data.items.map((n) => (
-                <NotaSeguimientoCardMovil key={n.id} n={n} onCopySerieFolio={handleCopySerieFolio} />
+                <NotaSeguimientoCardMovil
+                  key={n.id}
+                  n={n}
+                  onCopySerieFolio={handleCopySerieFolio}
+                  onAbrirComentario={setComentarioNota}
+                />
               ))}
             </div>
           ) : (
@@ -710,6 +748,14 @@ export default function SeguimientoPage() {
           </div>
         </div>
       ) : null}
+      <ComentarioNotaRapidoModal
+        show={Boolean(comentarioNota)}
+        notaId={comentarioNota?.id}
+        serieFolio={comentarioNota?.serie_folio}
+        cliente={comentarioNota?.cliente}
+        onClose={() => setComentarioNota(null)}
+        onGuardado={() => setCopyToast('Comentario guardado')}
+      />
     </section>
   )
 }

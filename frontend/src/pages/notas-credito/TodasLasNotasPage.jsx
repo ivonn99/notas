@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { FaComment, FaEye } from 'react-icons/fa6'
 import { ROUTES } from '../../constants/routes.js'
 import { useDomainSyncStore } from '../../stores/domainSyncStore.js'
 import { fetchNotasCredito } from '../../services/notasApi.js'
@@ -7,6 +8,7 @@ import { useListCacheStore } from '../../stores/listCacheStore.js'
 import { useListFiltersStore } from '../../stores/listFiltersStore.js'
 import { estadoBadgeClass, notaMuestraAtencion } from '../../utils/estadoBadge.js'
 import { formatDiasNotaCorriente } from '../../utils/diasCorriente.js'
+import ComentarioNotaRapidoModal from '../../components/ComentarioNotaRapidoModal.jsx'
 
 const PAGE_SIZE = 20
 
@@ -76,7 +78,7 @@ async function copyText(text) {
   document.body.removeChild(textarea)
 }
 
-function NotaCreditoCardMovil({ n, onCopySerieFolio }) {
+function NotaCreditoCardMovil({ n, onCopySerieFolio, onAbrirComentario }) {
   return (
     <div className="card border shadow-sm">
       <div className="card-body py-3">
@@ -101,12 +103,31 @@ function NotaCreditoCardMovil({ n, onCopySerieFolio }) {
             </div>
             <div className="small text-body-secondary">ID {n.id}</div>
           </div>
-          <Link
-            className="btn btn-sm btn-outline-primary flex-shrink-0"
-            to={ROUTES.detalleNota(String(n.id))}
-          >
-            Ver detalle
-          </Link>
+          <div className="d-flex flex-row flex-wrap gap-1 flex-shrink-0 align-items-center justify-content-end">
+            <Link
+              className="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center px-2"
+              to={ROUTES.detalleNota(String(n.id))}
+              title="Detalle"
+              aria-label="Ver detalle de la nota"
+            >
+              <FaEye className="fs-6" aria-hidden />
+            </Link>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center px-2"
+              title="Comentario"
+              aria-label="Agregar comentarios o aclaraciones"
+              onClick={() =>
+                onAbrirComentario({
+                  id: n.id,
+                  serie_folio: n.serie_folio,
+                  cliente: n.cliente,
+                })
+              }
+            >
+              <FaComment className="fs-6" aria-hidden />
+            </button>
+          </div>
         </div>
         <dl className="row small mb-0 gx-2">
           <dt className="col-5 text-body-secondary">Cliente</dt>
@@ -158,6 +179,7 @@ export default function TodasLasNotasPage() {
   const [totalPages, setTotalPages] = useState(1)
   const [refreshNonce, setRefreshNonce] = useState(0)
   const [copyToast, setCopyToast] = useState('')
+  const [comentarioNota, setComentarioNota] = useState(null)
   const [rutaInput, setRutaInput] = useState(notasFilters.ruta || '')
   const [qInput, setQInput] = useState(notasFilters.q || '')
   const getCacheEntry = useListCacheStore((s) => s.getEntry)
@@ -165,7 +187,6 @@ export default function TodasLasNotasPage() {
   const clearCacheEntry = useListCacheStore((s) => s.clearEntry)
   const clearScreenCache = useListCacheStore((s) => s.clearScreen)
   const notasVersion = useDomainSyncStore((s) => s.notasVersion)
-  const didMountSyncRef = useRef(false)
 
   const baseParams = useMemo(
     () => ({
@@ -189,10 +210,6 @@ export default function TodasLasNotasPage() {
   const cacheKey = useMemo(() => JSON.stringify(baseParams), [baseParams])
 
   useEffect(() => {
-    if (!didMountSyncRef.current) {
-      didMountSyncRef.current = true
-      return
-    }
     clearScreenCache('notas')
     setItems([])
     setPage(1)
@@ -418,7 +435,7 @@ export default function TodasLasNotasPage() {
                 <th className="text-end">Saldo</th>
                 <th>Estado</th>
                 <th>Vendedor</th>
-                <th className="text-end">Seguimiento</th>
+                <th className="text-end">Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -474,12 +491,31 @@ export default function TodasLasNotasPage() {
                       {n.vendedor_username || n.usuario_vendedor_pv || '—'}
                     </td>
                     <td className="text-end">
-                      <Link
-                        className="btn btn-sm btn-outline-primary"
-                        to={ROUTES.detalleNota(String(n.id))}
-                      >
-                        Ver detalle
-                      </Link>
+                      <div className="d-inline-flex flex-row flex-wrap gap-1 align-items-center justify-content-end">
+                        <Link
+                          className="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center px-2"
+                          to={ROUTES.detalleNota(String(n.id))}
+                          title="Detalle"
+                          aria-label="Ver detalle de la nota"
+                        >
+                          <FaEye className="fs-6" aria-hidden />
+                        </Link>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center px-2"
+                          title="Comentario"
+                          aria-label="Agregar comentarios o aclaraciones"
+                          onClick={() =>
+                            setComentarioNota({
+                              id: n.id,
+                              serie_folio: n.serie_folio,
+                              cliente: n.cliente,
+                            })
+                          }
+                        >
+                          <FaComment className="fs-6" aria-hidden />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -499,7 +535,12 @@ export default function TodasLasNotasPage() {
           ) : items.length ? (
             <div className="d-flex flex-column gap-2">
               {items.map((n) => (
-                <NotaCreditoCardMovil key={n.id} n={n} onCopySerieFolio={handleCopySerieFolio} />
+                <NotaCreditoCardMovil
+                  key={n.id}
+                  n={n}
+                  onCopySerieFolio={handleCopySerieFolio}
+                  onAbrirComentario={setComentarioNota}
+                />
               ))}
             </div>
           ) : (
@@ -550,6 +591,14 @@ export default function TodasLasNotasPage() {
           </div>
         </div>
       ) : null}
+      <ComentarioNotaRapidoModal
+        show={Boolean(comentarioNota)}
+        notaId={comentarioNota?.id}
+        serieFolio={comentarioNota?.serie_folio}
+        cliente={comentarioNota?.cliente}
+        onClose={() => setComentarioNota(null)}
+        onGuardado={() => setCopyToast('Comentario guardado')}
+      />
     </section>
   )
 }
