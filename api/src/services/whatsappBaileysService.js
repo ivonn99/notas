@@ -6,6 +6,7 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
   useMultiFileAuthState,
 } from '@whiskeysockets/baileys'
+import { buildCandidateJids, maskPhone, normalizePhoneMx } from './whatsappUtils.js'
 
 const DEFAULT_SESSION_DIR = path.resolve(process.cwd(), '.baileys_auth')
 
@@ -22,10 +23,7 @@ function safeString(value) {
 }
 
 function maskPhoneForLog(phoneRaw) {
-  const digits = safeString(phoneRaw).replace(/\D/g, '')
-  if (!digits) return ''
-  if (digits.length <= 4) return digits
-  return `${'*'.repeat(Math.max(0, digits.length - 4))}${digits.slice(-4)}`
+  return maskPhone(safeString(phoneRaw))
 }
 
 function logInfo(event, detail = {}) {
@@ -38,24 +36,6 @@ function logWarn(event, detail = {}) {
 
 function logError(event, detail = {}) {
   console.error(`[whatsapp][${nowIso()}][error] ${event}`, detail)
-}
-
-function normalizePhone(phoneRaw) {
-  const digits = String(phoneRaw ?? '').replace(/\D/g, '')
-  if (!digits) return ''
-  if (digits.length === 10) return `52${digits}`
-  return digits
-}
-
-function buildCandidateJids(normalizedDigits) {
-  if (!normalizedDigits) return []
-  const out = new Set()
-  out.add(`${normalizedDigits}@s.whatsapp.net`)
-  // Compatibilidad MX: algunas cuentas históricas resuelven mejor con 521 + 10 dígitos.
-  if (normalizedDigits.startsWith('52') && normalizedDigits.length === 12) {
-    out.add(`521${normalizedDigits.slice(2)}@s.whatsapp.net`)
-  }
-  return [...out]
 }
 
 class WhatsappBaileysService {
@@ -259,7 +239,7 @@ class WhatsappBaileysService {
       logWarn('send.blocked.not_connected')
       throw new Error('WhatsApp no está conectado. Escanea QR primero.')
     }
-    const normalized = normalizePhone(phone)
+    const normalized = normalizePhoneMx(phone)
     if (!normalized) {
       logWarn('send.blocked.invalid_phone', { to: maskPhoneForLog(phone) })
       throw new Error('Número de teléfono inválido')

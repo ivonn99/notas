@@ -19,6 +19,7 @@ import notasCreditoRouter from './routes/notasCreditoRoutes.js'
 import notificacionesRouter from './routes/notificacionesRoutes.js'
 import profileRouter from './routes/profileRoutes.js'
 import reportesRouter from './routes/reportesRoutes.js'
+import whatsappCobranzaRouter from './routes/whatsappCobranzaRoutes.js'
 import whatsappRouter from './routes/whatsappRoutes.js'
 import seguimientoRouter from './routes/seguimientoRoutes.js'
 import { ensureAuditTable } from './services/audit.js'
@@ -93,6 +94,7 @@ app.use('/api/notificaciones', notificacionesRouter)
 app.use('/api/auditoria', auditoriaRouter)
 app.use('/api/reportes', reportesRouter)
 app.use('/api/whatsapp', whatsappRouter)
+app.use('/api/whatsapp', whatsappCobranzaRouter)
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'notas-api' })

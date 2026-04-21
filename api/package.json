@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "node scripts/free-port-3001.mjs && node --watch src/index.js",
     "start": "node src/index.js",
+    "test": "node --test",
     "sync:supabase-auth": "node scripts/sync-usuarios-to-supabase-auth.mjs"
   },
   "dependencies": {

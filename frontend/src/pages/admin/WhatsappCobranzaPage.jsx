@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import Swal from 'sweetalert2'
 
 import {
@@ -13,7 +13,6 @@ import {
 
 const TAB_AUTOMATIZADA = 'automatizada'
 const TAB_MANUAL = 'manual'
-const WA_STATUS_POLL_MS = 1000
 
 /** Enlace wa.me si hay teléfono guardado (heurística MX: 10 dígitos → prefijo 52). */
 function waMeUrl(telefono) {
@@ -111,7 +110,8 @@ export default function WhatsappCobranzaPage() {
   const [diasMax, setDiasMax] = useState('')
   const [waStatus, setWaStatus] = useState(null)
   const [waQr, setWaQr] = useState('')
-  const [waLoading, setWaLoading] = useState(false)
+  const [waStatusLoading, setWaStatusLoading] = useState(false)
+  const [waActionLoading, setWaActionLoading] = useState(false)
   const [waError, setWaError] = useState('')
   const [waTestPhone, setWaTestPhone] = useState('')
   const [waTestMessage, setWaTestMessage] = useState(
@@ -329,7 +329,7 @@ export default function WhatsappCobranzaPage() {
   }
 
   const cargarEstadoWhatsapp = useCallback(async () => {
-    setWaLoading(true)
+    setWaStatusLoading(true)
     setWaError('')
     try {
       const s = await fetchWhatsappStatus()
@@ -351,22 +351,23 @@ export default function WhatsappCobranzaPage() {
     } catch (e) {
       setWaError(e?.message || 'No se pudo consultar estado de WhatsApp')
     } finally {
-      setWaLoading(false)
+      setWaStatusLoading(false)
     }
   }, [])
 
   const conectarWhatsapp = useCallback(async () => {
-    setWaLoading(true)
+    setWaActionLoading(true)
     setWaError('')
     setWaSendInfo('')
     try {
       await postWhatsappConnect()
-      await cargarEstadoWhatsapp()
+      setWaSendInfo('Solicitud de conexión enviada. Usa "Refrescar estado" para consultar avance.')
     } catch (e) {
       setWaError(e?.message || 'No se pudo iniciar conexión de WhatsApp')
-      setWaLoading(false)
+    } finally {
+      setWaActionLoading(false)
     }
-  }, [cargarEstadoWhatsapp])
+  }, [])
 
   const desconectarWhatsapp = useCallback(async () => {
     const conf = await Swal.fire({
@@ -379,7 +380,7 @@ export default function WhatsappCobranzaPage() {
       reverseButtons: true,
     })
     if (!conf.isConfirmed) return
-    setWaLoading(true)
+    setWaActionLoading(true)
     setWaError('')
     setWaSendInfo('')
     try {
@@ -395,7 +396,7 @@ export default function WhatsappCobranzaPage() {
     } catch (e) {
       setWaError(e?.message || 'No se pudo desconectar WhatsApp')
     } finally {
-      setWaLoading(false)
+      setWaActionLoading(false)
     }
   }, [])
 
@@ -411,7 +412,7 @@ export default function WhatsappCobranzaPage() {
       confirmButtonColor: '#dc3545',
     })
     if (!conf.isConfirmed) return
-    setWaLoading(true)
+    setWaActionLoading(true)
     setWaError('')
     setWaSendInfo('')
     try {
@@ -427,12 +428,12 @@ export default function WhatsappCobranzaPage() {
     } catch (e) {
       setWaError(e?.message || 'No se pudo desconectar y borrar la sesión')
     } finally {
-      setWaLoading(false)
+      setWaActionLoading(false)
     }
   }, [])
 
   const enviarPruebaWhatsapp = useCallback(async () => {
-    setWaLoading(true)
+    setWaActionLoading(true)
     setWaError('')
     setWaSendInfo('')
     try {
@@ -444,22 +445,9 @@ export default function WhatsappCobranzaPage() {
     } catch (e) {
       setWaError(e?.message || 'No se pudo enviar mensaje de prueba')
     } finally {
-      setWaLoading(false)
+      setWaActionLoading(false)
     }
   }, [waTestPhone, waTestMessage])
-
-  useEffect(() => {
-    void cargarEstadoWhatsapp()
-  }, [cargarEstadoWhatsapp])
-
-  useEffect(() => {
-    const s = String(waStatus?.status || '').toLowerCase()
-    if (!['qr', 'connecting'].includes(s) && !waQr) return undefined
-    const t = setInterval(() => {
-      void cargarEstadoWhatsapp()
-    }, WA_STATUS_POLL_MS)
-    return () => clearInterval(t)
-  }, [waStatus?.status, waQr, cargarEstadoWhatsapp])
 
   return (
     <section className="container-fluid px-0">
@@ -503,32 +491,29 @@ export default function WhatsappCobranzaPage() {
             <div className="card-header">Estado de conexión Baileys</div>
             <div className="card-body">
               <div className="d-flex flex-wrap gap-2 mb-3">
-                <button type="button" className="btn btn-primary" disabled={waLoading} onClick={conectarWhatsapp}>
-                  Conectar WhatsApp
+                <button type="button" className="btn btn-primary" onClick={conectarWhatsapp}>
+                  {waActionLoading ? 'Procesando...' : 'Conectar WhatsApp'}
                 </button>
                 <button
                   type="button"
                   className="btn btn-outline-danger"
-                  disabled={waLoading}
                   onClick={desconectarWhatsapp}
                 >
-                  Desconectar WhatsApp
+                  {waActionLoading ? 'Procesando...' : 'Desconectar WhatsApp'}
                 </button>
                 <button
                   type="button"
                   className="btn btn-danger"
-                  disabled={waLoading}
                   onClick={desconectarYBorrarSesionWhatsapp}
                 >
-                  Desconectar y borrar sesión
+                  {waActionLoading ? 'Procesando...' : 'Desconectar y borrar sesión'}
                 </button>
                 <button
                   type="button"
                   className="btn btn-outline-primary"
-                  disabled={waLoading}
                   onClick={cargarEstadoWhatsapp}
                 >
-                  Refrescar estado
+                  {waStatusLoading ? 'Consultando...' : 'Refrescar estado'}
                 </button>
               </div>
               {waError ? <div className="alert alert-danger py-2">{waError}</div> : null}
@@ -584,10 +569,9 @@ export default function WhatsappCobranzaPage() {
                 <button
                   type="button"
                   className="btn btn-success"
-                  disabled={waLoading}
                   onClick={enviarPruebaWhatsapp}
                 >
-                  Enviar mensaje de prueba
+                  {waActionLoading ? 'Procesando...' : 'Enviar mensaje de prueba'}
                 </button>
               </div>
             </div>
