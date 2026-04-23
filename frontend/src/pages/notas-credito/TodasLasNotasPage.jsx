@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { FaComment, FaEye } from 'react-icons/fa6'
 import { ROUTES } from '../../constants/routes.js'
@@ -178,6 +178,7 @@ export default function TodasLasNotasPage() {
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
   const [refreshNonce, setRefreshNonce] = useState(0)
+  const [mostrarComentarios, setMostrarComentarios] = useState(false)
   const [copyToast, setCopyToast] = useState('')
   const [comentarioNota, setComentarioNota] = useState(null)
   const [rutaInput, setRutaInput] = useState(notasFilters.ruta || '')
@@ -406,6 +407,34 @@ export default function TodasLasNotasPage() {
                 placeholder="serie, cliente o vendedor"
               />
             </div>
+            <div className="col-12 col-md-3 col-lg-2 d-flex flex-column justify-content-end gap-1">
+              <div className="form-check form-switch mb-1">
+                <input
+                  className="form-check-input"
+                  type="checkbox"
+                  role="switch"
+                  id="switchComentariosNotas"
+                  checked={mostrarComentarios}
+                  onChange={(e) => setMostrarComentarios(e.target.checked)}
+                />
+                <label className="form-check-label small" htmlFor="switchComentariosNotas">
+                  Ver comentarios
+                </label>
+              </div>
+              <button
+                type="button"
+                className="btn btn-success btn-nc-export-excel w-100"
+                disabled={loading}
+                title="Recargar datos desde el servidor"
+                onClick={() => {
+                  setPage(1)
+                  clearCacheEntry('notas', cacheKey)
+                  setRefreshNonce((n) => n + 1)
+                }}
+              >
+                {loading ? 'Cargando…' : '↻ Actualizar'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -447,77 +476,102 @@ export default function TodasLasNotasPage() {
                 </tr>
               ) : items.length ? (
                 items.map((n) => (
-                  <tr key={n.id}>
-                    <td>{n.id}</td>
-                    <td>
-                      <div className="d-inline-flex align-items-center gap-1">
-                        <span>{n.serie_folio || '—'}</span>
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-secondary py-0 px-2"
-                          aria-label="Copiar Serie/Folio"
-                          title="Copiar Serie/Folio"
-                          disabled={!n.serie_folio}
-                          onClick={() => {
-                            void handleCopySerieFolio(n.serie_folio)
-                          }}
-                        >
-                          <span aria-hidden="true">📋</span>
-                        </button>
-                      </div>
-                    </td>
-                    <td>{n.cliente || '—'}</td>
-                    <td>{n.empresa || '—'}</td>
-                    <td>{n.ruta_codigo || '—'}</td>
-                    <td className="text-nowrap">{formatFechaNota(n.fecha_nota)}</td>
-                    <td className="text-end text-nowrap" title="Entre fecha nota y fecha corriente (o hoy)">
-                      {formatDiasNotaCorriente(n.fecha_nota, n.fecha_corriente)}
-                    </td>
-                    <td className="text-end">{money(n.monto)}</td>
-                    <td className="text-end">{money(n.abono)}</td>
-                    <td className="text-end">{money(n.saldo)}</td>
-                    <td>
-                      <span className={`badge ${estadoBadgeClass(n.estado)}`}>{n.estado || '—'}</span>
-                      {notaMuestraAtencion(n) ? (
-                        <span className="badge text-bg-warning ms-1">Atención</span>
-                      ) : null}
-                      {n.resuelta_automaticamente ? (
-                        <span className="badge text-bg-info ms-1" title="Marcada RESUELTA por importación">
-                          Auto
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="small">
-                      {n.vendedor_username || n.usuario_vendedor_pv || '—'}
-                    </td>
-                    <td className="text-end">
-                      <div className="d-inline-flex flex-row flex-wrap gap-1 align-items-center justify-content-end">
-                        <Link
-                          className="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center px-2"
-                          to={ROUTES.detalleNota(String(n.id))}
-                          title="Detalle"
-                          aria-label="Ver detalle de la nota"
-                        >
-                          <FaEye className="fs-6" aria-hidden />
-                        </Link>
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center px-2"
-                          title="Comentario"
-                          aria-label="Agregar comentarios o aclaraciones"
-                          onClick={() =>
-                            setComentarioNota({
-                              id: n.id,
-                              serie_folio: n.serie_folio,
-                              cliente: n.cliente,
-                            })
-                          }
-                        >
-                          <FaComment className="fs-6" aria-hidden />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                  <Fragment key={n.id}>
+                    <tr className={mostrarComentarios && n.aclaraciones?.length > 0 ? 'border-bottom-0' : ''}>
+                      <td>{n.id}</td>
+                      <td>
+                        <div className="d-inline-flex align-items-center gap-1">
+                          <span>{n.serie_folio || '—'}</span>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-secondary py-0 px-2"
+                            aria-label="Copiar Serie/Folio"
+                            title="Copiar Serie/Folio"
+                            disabled={!n.serie_folio}
+                            onClick={() => {
+                              void handleCopySerieFolio(n.serie_folio)
+                            }}
+                          >
+                            <span aria-hidden="true">📋</span>
+                          </button>
+                        </div>
+                      </td>
+                      <td>{n.cliente || '—'}</td>
+                      <td>{n.empresa || '—'}</td>
+                      <td>{n.ruta_codigo || '—'}</td>
+                      <td className="text-nowrap">{formatFechaNota(n.fecha_nota)}</td>
+                      <td className="text-end text-nowrap" title="Entre fecha nota y fecha corriente (o hoy)">
+                        {formatDiasNotaCorriente(n.fecha_nota, n.fecha_corriente)}
+                      </td>
+                      <td className="text-end">{money(n.monto)}</td>
+                      <td className="text-end">{money(n.abono)}</td>
+                      <td className="text-end">{money(n.saldo)}</td>
+                      <td>
+                        <span className={`badge ${estadoBadgeClass(n.estado)}`}>{n.estado || '—'}</span>
+                        {notaMuestraAtencion(n) ? (
+                          <span className="badge text-bg-warning ms-1">Atención</span>
+                        ) : null}
+                        {n.resuelta_automaticamente ? (
+                          <span className="badge text-bg-info ms-1" title="Marcada RESUELTA por importación">
+                            Auto
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="small">
+                        {n.vendedor_username || n.usuario_vendedor_pv || '—'}
+                      </td>
+                      <td className="text-end">
+                        <div className="d-inline-flex flex-row flex-wrap gap-1 align-items-center justify-content-end">
+                          <Link
+                            className="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center px-2"
+                            to={ROUTES.detalleNota(String(n.id))}
+                            title="Detalle"
+                            aria-label="Ver detalle de la nota"
+                          >
+                            <FaEye className="fs-6" aria-hidden />
+                          </Link>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center px-2"
+                            title="Comentario"
+                            aria-label="Agregar comentarios o aclaraciones"
+                            onClick={() =>
+                              setComentarioNota({
+                                id: n.id,
+                                serie_folio: n.serie_folio,
+                                cliente: n.cliente,
+                              })
+                            }
+                          >
+                            <FaComment className="fs-6" aria-hidden />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {mostrarComentarios && n.aclaraciones?.length > 0 && (
+                      <tr className="bg-transparent">
+                        <td colSpan="13" className="p-0 border-top-0">
+                          <div className="bg-body-secondary bg-opacity-25 p-2 small ms-4 me-4 mb-2 rounded border shadow-sm">
+                            <div className="fw-bold mb-1 border-bottom pb-1 d-flex align-items-center gap-2 text-body">
+                              <span>Comentarios recientes:</span>
+                              <span className="badge rounded-pill text-bg-secondary opacity-75">{n.aclaraciones.length}</span>
+                            </div>
+                            {n.aclaraciones.map((c) => (
+                              <div key={c.id} className="mb-1 border-bottom border-secondary-subtle last-child-no-border pb-1">
+                                <span className="badge text-bg-secondary me-1 opacity-75" style={{fontSize: '0.65rem'}}>
+                                  {c.tipo}
+                                </span>
+                                <span className="text-body-secondary me-1 fw-semibold">
+                                  {c.usuarios?.username || '—'}:
+                                </span>
+                                <span className="text-body">{c.comentario}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))
               ) : (
                 <tr>
@@ -553,18 +607,6 @@ export default function TodasLasNotasPage() {
             {loading && shown > 0 ? ' · cargando…' : null}
           </span>
           <div className="d-flex flex-wrap gap-2 justify-content-md-end">
-            <button
-              type="button"
-              className="btn btn-outline-secondary btn-sm"
-              disabled={loading}
-              onClick={() => {
-                setPage(1)
-                clearCacheEntry('notas', cacheKey)
-                setRefreshNonce((n) => n + 1)
-              }}
-            >
-              Recargar desde el inicio
-            </button>
             <button
               type="button"
               className="btn btn-primary btn-sm"

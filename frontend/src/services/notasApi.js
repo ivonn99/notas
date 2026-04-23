@@ -78,7 +78,8 @@ async function fetchNotasCreditoSupabase(params = {}) {
       requiere_atencion, resuelta_automaticamente, fecha_corriente, fecha_ultima_actualizacion,
       usuario_vendedor_pv, usuario_id, ruta_id,
       rutas:ruta_id(codigo, nombre),
-      vendedor:usuario_id(username)
+      vendedor:usuario_id(username),
+      aclaraciones:aclaraciones(id, comentario, tipo, created_at, usuarios:usuario_id(username, nombre_completo))
     `,
       { count: 'exact' },
     )

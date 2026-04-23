@@ -165,6 +165,15 @@ export function postSeguimientoComentario(id, payload) {
   })
 }
 
+export function deleteSeguimientoComentario(comentarioId) {
+  if (isSupabaseConfigured) {
+    return deleteSeguimientoComentarioSupabase(comentarioId)
+  }
+  return request(`/api/seguimiento/comentarios/${comentarioId}`, {
+    method: 'DELETE',
+  })
+}
+
 export function postSeguimientoEstado(id, payload) {
   if (isSupabaseConfigured) {
     return postSeguimientoEstadoSupabase(id, payload)
@@ -474,7 +483,7 @@ async function fetchSeguimientoListSupabase(params = {}) {
       fecha_corriente, fecha_ultima_actualizacion, monto, abono, saldo, empresa, usuario_vendedor_pv, ruta_id,
       rutas:ruta_id(codigo),
       vendedor:usuario_id(username),
-      aclaraciones:aclaraciones(id)
+      aclaraciones:aclaraciones(id, comentario, tipo, created_at, usuarios:usuario_id(username, nombre_completo))
     `,
       { count: 'exact' },
     )
@@ -708,6 +717,46 @@ async function postSeguimientoComentarioSupabase(id, payload) {
   })
 
   return { ok: true, item: itemRows?.[0] || null }
+}
+
+async function deleteSeguimientoComentarioSupabase(comentarioId) {
+  const cId = Number.parseInt(String(comentarioId), 10)
+  if (!Number.isFinite(cId) || cId <= 0) throw new Error('ID de comentario inválido')
+
+  const meta = await getCurrentAuthMeta()
+  if (meta.usuarioId == null) throw new Error('Falta sesión para eliminar comentario')
+
+  // Verificar que el comentario exista y obtener su autor
+  const { data: rows, error: selErr } = await supabase
+    .from('aclaraciones')
+    .select('id, usuario_id, nota_id')
+    .eq('id', cId)
+    .limit(1)
+  if (selErr) throw new Error(selErr.message || 'No se pudo verificar el comentario')
+  const row = rows?.[0]
+  if (!row) throw new Error('Comentario no encontrado')
+
+  const esAutor = Number(row.usuario_id) === Number(meta.usuarioId)
+  const esAdmin = meta.isSuperuser || meta.rol === 'ADMIN'
+  if (!esAutor && !esAdmin) throw new Error('Sin permiso para eliminar este comentario')
+
+  const { error: delErr } = await supabase
+    .from('aclaraciones')
+    .delete()
+    .eq('id', cId)
+  if (delErr) throw new Error(delErr.message || 'No se pudo eliminar el comentario')
+
+  // Registrar en historial
+  await supabase.from('historial_notas').insert({
+    campo_modificado: 'comentario_eliminado',
+    valor_anterior: String(cId),
+    valor_nuevo: '',
+    observacion: 'Comentario eliminado',
+    nota_id: row.nota_id,
+    usuario_id: meta.usuarioId,
+  })
+
+  return { ok: true }
 }
 
 async function postSeguimientoEstadoSupabase(id, payload) {

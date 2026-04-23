@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
+  deleteSeguimientoComentario,
   fetchSeguimientoDetalle,
   postSeguimientoComentario,
   postSeguimientoDocumento,
   postSeguimientoEstado,
   postSeguimientoRuta,
 } from '../../services/seguimientoApi.js'
+import { getSupabaseAuthMeta } from '../../lib/supabaseAuth.js'
 import { useDomainSyncStore } from '../../stores/domainSyncStore.js'
 import { estadoBadgeClass, notaMuestraAtencion } from '../../utils/estadoBadge.js'
 
@@ -106,14 +108,23 @@ export default function DetalleNotaPage() {
   const [docFile, setDocFile] = useState(null)
   const [sendingDoc, setSendingDoc] = useState(false)
   const [copyToast, setCopyToast] = useState('')
+  const [currentMeta, setCurrentMeta] = useState(null)
+  // deleteConfirm: id del comentario esperando 2do click de confirmación
+  const [deleteConfirm, setDeleteConfirm] = useState(null)
+  const [deletingId, setDeletingId] = useState(null)
+  const deleteConfirmRef = useRef(null)
   const emitNotaChanged = useDomainSyncStore((s) => s.emitNotaChanged)
 
   async function load() {
     setLoading(true)
     setError('')
     try {
-      const r = await fetchSeguimientoDetalle(id)
+      const [r, meta] = await Promise.all([
+        fetchSeguimientoDetalle(id),
+        getSupabaseAuthMeta().catch(() => null),
+      ])
       setDetalle(r)
+      setCurrentMeta(meta)
       setNuevoEstado(r?.nota?.estado || '')
       setNuevaRutaId(r?.nota?.ruta_id ? String(r.nota.ruta_id) : '')
     } catch (e) {
@@ -204,6 +215,45 @@ export default function DetalleNotaPage() {
       setError('No se pudo copiar Serie/Folio')
     }
   }
+
+  function canDeleteComentario(a) {
+    if (!currentMeta) return false
+    const esAutor = Number(a.usuario_id) === Number(currentMeta.usuarioId)
+    const esAdmin = currentMeta.isSuperuser || currentMeta.rol === 'ADMIN'
+    return esAutor || esAdmin
+  }
+
+  async function onDeleteComentario(comentarioId) {
+    if (deleteConfirm !== comentarioId) {
+      // Primer click: pedir confirmación
+      setDeleteConfirm(comentarioId)
+      return
+    }
+    // Segundo click: confirmar y eliminar
+    setDeleteConfirm(null)
+    setDeletingId(comentarioId)
+    try {
+      await deleteSeguimientoComentario(comentarioId)
+      emitNotaChanged()
+      await load()
+    } catch (e2) {
+      setError(e2?.message || 'No se pudo eliminar el comentario')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  // Cancelar confirmación si el usuario hace click fuera
+  useEffect(() => {
+    if (deleteConfirm == null) return
+    function handleOutsideClick(e) {
+      if (deleteConfirmRef.current && !deleteConfirmRef.current.contains(e.target)) {
+        setDeleteConfirm(null)
+      }
+    }
+    document.addEventListener('mousedown', handleOutsideClick)
+    return () => document.removeEventListener('mousedown', handleOutsideClick)
+  }, [deleteConfirm])
 
   useEffect(() => {
     if (!copyToast) return
@@ -393,20 +443,48 @@ export default function DetalleNotaPage() {
                     </div>
                   </form>
 
-                  <div className="list-group">
+                  <div className="list-group" ref={deleteConfirmRef}>
                     {detalle.aclaraciones?.length ? (
                       detalle.aclaraciones.map((a) => (
                         <div key={a.id} className="list-group-item py-2 px-2">
-                          <div className="d-flex justify-content-between">
-                            <strong>{a.tipo}</strong>
-                            <small className="text-body-secondary">
-                              {a.usuario_nombre || a.usuario_username || 'Usuario'}
-                            </small>
+                          <div className="d-flex justify-content-between align-items-start gap-2">
+                            <div className="min-w-0 flex-grow-1">
+                              <div className="d-flex justify-content-between align-items-center gap-1 mb-1">
+                                <strong className="small">{a.tipo}</strong>
+                                <small className="text-body-secondary text-nowrap">
+                                  {a.usuario_nombre || a.usuario_username || 'Usuario'}
+                                </small>
+                              </div>
+                              <div className="small text-body-secondary mb-1">
+                                {formatFechaHora(a.created_at)}
+                              </div>
+                              <div className="small">{a.comentario}</div>
+                            </div>
+                            {canDeleteComentario(a) && (
+                              <button
+                                type="button"
+                                className={`btn btn-sm flex-shrink-0 ${
+                                  deleteConfirm === a.id
+                                    ? 'btn-danger'
+                                    : 'btn-outline-secondary'
+                                }`}
+                                style={{ fontSize: '0.7rem', padding: '2px 6px' }}
+                                disabled={deletingId === a.id}
+                                title={
+                                  deleteConfirm === a.id
+                                    ? 'Haz click de nuevo para confirmar'
+                                    : 'Eliminar comentario'
+                                }
+                                onClick={() => onDeleteComentario(a.id)}
+                              >
+                                {deletingId === a.id
+                                  ? '...'
+                                  : deleteConfirm === a.id
+                                    ? '¿Confirmar?'
+                                    : '🗑'}
+                              </button>
+                            )}
                           </div>
-                          <div className="small text-body-secondary">
-                            {formatFechaHora(a.created_at)}
-                          </div>
-                          <div>{a.comentario}</div>
                         </div>
                       ))
                     ) : (

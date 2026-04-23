@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { FaComment, FaEye } from 'react-icons/fa6'
 import { ROUTES } from '../../constants/routes.js'
@@ -159,6 +159,8 @@ function NotaSeguimientoCardMovil({ n, onCopySerieFolio, onAbrirComentario }) {
 }
 
 export default function SeguimientoPage() {
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [mostrarComentarios, setMostrarComentarios] = useState(false)
   const seguimientoFilters = useListFiltersStore((s) => s.seguimiento)
   const setSeguimientoFilters = useListFiltersStore((s) => s.setSeguimientoFilters)
   const [page, setPage] = useState(1)
@@ -277,7 +279,8 @@ export default function SeguimientoPage() {
     setData({ items: [], total: 0, totalPages: 1 })
     setPage(1)
     void cargarPagina(1, false)
-  }, [notasVersion, rutasVersion, clearScreenCache, cargarPagina])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notasVersion, rutasVersion, refreshKey, clearScreenCache, cargarPagina])
 
   useEffect(() => {
     setRutaInput(seguimientoFilters.ruta || '')
@@ -337,6 +340,13 @@ export default function SeguimientoPage() {
     const t = setTimeout(() => setCopyToast(''), 1800)
     return () => clearTimeout(t)
   }, [copyToast])
+
+  function handleActualizar() {
+    clearScreenCache('seguimiento')
+    setData({ items: [], total: 0, totalPages: 1 })
+    setPage(1)
+    setRefreshKey((k) => k + 1)
+  }
 
   return (
     <section className="container-fluid px-0">
@@ -466,7 +476,29 @@ export default function SeguimientoPage() {
                 <option value="saldo_asc">Saldo — menor primero</option>
               </select>
             </div>
-            <div className="col-12 col-md-6 col-lg-7 d-flex align-items-end justify-content-md-end mt-2 mt-md-0">
+            <div className="col-12 col-md-6 col-lg-7 d-flex align-items-end justify-content-md-end gap-3 mt-2 mt-md-0">
+              <div className="form-check form-switch mb-2 me-auto">
+                <input
+                  className="form-check-input"
+                  type="checkbox"
+                  role="switch"
+                  id="switchComentarios"
+                  checked={mostrarComentarios}
+                  onChange={(e) => setMostrarComentarios(e.target.checked)}
+                />
+                <label className="form-check-label small" htmlFor="switchComentarios">
+                  Ver comentarios
+                </label>
+              </div>
+              <button
+                type="button"
+                className="btn btn-success btn-nc-export-excel"
+                disabled={loading}
+                onClick={handleActualizar}
+                title="Recargar datos desde el servidor"
+              >
+                {loading ? 'Cargando…' : '↻ Actualizar'}
+              </button>
               <button
                 type="button"
                 className="btn btn-success btn-nc-export-excel"
@@ -633,67 +665,92 @@ export default function SeguimientoPage() {
                 </tr>
               ) : data.items?.length ? (
                 data.items.map((n) => (
-                  <tr key={n.id}>
-                    <td>{n.id}</td>
-                    <td>
-                      <div className="d-inline-flex align-items-center gap-1">
-                        <span>{n.serie_folio || '—'}</span>
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-secondary py-0 px-2"
-                          aria-label="Copiar Serie/Folio"
-                          title="Copiar Serie/Folio"
-                          disabled={!n.serie_folio}
-                          onClick={() => {
-                            void handleCopySerieFolio(n.serie_folio)
-                          }}
-                        >
-                          <span aria-hidden="true">📋</span>
-                        </button>
-                      </div>
-                    </td>
-                    <td className="text-nowrap small">{formatFechaNota(n.fecha_nota)}</td>
-                    <td className="text-end text-nowrap small" title="Entre fecha nota y fecha corriente (o hoy)">
-                      {formatDiasNotaCorriente(n.fecha_nota, n.fecha_corriente)}
-                    </td>
-                    <td>{n.cliente || '—'}</td>
-                    <td>{n.empresa || '—'}</td>
-                    <td>{n.ruta_codigo || '—'}</td>
-                    <td className="text-end small">{money(n.monto)}</td>
-                    <td className="text-end small">{money(n.abono)}</td>
-                    <td className="text-end small fw-medium">{money(n.saldo)}</td>
-                    <td>
-                      <span className={`badge ${estadoBadgeClass(n.estado)}`}>{n.estado || '—'}</span>
-                    </td>
-                    <td>{notaMuestraAtencion(n) ? 'Sí' : 'No'}</td>
-                    <td>
-                      <div className="d-inline-flex flex-row flex-wrap gap-1 align-items-center">
-                        <Link
-                          className="btn btn-sm btn-primary d-inline-flex align-items-center justify-content-center px-2"
-                          to={ROUTES.detalleNota(String(n.id))}
-                          title="Detalle"
-                          aria-label="Ver detalle de la nota"
-                        >
-                          <FaEye className="fs-6" aria-hidden />
-                        </Link>
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center px-2"
-                          title="Comentario"
-                          aria-label="Agregar comentarios o aclaraciones"
-                          onClick={() =>
-                            setComentarioNota({
-                              id: n.id,
-                              serie_folio: n.serie_folio,
-                              cliente: n.cliente,
-                            })
-                          }
-                        >
-                          <FaComment className="fs-6" aria-hidden />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                  <Fragment key={n.id}>
+                    <tr className={mostrarComentarios && n.aclaraciones?.length > 0 ? 'border-bottom-0' : ''}>
+                      <td>{n.id}</td>
+                      <td>
+                        <div className="d-inline-flex align-items-center gap-1">
+                          <span>{n.serie_folio || '—'}</span>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-secondary py-0 px-2"
+                            aria-label="Copiar Serie/Folio"
+                            title="Copiar Serie/Folio"
+                            disabled={!n.serie_folio}
+                            onClick={() => {
+                              void handleCopySerieFolio(n.serie_folio)
+                            }}
+                          >
+                            <span aria-hidden="true">📋</span>
+                          </button>
+                        </div>
+                      </td>
+                      <td className="text-nowrap small">{formatFechaNota(n.fecha_nota)}</td>
+                      <td className="text-end text-nowrap small" title="Entre fecha nota y fecha corriente (o hoy)">
+                        {formatDiasNotaCorriente(n.fecha_nota, n.fecha_corriente)}
+                      </td>
+                      <td>{n.cliente || '—'}</td>
+                      <td>{n.empresa || '—'}</td>
+                      <td>{n.ruta_codigo || '—'}</td>
+                      <td className="text-end small">{money(n.monto)}</td>
+                      <td className="text-end small">{money(n.abono)}</td>
+                      <td className="text-end small fw-medium">{money(n.saldo)}</td>
+                      <td>
+                        <span className={`badge ${estadoBadgeClass(n.estado)}`}>{n.estado || '—'}</span>
+                      </td>
+                      <td>{notaMuestraAtencion(n) ? 'Sí' : 'No'}</td>
+                      <td>
+                        <div className="d-inline-flex flex-row flex-wrap gap-1 align-items-center">
+                          <Link
+                            className="btn btn-sm btn-primary d-inline-flex align-items-center justify-content-center px-2"
+                            to={ROUTES.detalleNota(String(n.id))}
+                            title="Detalle"
+                            aria-label="Ver detalle de la nota"
+                          >
+                            <FaEye className="fs-6" aria-hidden />
+                          </Link>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center px-2"
+                            title="Comentario"
+                            aria-label="Agregar comentarios o aclaraciones"
+                            onClick={() =>
+                              setComentarioNota({
+                                id: n.id,
+                                serie_folio: n.serie_folio,
+                                cliente: n.cliente,
+                              })
+                            }
+                          >
+                            <FaComment className="fs-6" aria-hidden />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {mostrarComentarios && n.aclaraciones?.length > 0 && (
+                      <tr className="bg-transparent">
+                        <td colSpan="13" className="p-0 border-top-0">
+                          <div className="bg-body-secondary bg-opacity-25 p-2 small ms-4 me-4 mb-2 rounded border shadow-sm">
+                            <div className="fw-bold mb-1 border-bottom pb-1 d-flex align-items-center gap-2 text-body">
+                              <span>Comentarios recientes:</span>
+                              <span className="badge rounded-pill text-bg-secondary opacity-75">{n.aclaraciones.length}</span>
+                            </div>
+                            {n.aclaraciones.map((c) => (
+                              <div key={c.id} className="mb-1 border-bottom border-secondary-subtle pb-1">
+                                <span className="badge text-bg-secondary me-1 opacity-75" style={{fontSize: '0.65rem'}}>
+                                  {c.tipo}
+                                </span>
+                                <span className="text-body-secondary me-1 fw-semibold">
+                                  {c.usuarios?.username || '—'}:
+                                </span>
+                                <span className="text-body">{c.comentario}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))
               ) : (
                 <tr>
