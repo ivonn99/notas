@@ -78,7 +78,7 @@ async function copyText(text) {
   document.body.removeChild(textarea)
 }
 
-function NotaCreditoCardMovil({ n, onCopySerieFolio, onAbrirComentario }) {
+function NotaCreditoCardMovil({ n, onCopySerieFolio, onAbrirComentario, mostrarComentarios }) {
   return (
     <div className="card border shadow-sm">
       <div className="card-body py-3">
@@ -163,6 +163,25 @@ function NotaCreditoCardMovil({ n, onCopySerieFolio, onAbrirComentario }) {
           <dt className="col-5 text-body-secondary">Vendedor</dt>
           <dd className="col-7 mb-0 small">{n.vendedor_username || n.usuario_vendedor_pv || '—'}</dd>
         </dl>
+        {mostrarComentarios && n.aclaraciones?.length > 0 && (
+          <div className="mt-3 bg-body-secondary bg-opacity-25 p-2 small rounded border shadow-sm">
+            <div className="fw-bold mb-1 border-bottom pb-1 d-flex align-items-center gap-2 text-body">
+              <span>Comentarios recientes:</span>
+              <span className="badge rounded-pill text-bg-secondary opacity-75">{n.aclaraciones.length}</span>
+            </div>
+            {n.aclaraciones.map((c) => (
+              <div key={c.id} className="mb-1 border-bottom border-secondary-subtle last-child-no-border pb-1">
+                <span className="badge text-bg-secondary me-1 opacity-75" style={{fontSize: '0.6rem'}}>
+                  {c.tipo}
+                </span>
+                <span className="text-body-secondary me-1 fw-semibold">
+                  {c.usuarios?.username || '—'}:
+                </span>
+                <span className="text-body">{c.comentario}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -594,6 +613,7 @@ export default function TodasLasNotasPage() {
                   n={n}
                   onCopySerieFolio={handleCopySerieFolio}
                   onAbrirComentario={setComentarioNota}
+                  mostrarComentarios={mostrarComentarios}
                 />
               ))}
             </div>
