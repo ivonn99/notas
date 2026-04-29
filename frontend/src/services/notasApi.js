@@ -177,6 +177,7 @@ async function fetchNotasCreditoSupabase(params = {}) {
     ruta_codigo: row.rutas?.codigo || null,
     ruta_nombre: row.rutas?.nombre || null,
     vendedor_username: row.vendedor?.username || null,
+    tiene_comentarios: Array.isArray(row.aclaraciones) && row.aclaraciones.length > 0,
   }))
 
   const total = count || 0

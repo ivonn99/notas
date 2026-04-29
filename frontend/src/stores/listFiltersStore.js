@@ -8,6 +8,7 @@ const initialNotas = {
   q: '',
   dias: '',
   sort: 'fecha_nota_desc',
+  mostrarComentarios: false,
 }
 
 const initialSeguimiento = {
@@ -18,6 +19,7 @@ const initialSeguimiento = {
   q: '',
   dias: '',
   orden: 'default',
+  mostrarComentarios: false,
 }
 
 function normalizeNotasSort(sort) {

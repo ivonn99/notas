@@ -197,7 +197,6 @@ export default function TodasLasNotasPage() {
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
   const [refreshNonce, setRefreshNonce] = useState(0)
-  const [mostrarComentarios, setMostrarComentarios] = useState(false)
   const [copyToast, setCopyToast] = useState('')
   const [comentarioNota, setComentarioNota] = useState(null)
   const [rutaInput, setRutaInput] = useState(notasFilters.ruta || '')
@@ -433,8 +432,8 @@ export default function TodasLasNotasPage() {
                   type="checkbox"
                   role="switch"
                   id="switchComentariosNotas"
-                  checked={mostrarComentarios}
-                  onChange={(e) => setMostrarComentarios(e.target.checked)}
+                  checked={notasFilters.mostrarComentarios}
+                  onChange={(e) => setNotasFilters({ mostrarComentarios: e.target.checked })}
                 />
                 <label className="form-check-label small" htmlFor="switchComentariosNotas">
                   Ver comentarios
@@ -496,7 +495,7 @@ export default function TodasLasNotasPage() {
               ) : items.length ? (
                 items.map((n) => (
                   <Fragment key={n.id}>
-                    <tr className={mostrarComentarios && n.aclaraciones?.length > 0 ? 'border-bottom-0' : ''}>
+                    <tr className={notasFilters.mostrarComentarios && n.aclaraciones?.length > 0 ? 'border-bottom-0' : ''}>
                       <td>{n.id}</td>
                       <td>
                         <div className="d-inline-flex align-items-center gap-1">
@@ -567,7 +566,7 @@ export default function TodasLasNotasPage() {
                         </div>
                       </td>
                     </tr>
-                    {mostrarComentarios && n.aclaraciones?.length > 0 && (
+                    {notasFilters.mostrarComentarios && n.aclaraciones?.length > 0 && (
                       <tr className="bg-transparent">
                         <td colSpan="13" className="p-0 border-top-0">
                           <div className="bg-body-secondary bg-opacity-25 p-2 small ms-4 me-4 mb-2 rounded border shadow-sm">
@@ -613,7 +612,7 @@ export default function TodasLasNotasPage() {
                   n={n}
                   onCopySerieFolio={handleCopySerieFolio}
                   onAbrirComentario={setComentarioNota}
-                  mostrarComentarios={mostrarComentarios}
+                  mostrarComentarios={notasFilters.mostrarComentarios}
                 />
               ))}
             </div>

@@ -179,7 +179,6 @@ function NotaSeguimientoCardMovil({ n, onCopySerieFolio, onAbrirComentario, most
 
 export default function SeguimientoPage() {
   const [refreshKey, setRefreshKey] = useState(0)
-  const [mostrarComentarios, setMostrarComentarios] = useState(false)
   const seguimientoFilters = useListFiltersStore((s) => s.seguimiento)
   const setSeguimientoFilters = useListFiltersStore((s) => s.setSeguimientoFilters)
   const [page, setPage] = useState(1)
@@ -502,8 +501,8 @@ export default function SeguimientoPage() {
                   type="checkbox"
                   role="switch"
                   id="switchComentarios"
-                  checked={mostrarComentarios}
-                  onChange={(e) => setMostrarComentarios(e.target.checked)}
+                  checked={seguimientoFilters.mostrarComentarios}
+                  onChange={(e) => setSeguimientoFilters({ mostrarComentarios: e.target.checked })}
                 />
                 <label className="form-check-label small" htmlFor="switchComentarios">
                   Ver comentarios
@@ -685,7 +684,7 @@ export default function SeguimientoPage() {
               ) : data.items?.length ? (
                 data.items.map((n) => (
                   <Fragment key={n.id}>
-                    <tr className={mostrarComentarios && n.aclaraciones?.length > 0 ? 'border-bottom-0' : ''}>
+                    <tr className={seguimientoFilters.mostrarComentarios && n.aclaraciones?.length > 0 ? 'border-bottom-0' : ''}>
                       <td>{n.id}</td>
                       <td>
                         <div className="d-inline-flex align-items-center gap-1">
@@ -746,7 +745,7 @@ export default function SeguimientoPage() {
                         </div>
                       </td>
                     </tr>
-                    {mostrarComentarios && n.aclaraciones?.length > 0 && (
+                    {seguimientoFilters.mostrarComentarios && n.aclaraciones?.length > 0 && (
                       <tr className="bg-transparent">
                         <td colSpan="13" className="p-0 border-top-0">
                           <div className="bg-body-secondary bg-opacity-25 p-2 small ms-4 me-4 mb-2 rounded border shadow-sm">
@@ -792,7 +791,7 @@ export default function SeguimientoPage() {
                   n={n}
                   onCopySerieFolio={handleCopySerieFolio}
                   onAbrirComentario={setComentarioNota}
-                  mostrarComentarios={mostrarComentarios}
+                  mostrarComentarios={seguimientoFilters.mostrarComentarios}
                 />
               ))}
             </div>
