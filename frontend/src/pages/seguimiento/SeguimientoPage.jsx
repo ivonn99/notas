@@ -33,6 +33,18 @@ function formatFechaNota(value) {
   return `${day}/${month}/${year}`
 }
 
+function formatFechaComentario(value) {
+  if (value == null || value === '') return ''
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  const day = String(d.getDate()).padStart(2, '0')
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const year = String(d.getFullYear()).slice(-2)
+  const hour = String(d.getHours()).padStart(2, '0')
+  const min = String(d.getMinutes()).padStart(2, '0')
+  return `${day}/${month}/${year} ${hour}:${min}`
+}
+
 function money(value) {
   const n = Number(value)
   if (!Number.isFinite(n)) return '—'
@@ -165,7 +177,11 @@ function NotaSeguimientoCardMovil({ n, onCopySerieFolio, onAbrirComentario, most
                   {c.tipo}
                 </span>
                 <span className="text-body-secondary me-1 fw-semibold">
-                  {c.usuarios?.username || '—'}:
+                  {c.usuarios?.username || '—'}{' '}
+                  <span className="fw-normal opacity-75" style={{fontSize: '0.7rem'}}>
+                    ({formatFechaComentario(c.created_at)})
+                  </span>
+                  :
                 </span>
                 <span className="text-body">{c.comentario}</span>
               </div>
@@ -759,7 +775,11 @@ export default function SeguimientoPage() {
                                   {c.tipo}
                                 </span>
                                 <span className="text-body-secondary me-1 fw-semibold">
-                                  {c.usuarios?.username || '—'}:
+                                  {c.usuarios?.username || '—'}{' '}
+                                  <span className="fw-normal opacity-75" style={{fontSize: '0.7rem'}}>
+                                    ({formatFechaComentario(c.created_at)})
+                                  </span>
+                                  :
                                 </span>
                                 <span className="text-body">{c.comentario}</span>
                               </div>

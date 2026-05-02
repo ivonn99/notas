@@ -244,7 +244,23 @@ router.get('/', requireAuth, async (req, res, next) => {
         n.usuario_vendedor_pv,
         vu.username AS vendedor_username,
         r.codigo AS ruta_codigo,
-        EXISTS (SELECT 1 FROM aclaraciones a WHERE a.nota_id = n.id) AS tiene_comentarios
+        EXISTS (SELECT 1 FROM aclaraciones a WHERE a.nota_id = n.id) AS tiene_comentarios,
+        (
+          SELECT COALESCE(JSON_AGG(acl), '[]')
+          FROM (
+            SELECT 
+              a.id, 
+              a.comentario, 
+              a.tipo, 
+              a.created_at,
+              JSON_BUILD_OBJECT('username', u.username, 'nombre_completo', u.nombre_completo) AS usuarios
+            FROM aclaraciones a
+            LEFT JOIN usuarios u ON u.id = a.usuario_id
+            WHERE a.nota_id = n.id
+            ORDER BY a.created_at DESC
+            LIMIT 50
+          ) acl
+        ) AS aclaraciones
       FROM notas_credito n
       LEFT JOIN rutas r ON r.id = n.ruta_id
       LEFT JOIN usuarios vu ON vu.id = n.usuario_id

@@ -127,7 +127,23 @@ router.get('/', requireAuth, async (req, res, next) => {
         vu.username AS vendedor_username,
         n.ruta_id,
         r.codigo AS ruta_codigo,
-        r.nombre AS ruta_nombre
+        r.nombre AS ruta_nombre,
+        (
+          SELECT COALESCE(JSON_AGG(acl), '[]')
+          FROM (
+            SELECT 
+              a.id, 
+              a.comentario, 
+              a.tipo, 
+              a.created_at,
+              JSON_BUILD_OBJECT('username', u.username, 'nombre_completo', u.nombre_completo) AS usuarios
+            FROM aclaraciones a
+            LEFT JOIN usuarios u ON u.id = a.usuario_id
+            WHERE a.nota_id = n.id
+            ORDER BY a.created_at DESC
+            LIMIT 50
+          ) acl
+        ) AS aclaraciones
       FROM notas_credito n
       LEFT JOIN rutas r ON r.id = n.ruta_id
       LEFT JOIN usuarios vu ON vu.id = n.usuario_id

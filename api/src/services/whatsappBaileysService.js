@@ -9,6 +9,7 @@ import makeWASocket, {
 import { buildCandidateJids, maskPhone, normalizePhoneMx } from './whatsappUtils.js'
 
 const DEFAULT_SESSION_DIR = path.resolve(process.cwd(), '.baileys_auth')
+let activeInstanceId = 'init'
 
 function nowIso() {
   return new Date().toISOString()
@@ -27,19 +28,22 @@ function maskPhoneForLog(phoneRaw) {
 }
 
 function logInfo(event, detail = {}) {
-  console.log(`[whatsapp][${nowIso()}][info] ${event}`, detail)
+  console.log(`[whatsapp][${activeInstanceId}][${nowIso()}][info] ${event}`, detail)
 }
 
 function logWarn(event, detail = {}) {
-  console.warn(`[whatsapp][${nowIso()}][warn] ${event}`, detail)
+  console.warn(`[whatsapp][${activeInstanceId}][${nowIso()}][warn] ${event}`, detail)
 }
 
 function logError(event, detail = {}) {
-  console.error(`[whatsapp][${nowIso()}][error] ${event}`, detail)
+  console.error(`[whatsapp][${activeInstanceId}][${nowIso()}][error] ${event}`, detail)
 }
 
 class WhatsappBaileysService {
   constructor() {
+    this.instanceId = Math.random().toString(36).substring(7)
+    activeInstanceId = this.instanceId
+    logInfo('service.instantiated', { instanceId: this.instanceId })
     this.sock = null
     this.saveCreds = null
     this.connectingPromise = null
@@ -236,8 +240,19 @@ class WhatsappBaileysService {
 
   async sendText({ phone, message }) {
     if (!this.sock || !this.state.isConnected) {
-      logWarn('send.blocked.not_connected')
-      throw new Error('WhatsApp no está conectado. Escanea QR primero.')
+      const stateLog = {
+        hasSock: Boolean(this.sock),
+        status: this.state.status,
+        isConnected: this.state.isConnected,
+        hasMe: Boolean(this.state.me),
+      }
+      logWarn('send.blocked.not_connected', stateLog)
+
+      // Si no hay socket o no está conectado, pero tampoco estamos en un estado de error fatal (logged_out),
+      // podríamos intentar reconectar si hay sesión, pero por ahora solo reportamos mejor el error.
+      throw new Error(
+        `WhatsApp no está conectado (Estado: ${this.state.status}, IsConnected: ${this.state.isConnected}, Sock: ${Boolean(this.sock)}). Escanea QR primero.`,
+      )
     }
     const normalized = normalizePhoneMx(phone)
     if (!normalized) {

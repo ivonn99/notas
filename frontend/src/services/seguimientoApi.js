@@ -127,7 +127,7 @@ function applySeguimientoListFilters(query, { estado, empresa, q, atencion, allo
   return qy
 }
 
-export function fetchSeguimientoList(params = {}) {
+export async function fetchSeguimientoList(params = {}) {
   if (isSupabaseConfigured) {
     return fetchSeguimientoListSupabase(params)
   }

@@ -12,7 +12,10 @@ function formatFechaNotaIso(value) {
   if (value == null || value === '') return ''
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return ''
-  return d.toISOString().slice(0, 10)
+  const day = String(d.getDate()).padStart(2, '0')
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const year = d.getFullYear()
+  return `${day}/${month}/${year}`
 }
 
 function safeFilePart(value) {
