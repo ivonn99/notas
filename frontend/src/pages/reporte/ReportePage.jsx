@@ -2,7 +2,8 @@ import { fetchCarteraReporte } from '../../services/reportesApi.js'
 import { estadoBadgeClass } from '../../utils/estadoBadge.js'
 import { ROUTES } from '../../constants/routes.js'
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
+import { useListFiltersStore } from '../../stores/listFiltersStore.js'
 
 const REPORTES_STORAGE_KEY = 'reporte_cartera_filtros_v1'
 
@@ -194,7 +195,11 @@ function ReporteResumenRutaCardMovil({ ruta, bucketOrder, resumenMatrix, resumen
           const notas = resumenMatrix[resumenIdx[bucketId]]?.byRuta?.[ruta]?.notas || 0
           if (notas <= 0) return null
           return (
-            <div key={bucketId} className="d-flex justify-content-between small mb-1 gap-2">
+            <div
+              key={bucketId}
+              className={`d-flex justify-content-between small mb-1 gap-2${notas > 0 ? ' cursor-pointer' : ''}`}
+              onClick={() => notas > 0 && handleClickResumen(ruta, bucketId)}
+            >
               <span className="text-body-secondary text-break">{labels[bucketId] || bucketId}</span>
               <span className="text-nowrap">{money(saldo)}</span>
             </div>
@@ -232,6 +237,31 @@ export default function ReportePage() {
   const [subVista, setSubVista] = useState(storedFilters?.subVista || 'tabla')
   const [resumenSortKey, setResumenSortKey] = useState(storedFilters?.resumenSortKey || 'total')
   const [resumenSortDir, setResumenSortDir] = useState(storedFilters?.resumenSortDir || 'desc')
+  const navigate = useNavigate()
+  const setSeguimientoFilters = useListFiltersStore((s) => s.setSeguimientoFilters)
+
+  const BUCKET_TO_R = {
+    d0_30: 'r1',
+    d31_45: 'r2',
+    d46_60: 'r2b',
+    d61_90: 'r3',
+    d91_180: 'r4',
+    d181_365: 'r5',
+    d366_plus: 'r6',
+  }
+
+  function handleClickResumen(ruta, bucketId, ignoreRuta = false) {
+    const rId = BUCKET_TO_R[bucketId] || ''
+    const routeCode = ignoreRuta ? '' : ruta === '(sin ruta)' ? '' : ruta
+    
+    setSeguimientoFilters({
+      empresaActiva,
+      ruta: routeCode,
+      dias_bucket: rId,
+      estado: estado === 'TODOS' ? '' : estado,
+    })
+    navigate(ROUTES.seguimiento, { state: { fromReport: true } })
+  }
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -903,8 +933,13 @@ export default function ReportePage() {
                     </tr>
                   ) : (
                     porRuta.map((r) => (
-                      <tr key={r.ruta_codigo}>
-                        <td>{r.ruta_codigo}</td>
+                      <tr
+                        key={r.ruta_codigo}
+                        className="cursor-pointer"
+                        onClick={() => handleClickResumen(r.ruta_codigo, 'all')}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <td className="text-decoration-underline">{r.ruta_codigo}</td>
                         <td className="text-end">{r.notas?.toLocaleString?.('es-MX') ?? r.notas}</td>
                         <td className="text-end fw-medium">{money(r.saldo_total)}</td>
                         <td className="text-end">{money(r.monto_total)}</td>
@@ -959,8 +994,13 @@ export default function ReportePage() {
                     </tr>
                   ) : (
                     porAntiguedad.map((r) => (
-                      <tr key={r.bucket_id}>
-                        <td>{BUCKET_LABELS[r.bucket_id] || r.bucket_id}</td>
+                      <tr
+                        key={r.bucket_id}
+                        className="cursor-pointer"
+                        onClick={() => handleClickResumen('', r.bucket_id, true)}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <td className="text-decoration-underline">{BUCKET_LABELS[r.bucket_id] || r.bucket_id}</td>
                         <td className="text-end">{r.notas?.toLocaleString?.('es-MX') ?? r.notas}</td>
                         <td className="text-end fw-medium">{money(r.saldo_total)}</td>
                       </tr>
@@ -1053,17 +1093,34 @@ export default function ReportePage() {
                       )
                       return (
                         <tr key={ruta}>
-                          <td className="text-nowrap">{ruta}</td>
+                          <td
+                            className="text-nowrap cursor-pointer text-decoration-underline"
+                            onClick={() => handleClickResumen(ruta, 'all')}
+                            style={{ cursor: 'pointer' }}
+                          >
+                            {ruta}
+                          </td>
                           {bucketOrder.map((bucketId) => {
                             const saldo = resumenMatrix[resumenIdx[bucketId]]?.byRuta?.[ruta]?.saldo || 0
                             const notas = resumenMatrix[resumenIdx[bucketId]]?.byRuta?.[ruta]?.notas || 0
                             return (
-                              <td key={`${ruta}-${bucketId}`} className="text-end">
+                              <td
+                                key={`${ruta}-${bucketId}`}
+                                className={`text-end${notas > 0 ? ' cursor-pointer text-decoration-underline' : ''}`}
+                                onClick={() => notas > 0 && handleClickResumen(ruta, bucketId)}
+                                style={{ cursor: notas > 0 ? 'pointer' : 'default' }}
+                              >
                                 {notas > 0 ? money(saldo) : '—'}
                               </td>
                             )
                           })}
-                          <td className="text-end fw-medium">{money(totalRuta)}</td>
+                          <td
+                            className={`text-end fw-medium${totalRuta > 0 ? ' cursor-pointer text-decoration-underline' : ''}`}
+                            onClick={() => totalRuta > 0 && handleClickResumen(ruta, 'all')}
+                            style={{ cursor: totalRuta > 0 ? 'pointer' : 'default' }}
+                          >
+                            {money(totalRuta)}
+                          </td>
                         </tr>
                       )
                     })
@@ -1072,11 +1129,30 @@ export default function ReportePage() {
                     <tr className="table-light">
                       <td className="text-nowrap fw-semibold">Suma total</td>
                       {bucketOrder.map((bucketId) => (
-                        <td key={`total-${bucketId}`} className="text-end fw-semibold">
+                        <td
+                          key={`total-${bucketId}`}
+                          className={`text-end fw-semibold${resumenMatrix[resumenIdx[bucketId]]?.totalSaldo > 0 ? ' cursor-pointer text-decoration-underline' : ''}`}
+                          onClick={() =>
+                            resumenMatrix[resumenIdx[bucketId]]?.totalSaldo > 0 &&
+                            handleClickResumen('(sin ruta)', bucketId, true)
+                          }
+                          style={{
+                            cursor:
+                              resumenMatrix[resumenIdx[bucketId]]?.totalSaldo > 0
+                                ? 'pointer'
+                                : 'default',
+                          }}
+                        >
                           {money(resumenMatrix[resumenIdx[bucketId]]?.totalSaldo || 0)}
                         </td>
                       ))}
-                      <td className="text-end fw-semibold">{money(granTotalSaldo)}</td>
+                      <td
+                        className={`text-end fw-semibold${granTotalSaldo > 0 ? ' cursor-pointer text-decoration-underline' : ''}`}
+                        onClick={() => granTotalSaldo > 0 && handleClickResumen('', 'all', true)}
+                        style={{ cursor: granTotalSaldo > 0 ? 'pointer' : 'default' }}
+                      >
+                        {money(granTotalSaldo)}
+                      </td>
                     </tr>
                   ) : null}
                 </tbody>

@@ -18,6 +18,7 @@ const initialSeguimiento = {
   ruta: '',
   q: '',
   dias: '',
+  dias_bucket: '',
   orden: 'default',
   mostrarComentarios: false,
 }
@@ -103,6 +104,7 @@ export const useListFiltersStore = create(
             ...initialSeguimiento,
             ...seguimiento,
             dias: seguimiento.dias != null ? seguimiento.dias : initialSeguimiento.dias,
+            dias_bucket: seguimiento.dias_bucket != null ? seguimiento.dias_bucket : initialSeguimiento.dias_bucket,
             orden: normalizeSeguimientoOrden(seguimiento.orden),
           },
         }

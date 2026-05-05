@@ -111,7 +111,7 @@ function applySort(query, sort) {
   return query.order('id', { ascending: false, nullsFirst: false })
 }
 
-function applySeguimientoListFilters(query, { estado, empresa, q, atencion, allowedFinal, fechaNotaDesde }) {
+function applySeguimientoListFilters(query, { estado, empresa, q, atencion, allowedFinal, fechaNotaDesde, fechaNotaHasta }) {
   let qy = query
   if (estado) qy = qy.eq('estado', estado)
   if (empresa) qy = qy.eq('empresa', empresa)
@@ -124,6 +124,7 @@ function applySeguimientoListFilters(query, { estado, empresa, q, atencion, allo
   }
   if (Array.isArray(allowedFinal)) qy = qy.in('ruta_id', allowedFinal)
   if (fechaNotaDesde) qy = qy.gte('fecha_nota', fechaNotaDesde)
+  if (fechaNotaHasta) qy = qy.lt('fecha_nota', fechaNotaHasta)
   return qy
 }
 
@@ -376,9 +377,41 @@ async function fetchSeguimientoListSupabase(params = {}) {
   const sort = normalizeSort(params.sort)
   const dias = Number.parseInt(String(params.dias ?? ''), 10)
   const hasDias = Number.isFinite(dias) && dias > 0 && dias <= 3650
-  const fechaNotaDesde = hasDias
+  
+  const diasBucket = String(params.dias_bucket ?? '').trim().toLowerCase()
+  const hasBucket = ['r1', 'r2', 'r2b', 'r3', 'r4', 'r5', 'r6'].includes(diasBucket)
+
+  let fechaNotaDesde = hasDias
     ? new Date(Date.now() - dias * 24 * 60 * 60 * 1000).toISOString()
     : null
+  let fechaNotaHasta = null
+
+  if (hasBucket) {
+    const today = new Date()
+    today.setHours(23, 59, 59, 999)
+    const getPastDate = (d) => new Date(today.getTime() - d * 24 * 60 * 60 * 1000).toISOString()
+
+    if (diasBucket === 'r1') { // 0-30
+      fechaNotaDesde = getPastDate(30)
+    } else if (diasBucket === 'r2') { // 31-45
+      fechaNotaDesde = getPastDate(45)
+      fechaNotaHasta = getPastDate(30)
+    } else if (diasBucket === 'r2b') { // 46-60
+      fechaNotaDesde = getPastDate(60)
+      fechaNotaHasta = getPastDate(45)
+    } else if (diasBucket === 'r3') { // 61-90
+      fechaNotaDesde = getPastDate(90)
+      fechaNotaHasta = getPastDate(60)
+    } else if (diasBucket === 'r4') { // 91-180
+      fechaNotaDesde = getPastDate(180)
+      fechaNotaHasta = getPastDate(90)
+    } else if (diasBucket === 'r5') { // 181-365
+      fechaNotaDesde = getPastDate(365)
+      fechaNotaHasta = getPastDate(180)
+    } else if (diasBucket === 'r6') { // >365
+      fechaNotaHasta = getPastDate(365)
+    }
+  }
 
   let rutaIdsFiltro = null
   if (ruta) {
@@ -442,7 +475,7 @@ async function fetchSeguimientoListSupabase(params = {}) {
     allowedFinal = rutaIdsFiltro
   }
 
-  const filterArgs = { estado, empresa, q, atencion, allowedFinal, fechaNotaDesde }
+  const filterArgs = { estado, empresa, q, atencion, allowedFinal, fechaNotaDesde, fechaNotaHasta }
 
   const { count: totalCount, error: countError } = await applySeguimientoListFilters(
     supabase.from('notas_credito').select('id, aclaraciones(id)', { count: 'exact', head: true }),

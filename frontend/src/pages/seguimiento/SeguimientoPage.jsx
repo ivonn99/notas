@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { FaComment, FaEye } from 'react-icons/fa6'
 import { ROUTES } from '../../constants/routes.js'
 import { useDomainSyncStore } from '../../stores/domainSyncStore.js'
@@ -21,6 +21,13 @@ const BUCKET_LABELS = {
   d91_180: '91–180 días',
   d181_365: '181–365 días',
   d366_plus: '>365 días',
+  r1: '0–30 días',
+  r2: '31–45 días',
+  r2b: '46–60 días',
+  r3: '61–90 días',
+  r4: '91–180 días',
+  r5: '181–365 días',
+  r6: '>365 días',
 }
 
 function formatFechaNota(value) {
@@ -194,6 +201,8 @@ function NotaSeguimientoCardMovil({ n, onCopySerieFolio, onAbrirComentario, most
 }
 
 export default function SeguimientoPage() {
+  const location = useLocation()
+  const fromReport = location.state?.fromReport || false
   const [refreshKey, setRefreshKey] = useState(0)
   const seguimientoFilters = useListFiltersStore((s) => s.seguimiento)
   const setSeguimientoFilters = useListFiltersStore((s) => s.setSeguimientoFilters)
@@ -225,6 +234,7 @@ export default function SeguimientoPage() {
       q: seguimientoFilters.q,
       sort: seguimientoFilters.orden,
       ...(seguimientoFilters.dias ? { dias: seguimientoFilters.dias } : {}),
+      ...(seguimientoFilters.dias_bucket ? { dias_bucket: seguimientoFilters.dias_bucket } : {}),
     }),
     [
       seguimientoFilters.empresaActiva,
@@ -246,6 +256,7 @@ export default function SeguimientoPage() {
       q: filtros.q,
       sort: filtros.sort,
       ...(filtros.dias ? { dias: filtros.dias } : {}),
+      ...(filtros.dias_bucket ? { dias_bucket: filtros.dias_bucket } : {}),
     }),
     [filtros],
   )
@@ -384,7 +395,28 @@ export default function SeguimientoPage() {
 
   return (
     <section className="container-fluid px-0">
-      <h1 className="h3 mb-3">Seguimiento</h1>
+      <div className="d-flex align-items-center justify-content-between mb-3">
+        <h1 className="h3 mb-0">Seguimiento</h1>
+        {(fromReport || seguimientoFilters.dias_bucket) && (
+          <Link to={ROUTES.reporte} className="btn btn-primary btn-sm px-3 shadow-sm">
+            ← Regresar al Reporte
+          </Link>
+        )}
+      </div>
+      {seguimientoFilters.dias_bucket && (
+        <div className="alert alert-info py-2 d-flex justify-content-between align-items-center mb-3">
+          <span>
+            Filtrando por tramo: <strong>{BUCKET_LABELS[seguimientoFilters.dias_bucket] || seguimientoFilters.dias_bucket}</strong>
+          </span>
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-info"
+            onClick={() => setSeguimientoFilters({ dias_bucket: '' })}
+          >
+            Limpiar tramo
+          </button>
+        </div>
+      )}
       <ul className="nav nav-tabs mb-3">
         <li className="nav-item">
           <button
