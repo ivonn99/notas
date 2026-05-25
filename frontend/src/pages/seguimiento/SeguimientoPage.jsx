@@ -67,7 +67,8 @@ function mergeCachedPages(entry, upToPage) {
   const ids = new Set()
   const merged = []
   for (let p = 1; p <= upToPage; p += 1) {
-    const rows = entry.pages[p] || []
+    const rows = entry.pages[p]
+    if (!Array.isArray(rows)) return null
     for (const row of rows) {
       if (ids.has(row.id)) continue
       ids.add(row.id)
@@ -75,6 +76,25 @@ function mergeCachedPages(entry, upToPage) {
     }
   }
   return merged
+}
+
+function appendUniqueItems(prevItems, nextItems) {
+  const seen = new Set((prevItems || []).map((row) => row.id))
+  const added = []
+  for (const row of nextItems || []) {
+    if (seen.has(row.id)) continue
+    seen.add(row.id)
+    added.push(row)
+  }
+  return [...(prevItems || []), ...added]
+}
+
+function cacheHasPages(entry, upToPage) {
+  if (!entry?.pages || upToPage < 1) return false
+  for (let p = 1; p <= upToPage; p += 1) {
+    if (!Array.isArray(entry.pages[p])) return false
+  }
+  return true
 }
 
 async function copyText(text) {
@@ -217,9 +237,12 @@ export default function SeguimientoPage() {
   const [rutaInput, setRutaInput] = useState(seguimientoFilters.ruta || '')
   const [qInput, setQInput] = useState(seguimientoFilters.q || '')
   const requestSeqRef = useRef(0)
+  const listEpochRef = useRef(0)
+  const activeCacheKeyRef = useRef('')
   const loadMoreRef = useRef(null)
   const getCacheEntry = useListCacheStore((s) => s.getEntry)
   const setCachePage = useListCacheStore((s) => s.setPage)
+  const clearCacheEntry = useListCacheStore((s) => s.clearEntry)
   const clearScreenCache = useListCacheStore((s) => s.clearScreen)
   const notasVersion = useDomainSyncStore((s) => s.notasVersion)
   const rutasVersion = useDomainSyncStore((s) => s.rutasVersion)
@@ -267,21 +290,37 @@ export default function SeguimientoPage() {
   const cargarPagina = useCallback(async (targetPage, append = false) => {
     const includeAggregates = !append && targetPage === 1
     const requestSeq = ++requestSeqRef.current
-    const cached = getCacheEntry('seguimiento', cacheKey)
-    if (cached?.pages?.[targetPage]) {
-      if (requestSeq !== requestSeqRef.current) return
-      const merged = mergeCachedPages(cached, targetPage)
-      setData((prev) => ({
-        ...prev,
-        items: merged,
-        total: cached.total ?? 0,
-        totalPages: cached.totalPages ?? 1,
-      }))
-      setPage(targetPage)
-      setLoading(false)
-      setLoadingMore(false)
-      setError('')
-      return
+    const epoch = listEpochRef.current
+    const requestCacheKey = cacheKey
+
+    if (!append && targetPage === 1) {
+      clearCacheEntry('seguimiento', requestCacheKey)
+    } else {
+      const cached = getCacheEntry('seguimiento', requestCacheKey)
+      if (cacheHasPages(cached, targetPage)) {
+        const merged = mergeCachedPages(cached, targetPage)
+        if (merged) {
+          if (
+            requestSeq !== requestSeqRef.current ||
+            epoch !== listEpochRef.current ||
+            requestCacheKey !== cacheKey
+          ) {
+            return
+          }
+          setData((prev) => ({
+            ...prev,
+            items: merged,
+            total: cached.total ?? prev.total ?? 0,
+            totalPages: cached.totalPages ?? prev.totalPages ?? 1,
+          }))
+          setPage(targetPage)
+          activeCacheKeyRef.current = requestCacheKey
+          setLoading(false)
+          setLoadingMore(false)
+          setError('')
+          return
+        }
+      }
     }
 
     if (append) {
@@ -296,36 +335,57 @@ export default function SeguimientoPage() {
         page: targetPage,
         includeAggregates: includeAggregates ? 'true' : 'false',
       })
-      if (requestSeq !== requestSeqRef.current) return
-      setCachePage('seguimiento', cacheKey, targetPage, r)
-      const nextCached = getCacheEntry('seguimiento', cacheKey)
-      const merged = nextCached ? mergeCachedPages(nextCached, targetPage) : r.items || []
+      if (
+        requestSeq !== requestSeqRef.current ||
+        epoch !== listEpochRef.current ||
+        requestCacheKey !== cacheKey
+      ) {
+        return
+      }
+      setCachePage('seguimiento', requestCacheKey, targetPage, r)
       setData((prev) => ({
         ...r,
         resumen: includeAggregates ? r.resumen : prev.resumen,
         porRuta: includeAggregates ? r.porRuta : prev.porRuta,
         porAntiguedad: includeAggregates ? r.porAntiguedad : prev.porAntiguedad,
-        items: merged,
+        items: append
+          ? appendUniqueItems(prev.items, r.items || [])
+          : r.items || [],
       }))
       setPage(typeof r.page === 'number' ? r.page : targetPage)
+      if (!append && targetPage === 1) {
+        activeCacheKeyRef.current = requestCacheKey
+      } else if (append && targetPage > 1) {
+        activeCacheKeyRef.current = requestCacheKey
+      }
     } catch (e) {
-      if (requestSeq !== requestSeqRef.current) return
+      if (
+        requestSeq !== requestSeqRef.current ||
+        epoch !== listEpochRef.current ||
+        requestCacheKey !== cacheKey
+      ) {
+        return
+      }
       setError(e?.message || 'No se pudo cargar seguimiento')
     } finally {
-      if (requestSeq === requestSeqRef.current) {
+      if (requestSeq === requestSeqRef.current && epoch === listEpochRef.current) {
         setLoading(false)
         setLoadingMore(false)
       }
     }
-  }, [filtros, getCacheEntry, cacheKey, setCachePage])
+  }, [filtros, getCacheEntry, cacheKey, setCachePage, clearCacheEntry])
 
   useEffect(() => {
+    listEpochRef.current += 1
+    activeCacheKeyRef.current = ''
     clearScreenCache('seguimiento')
     setData({ items: [], total: 0, totalPages: 1 })
     setPage(1)
+    setLoading(true)
+    setLoadingMore(false)
+    setError('')
     void cargarPagina(1, false)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [notasVersion, rutasVersion, refreshKey, clearScreenCache, cargarPagina])
+  }, [cacheKey, notasVersion, rutasVersion, refreshKey, clearScreenCache, cargarPagina])
 
   useEffect(() => {
     setRutaInput(seguimientoFilters.ruta || '')
@@ -338,20 +398,14 @@ export default function SeguimientoPage() {
   useEffect(() => {
     const next = String(rutaInput || '').trim().toUpperCase()
     if (next === String(seguimientoFilters.ruta || '').trim().toUpperCase()) return
-    const t = setTimeout(() => {
-      setSeguimientoFilters({ ruta: next })
-      setPage(1)
-    }, 400)
+    const t = setTimeout(() => setSeguimientoFilters({ ruta: next }), 400)
     return () => clearTimeout(t)
   }, [rutaInput, seguimientoFilters.ruta, setSeguimientoFilters])
 
   useEffect(() => {
     const next = String(qInput || '').trim()
     if (next === String(seguimientoFilters.q || '').trim()) return
-    const t = setTimeout(() => {
-      setSeguimientoFilters({ q: next })
-      setPage(1)
-    }, 400)
+    const t = setTimeout(() => setSeguimientoFilters({ q: next }), 400)
     return () => clearTimeout(t)
   }, [qInput, seguimientoFilters.q, setSeguimientoFilters])
 
@@ -363,13 +417,14 @@ export default function SeguimientoPage() {
         const first = entries[0]
         if (!first?.isIntersecting) return
         if (loading || loadingMore || !hasMore || error) return
+        if (activeCacheKeyRef.current !== cacheKey) return
         void cargarPagina(page + 1, true)
       },
       { root: null, rootMargin: '200px 0px', threshold: 0.1 },
     )
     obs.observe(node)
     return () => obs.disconnect()
-  }, [page, hasMore, loading, loadingMore, error, cargarPagina])
+  }, [page, hasMore, loading, loadingMore, error, cargarPagina, cacheKey])
 
   async function handleCopySerieFolio(value) {
     try {
@@ -387,9 +442,6 @@ export default function SeguimientoPage() {
   }, [copyToast])
 
   function handleActualizar() {
-    clearScreenCache('seguimiento')
-    setData({ items: [], total: 0, totalPages: 1 })
-    setPage(1)
     setRefreshKey((k) => k + 1)
   }
 
@@ -422,10 +474,7 @@ export default function SeguimientoPage() {
           <button
             type="button"
             className={`nav-link${seguimientoFilters.empresaActiva === 'DISTRIBUIDORA' ? ' active' : ''}`}
-            onClick={() => {
-              setSeguimientoFilters({ empresaActiva: 'DISTRIBUIDORA' })
-              setPage(1)
-            }}
+            onClick={() => setSeguimientoFilters({ empresaActiva: 'DISTRIBUIDORA' })}
           >
             Distribuidora
           </button>
@@ -434,10 +483,7 @@ export default function SeguimientoPage() {
           <button
             type="button"
             className={`nav-link${seguimientoFilters.empresaActiva === 'RODRIGO' ? ' active' : ''}`}
-            onClick={() => {
-              setSeguimientoFilters({ empresaActiva: 'RODRIGO' })
-              setPage(1)
-            }}
+            onClick={() => setSeguimientoFilters({ empresaActiva: 'RODRIGO' })}
           >
             Rodrigo
           </button>
@@ -453,10 +499,7 @@ export default function SeguimientoPage() {
                 className="form-select"
                 title="Filtra por fecha de la nota (desde hoy hacia atrás)"
                 value={seguimientoFilters.dias}
-                onChange={(e) => {
-                  setSeguimientoFilters({ dias: e.target.value })
-                  setPage(1)
-                }}
+                onChange={(e) => setSeguimientoFilters({ dias: e.target.value })}
               >
                 <option value="">Sin límite</option>
                 <option value="7">7 días</option>
@@ -470,10 +513,7 @@ export default function SeguimientoPage() {
               <select
                 className="form-select"
                 value={seguimientoFilters.estado}
-                onChange={(e) => {
-                  setSeguimientoFilters({ estado: e.target.value })
-                  setPage(1)
-                }}
+                onChange={(e) => setSeguimientoFilters({ estado: e.target.value })}
               >
                 <option value="">Todos</option>
                 <option value="PENDIENTE">PENDIENTE</option>
@@ -486,10 +526,7 @@ export default function SeguimientoPage() {
               <select
                 className="form-select"
                 value={seguimientoFilters.atencion}
-                onChange={(e) => {
-                  setSeguimientoFilters({ atencion: e.target.value })
-                  setPage(1)
-                }}
+                onChange={(e) => setSeguimientoFilters({ atencion: e.target.value })}
               >
                 <option value="">Todos</option>
                 <option value="si">Sí</option>
@@ -522,24 +559,13 @@ export default function SeguimientoPage() {
               <select
                 className="form-select"
                 value={seguimientoFilters.orden}
-                onChange={(e) => {
-                  setSeguimientoFilters({ orden: e.target.value })
-                  setPage(1)
-                }}
+                onChange={(e) => setSeguimientoFilters({ orden: e.target.value })}
               >
                 <option value="default">Atención y última actividad (predeterminado)</option>
                 <option value="fecha_ultima_desc">Última actualización — más reciente</option>
                 <option value="fecha_ultima_asc">Última actualización — más antigua</option>
                 <option value="fecha_nota_desc">Fecha nota — más reciente</option>
                 <option value="fecha_nota_asc">Fecha nota — más antigua</option>
-                <option value="id_desc">ID — mayor primero</option>
-                <option value="id_asc">ID — menor primero</option>
-                <option value="serie_folio_asc">Serie/Folio — A a Z</option>
-                <option value="serie_folio_desc">Serie/Folio — Z a A</option>
-                <option value="cliente_asc">Cliente — A a Z</option>
-                <option value="cliente_desc">Cliente — Z a A</option>
-                <option value="saldo_desc">Saldo — mayor primero</option>
-                <option value="saldo_asc">Saldo — menor primero</option>
               </select>
             </div>
             <div className="col-12 col-md-6 col-lg-7 d-flex align-items-end justify-content-md-end gap-3 mt-2 mt-md-0">

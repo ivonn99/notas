@@ -50,14 +50,6 @@ function normalizeSeguimientoOrden(orden) {
     'fecha_ultima_asc',
     'fecha_nota_desc',
     'fecha_nota_asc',
-    'id_desc',
-    'id_asc',
-    'serie_folio_asc',
-    'serie_folio_desc',
-    'cliente_asc',
-    'cliente_desc',
-    'saldo_desc',
-    'saldo_asc',
   ].includes(raw)
     ? raw
     : initialSeguimiento.orden
@@ -83,7 +75,7 @@ export const useListFiltersStore = create(
     }),
     {
       name: 'nc_list_filters_v1',
-      version: 3,
+      version: 4,
       migrate: (persisted) => {
         if (!persisted || typeof persisted !== 'object') return persisted
         const state = persisted

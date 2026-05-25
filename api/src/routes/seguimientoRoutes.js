@@ -42,14 +42,6 @@ const SEGUIMIENTO_ORDER_BY = {
   fecha_corriente_asc: 'n.fecha_nota ASC NULLS LAST, n.id ASC',
   fecha_nota_desc: 'n.fecha_nota DESC NULLS LAST, n.id DESC',
   fecha_nota_asc: 'n.fecha_nota ASC NULLS LAST, n.id ASC',
-  id_desc: 'n.id DESC',
-  id_asc: 'n.id ASC',
-  serie_folio_asc: 'n.serie_folio ASC NULLS LAST, n.id ASC',
-  serie_folio_desc: 'n.serie_folio DESC NULLS LAST, n.id DESC',
-  cliente_asc: 'n.cliente ASC NULLS LAST, n.id ASC',
-  cliente_desc: 'n.cliente DESC NULLS LAST, n.id DESC',
-  saldo_desc: 'n.saldo DESC NULLS LAST, n.id DESC',
-  saldo_asc: 'n.saldo ASC NULLS LAST, n.id ASC',
 }
 
 function whereByRole(user, params) {

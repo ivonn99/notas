@@ -63,14 +63,6 @@ function normalizeSort(sort) {
     'fecha_ultima_asc',
     'fecha_nota_desc',
     'fecha_nota_asc',
-    'id_desc',
-    'id_asc',
-    'serie_folio_asc',
-    'serie_folio_desc',
-    'cliente_asc',
-    'cliente_desc',
-    'saldo_desc',
-    'saldo_asc',
   ])
   return allowed.has(key) ? key : 'default'
 }
@@ -100,15 +92,9 @@ function applySort(query, sort) {
   if (sort === 'fecha_ultima_asc') return query.order('fecha_ultima_actualizacion', { ascending: true, nullsFirst: false }).order('id', { ascending: true, nullsFirst: false })
   if (sort === 'fecha_nota_desc') return query.order('fecha_nota', { ascending: false, nullsFirst: false }).order('id', { ascending: false, nullsFirst: false })
   if (sort === 'fecha_nota_asc') return query.order('fecha_nota', { ascending: true, nullsFirst: false }).order('id', { ascending: true, nullsFirst: false })
-  if (sort === 'id_desc') return query.order('id', { ascending: false, nullsFirst: false })
-  if (sort === 'id_asc') return query.order('id', { ascending: true, nullsFirst: false })
-  if (sort === 'serie_folio_asc') return query.order('serie_folio', { ascending: true, nullsFirst: false }).order('id', { ascending: true, nullsFirst: false })
-  if (sort === 'serie_folio_desc') return query.order('serie_folio', { ascending: false, nullsFirst: false }).order('id', { ascending: false, nullsFirst: false })
-  if (sort === 'cliente_asc') return query.order('cliente', { ascending: true, nullsFirst: false }).order('id', { ascending: true, nullsFirst: false })
-  if (sort === 'cliente_desc') return query.order('cliente', { ascending: false, nullsFirst: false }).order('id', { ascending: false, nullsFirst: false })
-  if (sort === 'saldo_desc') return query.order('saldo', { ascending: false, nullsFirst: false }).order('id', { ascending: false, nullsFirst: false })
-  if (sort === 'saldo_asc') return query.order('saldo', { ascending: true, nullsFirst: false }).order('id', { ascending: true, nullsFirst: false })
-  return query.order('id', { ascending: false, nullsFirst: false })
+  return query
+    .order('fecha_ultima_actualizacion', { ascending: false, nullsFirst: false })
+    .order('id', { ascending: false, nullsFirst: false })
 }
 
 function applySeguimientoListFilters(query, { estado, empresa, q, atencion, allowedFinal, fechaNotaDesde, fechaNotaHasta }) {
