@@ -1,22 +1,12 @@
 import * as XLSX from 'xlsx'
 
 import { fetchSeguimientoList } from '../services/seguimientoApi.js'
-import { formatDiasNotaCorriente } from './diasCorriente.js'
+import { formatDiasNotaCorriente, formatFechaNotaDb } from './diasCorriente.js'
 import { notaMuestraAtencion } from './estadoBadge.js'
 
 const EXPORT_PAGE_SIZE = 100
 /** Límite de páginas para evitar cargas excesivas en memoria (100 x 300 = 30000 filas max.). */
 const MAX_EXPORT_PAGES = 300
-
-function formatFechaNotaIso(value) {
-  if (value == null || value === '') return ''
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return ''
-  const day = String(d.getDate()).padStart(2, '0')
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const year = d.getFullYear()
-  return `${day}/${month}/${year}`
-}
 
 function safeFilePart(value) {
   const s = String(value || '')
@@ -34,10 +24,10 @@ function safeFilePart(value) {
  * @param {string} [filtros.empresa]
  * @param {string} [filtros.estado]
  * @param {string} [filtros.atencion]
- * @param {string} [filtros.ruta]
+ * @param {string} [filtros.rutas]
+ * @param {string} [filtros.dias_bucket]
  * @param {string} [filtros.q]
  * @param {string} [filtros.sort]
- * @param {string|number} [filtros.dias]
  * @returns {Promise<{ rowCount: number, truncated: boolean, totalReported: number }>}
  */
 export async function exportarSeguimientoExcelConFiltros(filtros = {}) {
@@ -46,10 +36,10 @@ export async function exportarSeguimientoExcelConFiltros(filtros = {}) {
     empresa: filtros.empresa,
     estado: filtros.estado,
     atencion: filtros.atencion,
-    ruta: filtros.ruta,
+    rutas: filtros.rutas,
     q: filtros.q,
     sort: filtros.sort,
-    ...(filtros.dias ? { dias: filtros.dias } : {}),
+    ...(filtros.dias_bucket ? { dias_bucket: filtros.dias_bucket } : {}),
   }
 
   const allItems = []
@@ -78,7 +68,7 @@ export async function exportarSeguimientoExcelConFiltros(filtros = {}) {
   const rows = allItems.map((n) => ({
     ID: n.id,
     'Serie/Folio': n.serie_folio || '',
-    'Fecha nota': formatFechaNotaIso(n.fecha_nota),
+    'Fecha nota': formatFechaNotaDb(n.fecha_nota) === '—' ? '' : formatFechaNotaDb(n.fecha_nota),
     Días: formatDiasNotaCorriente(n.fecha_nota, n.fecha_corriente) ?? '',
     Cliente: n.cliente || '',
     Empresa: n.empresa || '',

@@ -1,6 +1,13 @@
 import { getSupabaseAuthMeta } from '../lib/supabaseAuth.js'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
 import { apiUrl } from '../utils/apiUrl.js'
+import {
+  buildDiasBucketsSupabaseOr,
+  diasBucketToDateRange,
+  formatDiasBucketsList,
+  parseDiasBucketsList,
+} from '../utils/diasBuckets.js'
+import { formatRutasList, parseRutasList } from '../utils/seguimientoRutas.js'
 
 function jsonOrEmpty(text) {
   if (!text) return {}
@@ -63,8 +70,45 @@ function normalizeSort(sort) {
     'fecha_ultima_asc',
     'fecha_nota_desc',
     'fecha_nota_asc',
+    'dias_corriente_desc',
+    'dias_corriente_asc',
   ])
   return allowed.has(key) ? key : 'default'
+}
+
+async function attachAclaracionesToNotas(notas) {
+  const ids = (notas || []).map((n) => n.id).filter((id) => id != null)
+  if (!ids.length) return notas || []
+  const { data, error } = await supabase
+    .from('aclaraciones')
+    .select(
+      'id, comentario, tipo, created_at, nota_id, usuarios:usuario_id(username, nombre_completo)',
+    )
+    .in('nota_id', ids)
+    .order('created_at', { ascending: false })
+  if (error) throw new Error(error.message || 'No se pudieron cargar comentarios')
+  const byNota = new Map()
+  for (const row of data || []) {
+    const list = byNota.get(row.nota_id) || []
+    if (list.length < 50) {
+      list.push({
+        id: row.id,
+        comentario: row.comentario,
+        tipo: row.tipo,
+        created_at: row.created_at,
+        usuarios: row.usuarios,
+      })
+    }
+    byNota.set(row.nota_id, list)
+  }
+  return (notas || []).map((n) => {
+    const aclaraciones = byNota.get(n.id) || []
+    return {
+      ...n,
+      aclaraciones,
+      tiene_comentarios: aclaraciones.length > 0,
+    }
+  })
 }
 
 async function resolveAllowedRutaIds(meta) {
@@ -92,12 +136,21 @@ function applySort(query, sort) {
   if (sort === 'fecha_ultima_asc') return query.order('fecha_ultima_actualizacion', { ascending: true, nullsFirst: false }).order('id', { ascending: true, nullsFirst: false })
   if (sort === 'fecha_nota_desc') return query.order('fecha_nota', { ascending: false, nullsFirst: false }).order('id', { ascending: false, nullsFirst: false })
   if (sort === 'fecha_nota_asc') return query.order('fecha_nota', { ascending: true, nullsFirst: false }).order('id', { ascending: true, nullsFirst: false })
+  if (sort === 'dias_corriente_desc') {
+    return query.order('fecha_nota', { ascending: true, nullsFirst: false }).order('id', { ascending: true, nullsFirst: false })
+  }
+  if (sort === 'dias_corriente_asc') {
+    return query.order('fecha_nota', { ascending: false, nullsFirst: false }).order('id', { ascending: false, nullsFirst: false })
+  }
   return query
     .order('fecha_ultima_actualizacion', { ascending: false, nullsFirst: false })
     .order('id', { ascending: false, nullsFirst: false })
 }
 
-function applySeguimientoListFilters(query, { estado, empresa, q, atencion, allowedFinal, fechaNotaDesde, fechaNotaHasta }) {
+function applySeguimientoListFilters(
+  query,
+  { estado, empresa, q, atencion, allowedFinal, fechaNotaDesde, fechaNotaHasta, diasBucketOr },
+) {
   let qy = query
   if (estado) qy = qy.eq('estado', estado)
   if (empresa) qy = qy.eq('empresa', empresa)
@@ -109,8 +162,12 @@ function applySeguimientoListFilters(query, { estado, empresa, q, atencion, allo
     qy = qy.or('estado.neq.PENDIENTE,aclaraciones.is.null')
   }
   if (Array.isArray(allowedFinal)) qy = qy.in('ruta_id', allowedFinal)
-  if (fechaNotaDesde) qy = qy.gte('fecha_nota', fechaNotaDesde)
-  if (fechaNotaHasta) qy = qy.lt('fecha_nota', fechaNotaHasta)
+  if (diasBucketOr) {
+    qy = qy.or(diasBucketOr)
+  } else {
+    if (fechaNotaDesde) qy = qy.gte('fecha_nota', fechaNotaDesde)
+    if (fechaNotaHasta) qy = qy.lt('fecha_nota', fechaNotaHasta)
+  }
   return qy
 }
 
@@ -355,56 +412,38 @@ async function fetchSeguimientoListSupabase(params = {}) {
   const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(params.pageSize ?? 20), 10) || 20))
   const estado = String(params.estado ?? '').trim().toUpperCase()
   const empresa = String(params.empresa ?? '').trim().toUpperCase()
-  const ruta = String(params.ruta ?? '').trim().toUpperCase()
+  const rutasList = parseRutasList(params.rutas ?? params.ruta)
+  const rutas = formatRutasList(rutasList)
   const atencion = String(params.atencion ?? '').trim().toLowerCase()
   const q = String(params.q ?? '').trim()
   const includeAggregatesRaw = String(params.includeAggregates ?? 'true').trim().toLowerCase()
   const includeAggregates = !['false', '0', 'no'].includes(includeAggregatesRaw)
   const sort = normalizeSort(params.sort)
-  const dias = Number.parseInt(String(params.dias ?? ''), 10)
-  const hasDias = Number.isFinite(dias) && dias > 0 && dias <= 3650
-  
-  const diasBucket = String(params.dias_bucket ?? '').trim().toLowerCase()
-  const hasBucket = ['r1', 'r2', 'r2b', 'r3', 'r4', 'r5', 'r6'].includes(diasBucket)
 
-  let fechaNotaDesde = hasDias
-    ? new Date(Date.now() - dias * 24 * 60 * 60 * 1000).toISOString()
-    : null
+  const diasBucketsList = parseDiasBucketsList(params.dias_bucket)
+  const hasBucket = diasBucketsList.length > 0
+  const diasBucket = formatDiasBucketsList(diasBucketsList)
+
+  let fechaNotaDesde = null
   let fechaNotaHasta = null
+  let diasBucketOr = null
 
-  if (hasBucket) {
-    const today = new Date()
-    today.setHours(23, 59, 59, 999)
-    const getPastDate = (d) => new Date(today.getTime() - d * 24 * 60 * 60 * 1000).toISOString()
-
-    if (diasBucket === 'r1') { // 0-30
-      fechaNotaDesde = getPastDate(30)
-    } else if (diasBucket === 'r2') { // 31-45
-      fechaNotaDesde = getPastDate(45)
-      fechaNotaHasta = getPastDate(30)
-    } else if (diasBucket === 'r2b') { // 46-60
-      fechaNotaDesde = getPastDate(60)
-      fechaNotaHasta = getPastDate(45)
-    } else if (diasBucket === 'r3') { // 61-90
-      fechaNotaDesde = getPastDate(90)
-      fechaNotaHasta = getPastDate(60)
-    } else if (diasBucket === 'r4') { // 91-180
-      fechaNotaDesde = getPastDate(180)
-      fechaNotaHasta = getPastDate(90)
-    } else if (diasBucket === 'r5') { // 181-365
-      fechaNotaDesde = getPastDate(365)
-      fechaNotaHasta = getPastDate(180)
-    } else if (diasBucket === 'r6') { // >365
-      fechaNotaHasta = getPastDate(365)
+  if (diasBucketsList.length === 1) {
+    const range = diasBucketToDateRange(diasBucketsList[0])
+    if (range) {
+      fechaNotaDesde = range.desde
+      fechaNotaHasta = range.hasta
     }
+  } else if (diasBucketsList.length > 1) {
+    diasBucketOr = buildDiasBucketsSupabaseOr(diasBucketsList)
   }
 
   let rutaIdsFiltro = null
-  if (ruta) {
+  if (rutasList.length > 0) {
     const { data: rutasByCode, error: rutaErr } = await supabase
       .from('rutas')
-      .select('id')
-      .ilike('codigo', ruta)
+      .select('id, codigo')
+      .in('codigo', rutasList)
     if (rutaErr) throw new Error(rutaErr.message || 'No se pudo filtrar por ruta')
     rutaIdsFiltro = (rutasByCode || []).map((r) => r.id)
     if (rutaIdsFiltro.length === 0) {
@@ -421,10 +460,10 @@ async function fetchSeguimientoListSupabase(params = {}) {
         filters: {
           empresa: empresa || null,
           estado: estado || null,
-          ruta: ruta || null,
+          rutas: rutas || null,
+          dias_bucket: hasBucket ? diasBucket : null,
           atencion: atencion || null,
           q: q || null,
-          dias: hasDias ? dias : null,
           sort,
         },
       }
@@ -449,10 +488,10 @@ async function fetchSeguimientoListSupabase(params = {}) {
         filters: {
           empresa: empresa || null,
           estado: estado || null,
-          ruta: ruta || null,
+          rutas: rutas || null,
+          dias_bucket: hasBucket ? diasBucket : null,
           atencion: atencion || null,
           q: q || null,
-          dias: hasDias ? dias : null,
           sort,
         },
       }
@@ -461,7 +500,16 @@ async function fetchSeguimientoListSupabase(params = {}) {
     allowedFinal = rutaIdsFiltro
   }
 
-  const filterArgs = { estado, empresa, q, atencion, allowedFinal, fechaNotaDesde, fechaNotaHasta }
+  const filterArgs = {
+    estado,
+    empresa,
+    q,
+    atencion,
+    allowedFinal,
+    fechaNotaDesde,
+    fechaNotaHasta,
+    diasBucketOr,
+  }
 
   const { count: totalCount, error: countError } = await applySeguimientoListFilters(
     supabase.from('notas_credito').select('id, aclaraciones(id)', { count: 'exact', head: true }),
@@ -501,8 +549,7 @@ async function fetchSeguimientoListSupabase(params = {}) {
       id, serie_folio, fecha_nota, cliente, estado, requiere_atencion, resuelta_automaticamente,
       fecha_corriente, fecha_ultima_actualizacion, monto, abono, saldo, empresa, usuario_vendedor_pv, ruta_id,
       rutas:ruta_id(codigo),
-      vendedor:usuario_id(username),
-      aclaraciones:aclaraciones(id, comentario, tipo, created_at, usuarios:usuario_id(username, nombre_completo))
+      vendedor:usuario_id(username)
     `,
       { count: 'exact' },
     )
@@ -512,12 +559,14 @@ async function fetchSeguimientoListSupabase(params = {}) {
   const { data: rows, error } = await listQuery
   if (error) throw new Error(error.message || 'No se pudo cargar seguimiento')
 
-  const items = (rows || []).map((n) => ({
+  let items = (rows || []).map((n) => ({
     ...n,
     ruta_codigo: n.rutas?.codigo || null,
     vendedor_username: n.vendedor?.username || null,
-    tiene_comentarios: Array.isArray(n.aclaraciones) && n.aclaraciones.length > 0,
+    aclaraciones: [],
+    tiene_comentarios: false,
   }))
+  items = await attachAclaracionesToNotas(items)
 
   let porRuta = []
   let porAntiguedad = []
@@ -564,10 +613,10 @@ async function fetchSeguimientoListSupabase(params = {}) {
     filters: {
       empresa: empresa || null,
       estado: estado || null,
-      ruta: ruta || null,
+      rutas: rutas || null,
+      dias_bucket: hasBucket ? diasBucket : null,
       atencion: atencion || null,
       q: q || null,
-      dias: hasDias ? dias : null,
       sort,
     },
     resumen: {

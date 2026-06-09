@@ -38,10 +38,12 @@ const SEGUIMIENTO_ORDER_BY = {
   fecha_ultima_desc: 'n.fecha_ultima_actualizacion DESC NULLS LAST, n.id DESC',
   fecha_ultima_asc: 'n.fecha_ultima_actualizacion ASC NULLS LAST, n.id ASC',
   // Compatibilidad: si llega el sort viejo de fecha_corriente, usar fecha_nota.
-  fecha_corriente_desc: 'n.fecha_nota DESC NULLS LAST, n.id DESC',
-  fecha_corriente_asc: 'n.fecha_nota ASC NULLS LAST, n.id ASC',
-  fecha_nota_desc: 'n.fecha_nota DESC NULLS LAST, n.id DESC',
-  fecha_nota_asc: 'n.fecha_nota ASC NULLS LAST, n.id ASC',
+  fecha_corriente_desc: 'n.fecha_nota::date DESC NULLS LAST, n.id DESC',
+  fecha_corriente_asc: 'n.fecha_nota::date ASC NULLS LAST, n.id ASC',
+  fecha_nota_desc: 'n.fecha_nota::date DESC NULLS LAST, n.id DESC',
+  fecha_nota_asc: 'n.fecha_nota::date ASC NULLS LAST, n.id ASC',
+  dias_corriente_desc: '(CURRENT_DATE - n.fecha_nota::date) DESC NULLS LAST, n.id DESC',
+  dias_corriente_asc: '(CURRENT_DATE - n.fecha_nota::date) ASC NULLS LAST, n.id ASC',
 }
 
 function whereByRole(user, params) {
@@ -56,6 +58,48 @@ function whereByRole(user, params) {
     `
   }
   return 'TRUE'
+}
+
+function parseRutasList(raw) {
+  const s = String(raw ?? '').trim()
+  if (!s) return []
+  return [...new Set(s.split(',').map((part) => part.trim().toUpperCase()).filter(Boolean))]
+}
+
+const DIAS_BUCKET_IDS = new Set(['r1', 'r2', 'r2b', 'r3', 'r4', 'r5', 'r6'])
+
+function parseDiasBucketsList(raw) {
+  const s = String(raw ?? '').trim()
+  if (!s) return []
+  return [
+    ...new Set(
+      s
+        .split(',')
+        .map((part) => part.trim().toLowerCase())
+        .filter((id) => DIAS_BUCKET_IDS.has(id)),
+    ),
+  ]
+}
+
+function diasBucketWhere(bucket) {
+  switch (bucket) {
+    case 'r1':
+      return `n.fecha_nota IS NOT NULL AND n.fecha_nota::date >= (CURRENT_DATE - INTERVAL '30 days')::date`
+    case 'r2':
+      return `n.fecha_nota IS NOT NULL AND n.fecha_nota::date >= (CURRENT_DATE - INTERVAL '45 days')::date AND n.fecha_nota::date < (CURRENT_DATE - INTERVAL '30 days')::date`
+    case 'r2b':
+      return `n.fecha_nota IS NOT NULL AND n.fecha_nota::date >= (CURRENT_DATE - INTERVAL '60 days')::date AND n.fecha_nota::date < (CURRENT_DATE - INTERVAL '45 days')::date`
+    case 'r3':
+      return `n.fecha_nota IS NOT NULL AND n.fecha_nota::date >= (CURRENT_DATE - INTERVAL '90 days')::date AND n.fecha_nota::date < (CURRENT_DATE - INTERVAL '60 days')::date`
+    case 'r4':
+      return `n.fecha_nota IS NOT NULL AND n.fecha_nota::date >= (CURRENT_DATE - INTERVAL '180 days')::date AND n.fecha_nota::date < (CURRENT_DATE - INTERVAL '90 days')::date`
+    case 'r5':
+      return `n.fecha_nota IS NOT NULL AND n.fecha_nota::date >= (CURRENT_DATE - INTERVAL '365 days')::date AND n.fecha_nota::date < (CURRENT_DATE - INTERVAL '180 days')::date`
+    case 'r6':
+      return `n.fecha_nota IS NOT NULL AND n.fecha_nota::date < (CURRENT_DATE - INTERVAL '365 days')::date`
+    default:
+      return null
+  }
 }
 
 router.get('/', requireAuth, async (req, res, next) => {
@@ -81,10 +125,11 @@ router.get('/', requireAuth, async (req, res, next) => {
       where.push(`n.empresa = $${params.length}`)
     }
 
-    const ruta = String(req.query.ruta ?? '').trim().toUpperCase()
-    if (ruta) {
-      params.push(ruta)
-      where.push(`UPPER(TRIM(COALESCE(r.codigo, ''))) = $${params.length}`)
+    const rutasList = parseRutasList(req.query.rutas ?? req.query.ruta)
+    const rutas = rutasList.join(',')
+    if (rutasList.length > 0) {
+      params.push(rutasList)
+      where.push(`UPPER(TRIM(COALESCE(r.codigo, ''))) = ANY($${params.length}::text[])`)
     }
 
     const atencion = String(req.query.atencion ?? '').trim().toLowerCase()
@@ -104,13 +149,14 @@ router.get('/', requireAuth, async (req, res, next) => {
       )
     }
 
-    const diasRaw = Number.parseInt(String(req.query.dias ?? '').trim(), 10)
-    const diasFiltered =
-      Number.isFinite(diasRaw) && diasRaw > 0 && diasRaw <= 3650 ? diasRaw : null
-    if (diasFiltered != null) {
-      params.push(diasFiltered)
-      where.push(`n.fecha_nota >= (CURRENT_DATE - $${params.length})`)
+    const diasBucketsList = parseDiasBucketsList(req.query.dias_bucket)
+    const bucketSqlParts = diasBucketsList.map((b) => diasBucketWhere(b)).filter(Boolean)
+    if (bucketSqlParts.length === 1) {
+      where.push(bucketSqlParts[0])
+    } else if (bucketSqlParts.length > 1) {
+      where.push(`(${bucketSqlParts.join(' OR ')})`)
     }
+    const diasBucket = diasBucketsList.join(',')
 
     const whereSql = `WHERE ${where.join(' AND ')}`
 
@@ -273,10 +319,10 @@ router.get('/', requireAuth, async (req, res, next) => {
       filters: {
         empresa: empresa || null,
         estado: estado || null,
-        ruta: ruta || null,
+        rutas: rutas || null,
+        dias_bucket: diasBucketsList.length ? diasBucket : null,
         atencion: atencion || null,
         q: q || null,
-        dias: diasFiltered,
         sort: sortKeyRaw && SEGUIMIENTO_ORDER_BY[sortKeyRaw] ? sortKeyRaw : 'default',
       },
       resumen,

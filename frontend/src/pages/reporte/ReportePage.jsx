@@ -256,9 +256,11 @@ export default function ReportePage() {
     
     setSeguimientoFilters({
       empresaActiva,
-      ruta: routeCode,
+      rutas: routeCode,
       dias_bucket: rId,
       estado: estado === 'TODOS' ? '' : estado,
+      q: '',
+      atencion: '',
     })
     navigate(ROUTES.seguimiento, { state: { fromReport: true } })
   }

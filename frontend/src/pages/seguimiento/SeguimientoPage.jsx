@@ -2,13 +2,22 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { Link, useLocation } from 'react-router-dom'
 import { FaComment, FaEye } from 'react-icons/fa6'
 import { ROUTES } from '../../constants/routes.js'
+import { useAuth } from '../../contexts/AuthContext.jsx'
 import { useDomainSyncStore } from '../../stores/domainSyncStore.js'
+import { profileApi } from '../../services/profileApi.js'
 import { fetchSeguimientoList } from '../../services/seguimientoApi.js'
 import { exportarSeguimientoExcelConFiltros } from '../../utils/exportSeguimientoExcel.js'
 import { useListCacheStore } from '../../stores/listCacheStore.js'
 import { useListFiltersStore } from '../../stores/listFiltersStore.js'
 import { estadoBadgeClass, notaMuestraAtencion } from '../../utils/estadoBadge.js'
-import { formatDiasNotaCorriente } from '../../utils/diasCorriente.js'
+import { formatDiasNotaCorriente, formatFechaNotaDb } from '../../utils/diasCorriente.js'
+import {
+  DIAS_BUCKETS_FILTER,
+  DIAS_BUCKET_LABELS,
+  formatDiasBucketsList,
+  parseDiasBucketsList,
+} from '../../utils/diasBuckets.js'
+import { formatRutasList, parseRutasList } from '../../utils/seguimientoRutas.js'
 import ComentarioNotaRapidoModal from '../../components/ComentarioNotaRapidoModal.jsx'
 
 const PAGE_SIZE = 20
@@ -21,23 +30,7 @@ const BUCKET_LABELS = {
   d91_180: '91–180 días',
   d181_365: '181–365 días',
   d366_plus: '>365 días',
-  r1: '0–30 días',
-  r2: '31–45 días',
-  r2b: '46–60 días',
-  r3: '61–90 días',
-  r4: '91–180 días',
-  r5: '181–365 días',
-  r6: '>365 días',
-}
-
-function formatFechaNota(value) {
-  if (value == null || value === '') return '—'
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return '—'
-  const day = String(d.getDate()).padStart(2, '0')
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const year = d.getFullYear()
-  return `${day}/${month}/${year}`
+  ...DIAS_BUCKET_LABELS,
 }
 
 function formatFechaComentario(value) {
@@ -168,9 +161,9 @@ function NotaSeguimientoCardMovil({ n, onCopySerieFolio, onAbrirComentario, most
         </div>
         <dl className="row small mb-0 gx-2">
           <dt className="col-5 text-body-secondary">Fecha nota</dt>
-          <dd className="col-7 mb-1">{formatFechaNota(n.fecha_nota)}</dd>
+          <dd className="col-7 mb-1">{formatFechaNotaDb(n.fecha_nota)}</dd>
           <dt className="col-5 text-body-secondary">Días</dt>
-          <dd className="col-7 mb-1" title="Entre fecha nota y fecha corriente (o hoy)">
+          <dd className="col-7 mb-1" title="Días desde la fecha de la nota hasta hoy">
             {formatDiasNotaCorriente(n.fecha_nota, n.fecha_corriente)}
           </dd>
           <dt className="col-5 text-body-secondary">Cliente</dt>
@@ -223,6 +216,8 @@ function NotaSeguimientoCardMovil({ n, onCopySerieFolio, onAbrirComentario, most
 export default function SeguimientoPage() {
   const location = useLocation()
   const fromReport = location.state?.fromReport || false
+  const { user } = useAuth()
+  const isVendedor = Boolean(user && !user.isSuperuser && user.rol === 'VENDEDOR')
   const [refreshKey, setRefreshKey] = useState(0)
   const seguimientoFilters = useListFiltersStore((s) => s.seguimiento)
   const setSeguimientoFilters = useListFiltersStore((s) => s.setSeguimientoFilters)
@@ -234,12 +229,24 @@ export default function SeguimientoPage() {
   const [exportandoExcel, setExportandoExcel] = useState(false)
   const [copyToast, setCopyToast] = useState('')
   const [comentarioNota, setComentarioNota] = useState(null)
-  const [rutaInput, setRutaInput] = useState(seguimientoFilters.ruta || '')
+  const [rutasInput, setRutasInput] = useState(seguimientoFilters.rutas || '')
   const [qInput, setQInput] = useState(seguimientoFilters.q || '')
+  const [rutasAsignadas, setRutasAsignadas] = useState([])
+  const [rutasAsignadasError, setRutasAsignadasError] = useState('')
   const requestSeqRef = useRef(0)
   const listEpochRef = useRef(0)
   const activeCacheKeyRef = useRef('')
   const loadMoreRef = useRef(null)
+  const maxLoadedPageRef = useRef(0)
+  const pagesInFlightRef = useRef(new Set())
+  const loadMoreStateRef = useRef({
+    loading: true,
+    loadingMore: false,
+    error: '',
+    totalPages: 1,
+    cacheKey: '',
+    cargarPagina: null,
+  })
   const getCacheEntry = useListCacheStore((s) => s.getEntry)
   const setCachePage = useListCacheStore((s) => s.setPage)
   const clearCacheEntry = useListCacheStore((s) => s.clearEntry)
@@ -247,25 +254,29 @@ export default function SeguimientoPage() {
   const notasVersion = useDomainSyncStore((s) => s.notasVersion)
   const rutasVersion = useDomainSyncStore((s) => s.rutasVersion)
 
+  const rutasSeleccionadas = useMemo(
+    () => parseRutasList(seguimientoFilters.rutas),
+    [seguimientoFilters.rutas],
+  )
+
   const filtros = useMemo(
     () => ({
       pageSize: PAGE_SIZE,
       empresa: seguimientoFilters.empresaActiva,
       estado: seguimientoFilters.estado,
       atencion: seguimientoFilters.atencion,
-      ruta: seguimientoFilters.ruta,
+      rutas: seguimientoFilters.rutas,
       q: seguimientoFilters.q,
       sort: seguimientoFilters.orden,
-      ...(seguimientoFilters.dias ? { dias: seguimientoFilters.dias } : {}),
       ...(seguimientoFilters.dias_bucket ? { dias_bucket: seguimientoFilters.dias_bucket } : {}),
     }),
     [
       seguimientoFilters.empresaActiva,
       seguimientoFilters.estado,
       seguimientoFilters.atencion,
-      seguimientoFilters.ruta,
+      seguimientoFilters.rutas,
       seguimientoFilters.q,
-      seguimientoFilters.dias,
+      seguimientoFilters.dias_bucket,
       seguimientoFilters.orden,
     ],
   )
@@ -275,17 +286,36 @@ export default function SeguimientoPage() {
       empresa: filtros.empresa,
       estado: filtros.estado,
       atencion: filtros.atencion,
-      ruta: filtros.ruta,
+      rutas: filtros.rutas,
       q: filtros.q,
       sort: filtros.sort,
-      ...(filtros.dias ? { dias: filtros.dias } : {}),
       ...(filtros.dias_bucket ? { dias_bucket: filtros.dias_bucket } : {}),
     }),
     [filtros],
   )
+
+  const rutasActivasLabel = useMemo(() => {
+    if (isVendedor) {
+      if (rutasSeleccionadas.length > 0) return rutasSeleccionadas.join(', ')
+      const codes = rutasAsignadas.map((r) => r.codigo).filter(Boolean)
+      return codes.length ? codes.join(', ') : '—'
+    }
+    return rutasSeleccionadas.length ? rutasSeleccionadas.join(', ') : 'Todas'
+  }, [isVendedor, rutasSeleccionadas, rutasAsignadas])
+
+  const tramosSeleccionados = useMemo(
+    () => parseDiasBucketsList(seguimientoFilters.dias_bucket),
+    [seguimientoFilters.dias_bucket],
+  )
+
+  const tramoActivoLabel = useMemo(() => {
+    if (tramosSeleccionados.length === 0) return 'Todos'
+    return tramosSeleccionados.map((id) => BUCKET_LABELS[id] || id).join(', ')
+  }, [tramosSeleccionados])
   const cacheKey = useMemo(() => JSON.stringify(filtros), [filtros])
 
-  const hasMore = page < (data.totalPages || 1)
+  const totalPages = data.totalPages || 1
+  const hasMore = page < totalPages
 
   const cargarPagina = useCallback(async (targetPage, append = false) => {
     const includeAggregates = !append && targetPage === 1
@@ -293,43 +323,48 @@ export default function SeguimientoPage() {
     const epoch = listEpochRef.current
     const requestCacheKey = cacheKey
 
-    if (!append && targetPage === 1) {
-      clearCacheEntry('seguimiento', requestCacheKey)
-    } else {
-      const cached = getCacheEntry('seguimiento', requestCacheKey)
-      if (cacheHasPages(cached, targetPage)) {
-        const merged = mergeCachedPages(cached, targetPage)
-        if (merged) {
-          if (
-            requestSeq !== requestSeqRef.current ||
-            epoch !== listEpochRef.current ||
-            requestCacheKey !== cacheKey
-          ) {
+    if (pagesInFlightRef.current.has(targetPage)) return
+    pagesInFlightRef.current.add(targetPage)
+
+    try {
+      if (!append && targetPage === 1) {
+        clearCacheEntry('seguimiento', requestCacheKey)
+      } else {
+        const cached = getCacheEntry('seguimiento', requestCacheKey)
+        if (cacheHasPages(cached, targetPage)) {
+          const merged = mergeCachedPages(cached, targetPage)
+          if (merged) {
+            if (
+              requestSeq !== requestSeqRef.current ||
+              epoch !== listEpochRef.current ||
+              requestCacheKey !== cacheKey
+            ) {
+              return
+            }
+            setData((prev) => ({
+              ...prev,
+              items: merged,
+              total: cached.total ?? prev.total ?? 0,
+              totalPages: cached.totalPages ?? prev.totalPages ?? 1,
+            }))
+            setPage(targetPage)
+            maxLoadedPageRef.current = Math.max(maxLoadedPageRef.current, targetPage)
+            activeCacheKeyRef.current = requestCacheKey
+            setLoading(false)
+            setLoadingMore(false)
+            setError('')
             return
           }
-          setData((prev) => ({
-            ...prev,
-            items: merged,
-            total: cached.total ?? prev.total ?? 0,
-            totalPages: cached.totalPages ?? prev.totalPages ?? 1,
-          }))
-          setPage(targetPage)
-          activeCacheKeyRef.current = requestCacheKey
-          setLoading(false)
-          setLoadingMore(false)
-          setError('')
-          return
         }
       }
-    }
 
-    if (append) {
-      setLoadingMore(true)
-    } else {
-      setLoading(true)
-      setError('')
-    }
-    try {
+      if (append) {
+        setLoadingMore(true)
+      } else {
+        setLoading(true)
+        setError('')
+      }
+
       const r = await fetchSeguimientoList({
         ...filtros,
         page: targetPage,
@@ -352,7 +387,9 @@ export default function SeguimientoPage() {
           ? appendUniqueItems(prev.items, r.items || [])
           : r.items || [],
       }))
-      setPage(typeof r.page === 'number' ? r.page : targetPage)
+      const loadedPage = typeof r.page === 'number' ? r.page : targetPage
+      setPage(loadedPage)
+      maxLoadedPageRef.current = Math.max(maxLoadedPageRef.current, loadedPage)
       if (!append && targetPage === 1) {
         activeCacheKeyRef.current = requestCacheKey
       } else if (append && targetPage > 1) {
@@ -368,6 +405,7 @@ export default function SeguimientoPage() {
       }
       setError(e?.message || 'No se pudo cargar seguimiento')
     } finally {
+      pagesInFlightRef.current.delete(targetPage)
       if (requestSeq === requestSeqRef.current && epoch === listEpochRef.current) {
         setLoading(false)
         setLoadingMore(false)
@@ -375,9 +413,20 @@ export default function SeguimientoPage() {
     }
   }, [filtros, getCacheEntry, cacheKey, setCachePage, clearCacheEntry])
 
+  loadMoreStateRef.current = {
+    loading,
+    loadingMore,
+    error,
+    totalPages,
+    cacheKey,
+    cargarPagina,
+  }
+
   useEffect(() => {
     listEpochRef.current += 1
     activeCacheKeyRef.current = ''
+    maxLoadedPageRef.current = 0
+    pagesInFlightRef.current = new Set()
     clearScreenCache('seguimiento')
     setData({ items: [], total: 0, totalPages: 1 })
     setPage(1)
@@ -388,19 +437,41 @@ export default function SeguimientoPage() {
   }, [cacheKey, notasVersion, rutasVersion, refreshKey, clearScreenCache, cargarPagina])
 
   useEffect(() => {
-    setRutaInput(seguimientoFilters.ruta || '')
-  }, [seguimientoFilters.ruta])
+    if (isVendedor) return undefined
+    setRutasInput(seguimientoFilters.rutas || '')
+  }, [isVendedor, seguimientoFilters.rutas])
+
+  useEffect(() => {
+    if (!isVendedor) return undefined
+    let cancel = false
+    setRutasAsignadasError('')
+    void profileApi
+      .getMe()
+      .then((r) => {
+        if (!cancel) setRutasAsignadas(r.rutas || [])
+      })
+      .catch((e) => {
+        if (!cancel) {
+          setRutasAsignadas([])
+          setRutasAsignadasError(e?.message || 'No se pudieron cargar tus rutas asignadas')
+        }
+      })
+    return () => {
+      cancel = true
+    }
+  }, [isVendedor, rutasVersion])
 
   useEffect(() => {
     setQInput(seguimientoFilters.q || '')
   }, [seguimientoFilters.q])
 
   useEffect(() => {
-    const next = String(rutaInput || '').trim().toUpperCase()
-    if (next === String(seguimientoFilters.ruta || '').trim().toUpperCase()) return
-    const t = setTimeout(() => setSeguimientoFilters({ ruta: next }), 400)
+    if (isVendedor) return undefined
+    const next = formatRutasList(parseRutasList(rutasInput))
+    if (next === formatRutasList(parseRutasList(seguimientoFilters.rutas))) return
+    const t = setTimeout(() => setSeguimientoFilters({ rutas: next }), 400)
     return () => clearTimeout(t)
-  }, [rutaInput, seguimientoFilters.ruta, setSeguimientoFilters])
+  }, [isVendedor, rutasInput, seguimientoFilters.rutas, setSeguimientoFilters])
 
   useEffect(() => {
     const next = String(qInput || '').trim()
@@ -411,20 +482,24 @@ export default function SeguimientoPage() {
 
   useEffect(() => {
     const node = loadMoreRef.current
-    if (!node) return
+    if (!node) return undefined
     const obs = new IntersectionObserver(
       (entries) => {
         const first = entries[0]
         if (!first?.isIntersecting) return
-        if (loading || loadingMore || !hasMore || error) return
-        if (activeCacheKeyRef.current !== cacheKey) return
-        void cargarPagina(page + 1, true)
+        const s = loadMoreStateRef.current
+        if (s.loading || s.loadingMore || s.error) return
+        if (activeCacheKeyRef.current !== s.cacheKey) return
+        const nextPage = maxLoadedPageRef.current + 1
+        if (nextPage > s.totalPages) return
+        if (pagesInFlightRef.current.has(nextPage)) return
+        void s.cargarPagina?.(nextPage, true)
       },
       { root: null, rootMargin: '200px 0px', threshold: 0.1 },
     )
     obs.observe(node)
     return () => obs.disconnect()
-  }, [page, hasMore, loading, loadingMore, error, cargarPagina, cacheKey])
+  }, [page, data.items.length, cacheKey])
 
   async function handleCopySerieFolio(value) {
     try {
@@ -445,6 +520,50 @@ export default function SeguimientoPage() {
     setRefreshKey((k) => k + 1)
   }
 
+  function handleTodasTramos() {
+    setSeguimientoFilters({ dias_bucket: '' })
+  }
+
+  function toggleTramo(bucketId) {
+    const id = String(bucketId || '').trim().toLowerCase()
+    if (!id) return
+    const selected = parseDiasBucketsList(seguimientoFilters.dias_bucket)
+    if (selected.length === 0) {
+      setSeguimientoFilters({ dias_bucket: id })
+      return
+    }
+    const set = new Set(selected)
+    if (set.has(id)) {
+      set.delete(id)
+      setSeguimientoFilters({ dias_bucket: formatDiasBucketsList([...set]) })
+      return
+    }
+    set.add(id)
+    setSeguimientoFilters({ dias_bucket: formatDiasBucketsList([...set]) })
+  }
+
+  function handleTodasRutasVendedor() {
+    setSeguimientoFilters({ rutas: '' })
+  }
+
+  function toggleRutaVendedor(codigo) {
+    const code = String(codigo || '').trim().toUpperCase()
+    if (!code) return
+    const selected = parseRutasList(seguimientoFilters.rutas)
+    if (selected.length === 0) {
+      setSeguimientoFilters({ rutas: code })
+      return
+    }
+    const set = new Set(selected)
+    if (set.has(code)) {
+      set.delete(code)
+      setSeguimientoFilters({ rutas: formatRutasList([...set]) })
+      return
+    }
+    set.add(code)
+    setSeguimientoFilters({ rutas: formatRutasList([...set]) })
+  }
+
   return (
     <section className="container-fluid px-0">
       <div className="d-flex align-items-center justify-content-between mb-3">
@@ -455,20 +574,33 @@ export default function SeguimientoPage() {
           </Link>
         )}
       </div>
-      {seguimientoFilters.dias_bucket && (
-        <div className="alert alert-info py-2 d-flex justify-content-between align-items-center mb-3">
+      <div className="alert alert-light border py-2 mb-3 small">
+        <div className="d-flex flex-wrap gap-x-4 gap-y-1">
           <span>
-            Filtrando por tramo: <strong>{BUCKET_LABELS[seguimientoFilters.dias_bucket] || seguimientoFilters.dias_bucket}</strong>
+            <span className="text-body-secondary">Empresa:</span>{' '}
+            <strong>{seguimientoFilters.empresaActiva}</strong>
           </span>
-          <button
-            type="button"
-            className="btn btn-sm btn-outline-info"
-            onClick={() => setSeguimientoFilters({ dias_bucket: '' })}
-          >
-            Limpiar tramo
-          </button>
+          <span>
+            <span className="text-body-secondary">Rutas:</span> <strong>{rutasActivasLabel}</strong>
+            {isVendedor && rutasSeleccionadas.length > 0 && rutasAsignadas.length > 0 ? (
+              <span className="text-body-secondary">
+                {' '}
+                ({rutasSeleccionadas.length} de {rutasAsignadas.length} asignadas)
+              </span>
+            ) : null}
+          </span>
+          <span>
+            <span className="text-body-secondary">Tramos:</span> <strong>{tramoActivoLabel}</strong>
+            {tramosSeleccionados.length > 1 ? (
+              <span className="text-body-secondary"> ({tramosSeleccionados.length} seleccionados)</span>
+            ) : null}
+          </span>
         </div>
-      )}
+        {isVendedor && rutasAsignadas.length === 0 && !rutasAsignadasError ? (
+          <div className="text-warning mt-1">Sin rutas asignadas. Contacta al administrador.</div>
+        ) : null}
+        {rutasAsignadasError ? <div className="text-danger mt-1">{rutasAsignadasError}</div> : null}
+      </div>
       <ul className="nav nav-tabs mb-3">
         <li className="nav-item">
           <button
@@ -492,22 +624,74 @@ export default function SeguimientoPage() {
 
       <div className="card mb-3">
         <div className="card-body">
-          <div className="row g-2">
-            <div className="col-12 col-md-6 col-lg-2">
-              <label className="form-label mb-1">Últimos días</label>
-              <select
-                className="form-select"
-                title="Filtra por fecha de la nota (desde hoy hacia atrás)"
-                value={seguimientoFilters.dias}
-                onChange={(e) => setSeguimientoFilters({ dias: e.target.value })}
-              >
-                <option value="">Sin límite</option>
-                <option value="7">7 días</option>
-                <option value="30">30 días</option>
-                <option value="90">90 días</option>
-                <option value="365">365 días</option>
-              </select>
+          <div className="mb-2 small text-body-secondary">Antigüedad (días desde fecha de nota)</div>
+          <div className="d-flex flex-wrap gap-1 mb-3">
+            <button
+              type="button"
+              className={`btn btn-sm ${tramosSeleccionados.length === 0 ? 'btn-primary' : 'btn-outline-secondary'}`}
+              onClick={handleTodasTramos}
+            >
+              Todos
+            </button>
+            {DIAS_BUCKETS_FILTER.map((b) => {
+              const isTodas = tramosSeleccionados.length === 0
+              const isSelected = tramosSeleccionados.includes(b.id)
+              return (
+                <button
+                  key={b.id}
+                  type="button"
+                  className={`btn btn-sm ${isTodas ? 'btn-outline-secondary' : isSelected ? 'btn-primary' : 'btn-outline-secondary'}`}
+                  onClick={() => toggleTramo(b.id)}
+                >
+                  {b.label}
+                </button>
+              )
+            })}
+          </div>
+
+          {isVendedor ? (
+            <div className="mb-3">
+              <div className="form-label mb-1">Tus rutas asignadas</div>
+              <div className="d-flex flex-wrap gap-1">
+                <button
+                  type="button"
+                  className={`btn btn-sm ${rutasSeleccionadas.length === 0 ? 'btn-primary' : 'btn-outline-secondary'}`}
+                  onClick={handleTodasRutasVendedor}
+                >
+                  Todas
+                </button>
+                {rutasAsignadas.map((r) => {
+                  const code = String(r.codigo || '').trim().toUpperCase()
+                  const isTodas = rutasSeleccionadas.length === 0
+                  const isSelected = rutasSeleccionadas.includes(code)
+                  return (
+                    <button
+                      key={r.id}
+                      type="button"
+                      title={r.nombre || code}
+                      className={`btn btn-sm ${isTodas ? 'btn-outline-secondary' : isSelected ? 'btn-primary' : 'btn-outline-secondary'}`}
+                      onClick={() => toggleRutaVendedor(code)}
+                    >
+                      {code}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
+          ) : (
+            <div className="mb-3">
+              <label className="form-label mb-1">Rutas (códigos, separados por coma)</label>
+              <input
+                className="form-control"
+                placeholder="DR201, DR202"
+                title="Códigos de ruta separados por coma; vacío = todas las rutas"
+                value={rutasInput}
+                onChange={(e) => setRutasInput(e.target.value)}
+              />
+            </div>
+          )}
+
+          <div className="row g-2">
             <div className="col-12 col-md-6 col-lg-2">
               <label className="form-label mb-1">Estado</label>
               <select
@@ -533,17 +717,7 @@ export default function SeguimientoPage() {
                 <option value="no">No</option>
               </select>
             </div>
-            <div className="col-12 col-md-6 col-lg-2">
-              <label className="form-label mb-1">Ruta (código exacto)</label>
-              <input
-                className="form-control"
-                placeholder="Ej: DR201"
-                title="Debe coincidir exactamente con el código de ruta (sin búsqueda parcial)"
-                value={rutaInput}
-                onChange={(e) => setRutaInput(e.target.value)}
-              />
-            </div>
-            <div className="col-12 col-lg-4">
+            <div className="col-12 col-lg-6">
               <label className="form-label mb-1">Buscar</label>
               <input
                 className="form-control"
@@ -566,6 +740,8 @@ export default function SeguimientoPage() {
                 <option value="fecha_ultima_asc">Última actualización — más antigua</option>
                 <option value="fecha_nota_desc">Fecha nota — más reciente</option>
                 <option value="fecha_nota_asc">Fecha nota — más antigua</option>
+                <option value="dias_corriente_desc">Días — mayor antigüedad</option>
+                <option value="dias_corriente_asc">Días — menor antigüedad</option>
               </select>
             </div>
             <div className="col-12 col-md-6 col-lg-7 d-flex align-items-end justify-content-md-end gap-3 mt-2 mt-md-0">
@@ -734,7 +910,7 @@ export default function SeguimientoPage() {
                 <th>ID</th>
                 <th>Serie/Folio</th>
                 <th>Fecha nota</th>
-                <th className="text-end" title="Días entre fecha nota y fecha corriente (o hoy)">
+                <th className="text-end" title="Días desde la fecha de la nota hasta hoy">
                   Días
                 </th>
                 <th>Cliente</th>
@@ -777,8 +953,8 @@ export default function SeguimientoPage() {
                           </button>
                         </div>
                       </td>
-                      <td className="text-nowrap small">{formatFechaNota(n.fecha_nota)}</td>
-                      <td className="text-end text-nowrap small" title="Entre fecha nota y fecha corriente (o hoy)">
+                      <td className="text-nowrap small">{formatFechaNotaDb(n.fecha_nota)}</td>
+                      <td className="text-end text-nowrap small" title="Días desde la fecha de la nota hasta hoy">
                         {formatDiasNotaCorriente(n.fecha_nota, n.fecha_corriente)}
                       </td>
                       <td>{n.cliente || '—'}</td>

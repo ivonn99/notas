@@ -15,9 +15,8 @@ const initialSeguimiento = {
   empresaActiva: 'DISTRIBUIDORA',
   estado: 'PENDIENTE',
   atencion: '',
-  ruta: '',
+  rutas: '',
   q: '',
-  dias: '',
   dias_bucket: '',
   orden: 'default',
   mostrarComentarios: false,
@@ -50,6 +49,8 @@ function normalizeSeguimientoOrden(orden) {
     'fecha_ultima_asc',
     'fecha_nota_desc',
     'fecha_nota_asc',
+    'dias_corriente_desc',
+    'dias_corriente_asc',
   ].includes(raw)
     ? raw
     : initialSeguimiento.orden
@@ -75,7 +76,7 @@ export const useListFiltersStore = create(
     }),
     {
       name: 'nc_list_filters_v1',
-      version: 4,
+      version: 6,
       migrate: (persisted) => {
         if (!persisted || typeof persisted !== 'object') return persisted
         const state = persisted
@@ -84,6 +85,22 @@ export const useListFiltersStore = create(
           state.seguimiento && typeof state.seguimiento === 'object'
             ? state.seguimiento
             : {}
+
+        const rutasLegacy =
+          seguimiento.rutas != null
+            ? String(seguimiento.rutas)
+            : seguimiento.ruta != null
+              ? String(seguimiento.ruta)
+              : initialSeguimiento.rutas
+
+        let diasBucket =
+          seguimiento.dias_bucket != null ? String(seguimiento.dias_bucket) : initialSeguimiento.dias_bucket
+        if (!diasBucket) {
+          const legacyDias = Number.parseInt(String(seguimiento.dias ?? ''), 10)
+          if (Number.isFinite(legacyDias) && legacyDias > 0 && legacyDias <= 30) {
+            diasBucket = 'r1'
+          }
+        }
 
         const migrated = {
           ...state,
@@ -95,11 +112,13 @@ export const useListFiltersStore = create(
           seguimiento: {
             ...initialSeguimiento,
             ...seguimiento,
-            dias: seguimiento.dias != null ? seguimiento.dias : initialSeguimiento.dias,
-            dias_bucket: seguimiento.dias_bucket != null ? seguimiento.dias_bucket : initialSeguimiento.dias_bucket,
+            rutas: rutasLegacy,
+            dias_bucket: diasBucket,
             orden: normalizeSeguimientoOrden(seguimiento.orden),
           },
         }
+        delete migrated.seguimiento.ruta
+        delete migrated.seguimiento.dias
 
         return migrated
       },

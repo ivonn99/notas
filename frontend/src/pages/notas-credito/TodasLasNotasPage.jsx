@@ -151,7 +151,7 @@ function NotaCreditoCardMovil({ n, onCopySerieFolio, onAbrirComentario, mostrarC
           <dt className="col-5 text-body-secondary">Fecha nota</dt>
           <dd className="col-7 mb-1">{formatFechaNota(n.fecha_nota)}</dd>
           <dt className="col-5 text-body-secondary">Días</dt>
-          <dd className="col-7 mb-1" title="Entre fecha nota y fecha corriente (o hoy)">
+          <dd className="col-7 mb-1" title="Días desde la fecha de la nota hasta hoy">
             {formatDiasNotaCorriente(n.fecha_nota, n.fecha_corriente)}
           </dd>
           <dt className="col-5 text-body-secondary">Monto</dt>
@@ -490,7 +490,7 @@ export default function TodasLasNotasPage() {
                 <th>Empresa</th>
                 <th>Ruta</th>
                 <th>Fecha nota</th>
-                <th className="text-end" title="Días entre fecha nota y fecha corriente (o hoy)">
+                <th className="text-end" title="Días desde la fecha de la nota hasta hoy">
                   Días
                 </th>
                 <th className="text-end">Monto</th>
@@ -534,7 +534,7 @@ export default function TodasLasNotasPage() {
                       <td>{n.empresa || '—'}</td>
                       <td>{n.ruta_codigo || '—'}</td>
                       <td className="text-nowrap">{formatFechaNota(n.fecha_nota)}</td>
-                      <td className="text-end text-nowrap" title="Entre fecha nota y fecha corriente (o hoy)">
+                      <td className="text-end text-nowrap" title="Días desde la fecha de la nota hasta hoy">
                         {formatDiasNotaCorriente(n.fecha_nota, n.fecha_corriente)}
                       </td>
                       <td className="text-end">{money(n.monto)}</td>
