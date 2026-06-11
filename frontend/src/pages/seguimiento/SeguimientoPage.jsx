@@ -231,6 +231,32 @@ export default function SeguimientoPage() {
   const [comentarioNota, setComentarioNota] = useState(null)
   const [rutasInput, setRutasInput] = useState(seguimientoFilters.rutas || '')
   const [qInput, setQInput] = useState(seguimientoFilters.q || '')
+
+  const pendingRutasFromInput = useCallback(() => {
+    return formatRutasList(parseRutasList(rutasInput))
+  }, [rutasInput])
+
+  const updateSeguimientoFilters = useCallback(
+    (partial) => {
+      if (!isVendedor && !Object.prototype.hasOwnProperty.call(partial, 'rutas')) {
+        const pending = pendingRutasFromInput()
+        const current = formatRutasList(parseRutasList(seguimientoFilters.rutas))
+        if (pending !== current) {
+          setSeguimientoFilters({ ...partial, rutas: pending })
+          return
+        }
+      }
+      setSeguimientoFilters(partial)
+    },
+    [isVendedor, pendingRutasFromInput, seguimientoFilters.rutas, setSeguimientoFilters],
+  )
+
+  const applyRutasInputNow = useCallback(() => {
+    if (isVendedor) return
+    const next = pendingRutasFromInput()
+    if (next === formatRutasList(parseRutasList(seguimientoFilters.rutas))) return
+    setSeguimientoFilters({ rutas: next })
+  }, [isVendedor, pendingRutasFromInput, seguimientoFilters.rutas, setSeguimientoFilters])
   const [rutasAsignadas, setRutasAsignadas] = useState([])
   const [rutasAsignadasError, setRutasAsignadasError] = useState('')
   const requestSeqRef = useRef(0)
@@ -476,9 +502,9 @@ export default function SeguimientoPage() {
   useEffect(() => {
     const next = String(qInput || '').trim()
     if (next === String(seguimientoFilters.q || '').trim()) return
-    const t = setTimeout(() => setSeguimientoFilters({ q: next }), 400)
+    const t = setTimeout(() => updateSeguimientoFilters({ q: next }), 400)
     return () => clearTimeout(t)
-  }, [qInput, seguimientoFilters.q, setSeguimientoFilters])
+  }, [qInput, seguimientoFilters.q, updateSeguimientoFilters])
 
   useEffect(() => {
     const node = loadMoreRef.current
@@ -521,7 +547,7 @@ export default function SeguimientoPage() {
   }
 
   function handleTodasTramos() {
-    setSeguimientoFilters({ dias_bucket: '' })
+    updateSeguimientoFilters({ dias_bucket: '' })
   }
 
   function toggleTramo(bucketId) {
@@ -529,17 +555,17 @@ export default function SeguimientoPage() {
     if (!id) return
     const selected = parseDiasBucketsList(seguimientoFilters.dias_bucket)
     if (selected.length === 0) {
-      setSeguimientoFilters({ dias_bucket: id })
+      updateSeguimientoFilters({ dias_bucket: id })
       return
     }
     const set = new Set(selected)
     if (set.has(id)) {
       set.delete(id)
-      setSeguimientoFilters({ dias_bucket: formatDiasBucketsList([...set]) })
+      updateSeguimientoFilters({ dias_bucket: formatDiasBucketsList([...set]) })
       return
     }
     set.add(id)
-    setSeguimientoFilters({ dias_bucket: formatDiasBucketsList([...set]) })
+    updateSeguimientoFilters({ dias_bucket: formatDiasBucketsList([...set]) })
   }
 
   function handleTodasRutasVendedor() {
@@ -606,7 +632,7 @@ export default function SeguimientoPage() {
           <button
             type="button"
             className={`nav-link${seguimientoFilters.empresaActiva === 'DISTRIBUIDORA' ? ' active' : ''}`}
-            onClick={() => setSeguimientoFilters({ empresaActiva: 'DISTRIBUIDORA' })}
+            onClick={() => updateSeguimientoFilters({ empresaActiva: 'DISTRIBUIDORA' })}
           >
             Distribuidora
           </button>
@@ -615,7 +641,7 @@ export default function SeguimientoPage() {
           <button
             type="button"
             className={`nav-link${seguimientoFilters.empresaActiva === 'RODRIGO' ? ' active' : ''}`}
-            onClick={() => setSeguimientoFilters({ empresaActiva: 'RODRIGO' })}
+            onClick={() => updateSeguimientoFilters({ empresaActiva: 'RODRIGO' })}
           >
             Rodrigo
           </button>
@@ -687,6 +713,10 @@ export default function SeguimientoPage() {
                 title="Códigos de ruta separados por coma; vacío = todas las rutas"
                 value={rutasInput}
                 onChange={(e) => setRutasInput(e.target.value)}
+                onBlur={applyRutasInputNow}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') applyRutasInputNow()
+                }}
               />
             </div>
           )}
@@ -697,7 +727,7 @@ export default function SeguimientoPage() {
               <select
                 className="form-select"
                 value={seguimientoFilters.estado}
-                onChange={(e) => setSeguimientoFilters({ estado: e.target.value })}
+                onChange={(e) => updateSeguimientoFilters({ estado: e.target.value })}
               >
                 <option value="">Todos</option>
                 <option value="PENDIENTE">PENDIENTE</option>
@@ -710,7 +740,7 @@ export default function SeguimientoPage() {
               <select
                 className="form-select"
                 value={seguimientoFilters.atencion}
-                onChange={(e) => setSeguimientoFilters({ atencion: e.target.value })}
+                onChange={(e) => updateSeguimientoFilters({ atencion: e.target.value })}
               >
                 <option value="">Todos</option>
                 <option value="si">Sí</option>
@@ -733,7 +763,7 @@ export default function SeguimientoPage() {
               <select
                 className="form-select"
                 value={seguimientoFilters.orden}
-                onChange={(e) => setSeguimientoFilters({ orden: e.target.value })}
+                onChange={(e) => updateSeguimientoFilters({ orden: e.target.value })}
               >
                 <option value="default">Atención y última actividad (predeterminado)</option>
                 <option value="fecha_ultima_desc">Última actualización — más reciente</option>

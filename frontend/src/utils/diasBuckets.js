@@ -80,8 +80,8 @@ export function buildDiasBucketsSupabaseOr(buckets) {
     const range = diasBucketToDateRange(bucket)
     if (!range) continue
     const andParts = ['fecha_nota.not.is.null']
-    if (range.desde) andParts.push(`fecha_nota.gte.${range.desde}`)
-    if (range.hasta) andParts.push(`fecha_nota.lt.${range.hasta}`)
+    if (range.desde) andParts.push(`fecha_nota.gte."${range.desde}"`)
+    if (range.hasta) andParts.push(`fecha_nota.lt."${range.hasta}"`)
     parts.push(`and(${andParts.join(',')})`)
   }
   return parts.length ? parts.join(',') : null

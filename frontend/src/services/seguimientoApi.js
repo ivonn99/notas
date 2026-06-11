@@ -7,7 +7,7 @@ import {
   formatDiasBucketsList,
   parseDiasBucketsList,
 } from '../utils/diasBuckets.js'
-import { formatRutasList, parseRutasList } from '../utils/seguimientoRutas.js'
+import { fetchRutaIdsByCodigos, formatRutasList, parseRutasList } from '../utils/seguimientoRutas.js'
 
 function jsonOrEmpty(text) {
   if (!text) return {}
@@ -147,6 +147,17 @@ function applySort(query, sort) {
     .order('id', { ascending: false, nullsFirst: false })
 }
 
+function buildSeguimientoCountSelect({ atencion, requiereComentarios = false }) {
+  const parts = ['id']
+  const atencionNorm = String(atencion ?? '').trim().toLowerCase()
+  if (requiereComentarios || ['si', 'sí', 'true', '1'].includes(atencionNorm)) {
+    parts.push('aclaraciones!inner(id)')
+  } else if (['no', 'false', '0'].includes(atencionNorm)) {
+    parts.push('aclaraciones!left(id)')
+  }
+  return parts.join(', ')
+}
+
 function applySeguimientoListFilters(
   query,
   { estado, empresa, q, atencion, allowedFinal, fechaNotaDesde, fechaNotaHasta, diasBucketOr },
@@ -154,7 +165,9 @@ function applySeguimientoListFilters(
   let qy = query
   if (estado) qy = qy.eq('estado', estado)
   if (empresa) qy = qy.eq('empresa', empresa)
-  if (q) qy = qy.or(`serie_folio.ilike.%${q}%,cliente.ilike.%${q}%,usuario_vendedor_pv.ilike.%${q}%`)
+  if (q) {
+    qy = qy.or(`serie_folio.ilike.%${q}%,cliente.ilike.%${q}%,usuario_vendedor_pv.ilike.%${q}%`)
+  }
   if (['si', 'sí', 'true', '1'].includes(atencion)) {
     qy = qy.eq('estado', 'PENDIENTE').not('aclaraciones', 'is', null)
   }
@@ -440,12 +453,7 @@ async function fetchSeguimientoListSupabase(params = {}) {
 
   let rutaIdsFiltro = null
   if (rutasList.length > 0) {
-    const { data: rutasByCode, error: rutaErr } = await supabase
-      .from('rutas')
-      .select('id, codigo')
-      .in('codigo', rutasList)
-    if (rutaErr) throw new Error(rutaErr.message || 'No se pudo filtrar por ruta')
-    rutaIdsFiltro = (rutasByCode || []).map((r) => r.id)
+    rutaIdsFiltro = await fetchRutaIdsByCodigos(supabase, rutasList)
     if (rutaIdsFiltro.length === 0) {
       return {
         ok: true,
@@ -511,24 +519,30 @@ async function fetchSeguimientoListSupabase(params = {}) {
     diasBucketOr,
   }
 
+  const atencionNorm = String(atencion ?? '').trim().toLowerCase()
+  const countSelect = buildSeguimientoCountSelect({ atencion })
+  const countFilterArgs = ['si', 'sí', 'true', '1'].includes(atencionNorm)
+    ? { ...filterArgs, atencion: '', estado: 'PENDIENTE' }
+    : filterArgs
   const { count: totalCount, error: countError } = await applySeguimientoListFilters(
-    supabase.from('notas_credito').select('id, aclaraciones(id)', { count: 'exact', head: true }),
-    filterArgs,
+    supabase.from('notas_credito').select(countSelect, { count: 'exact', head: true }),
+    countFilterArgs,
   )
   if (countError) throw new Error(countError.message || 'No se pudo cargar seguimiento')
 
   /** Misma regla que el API SQL: entre el total filtrado, cuántas están PENDIENTE con al menos un comentario. */
   let requiereAtencionTotal = 0
   if (includeAggregates) {
-    const atencionNorm = String(atencion ?? '').trim().toLowerCase()
     const estadoNorm = String(estado ?? '').trim().toUpperCase()
     if (!['no', 'false', '0'].includes(atencionNorm) && estadoNorm !== 'RESUELTA' && estadoNorm !== 'CANCELADA') {
+      const raCountSelect = buildSeguimientoCountSelect({ requiereComentarios: true })
       const { count: raCount, error: raErr } = await applySeguimientoListFilters(
-        supabase.from('notas_credito').select('id, aclaraciones(id)', { count: 'exact', head: true }),
+        supabase.from('notas_credito').select(raCountSelect, { count: 'exact', head: true }),
         {
           ...filterArgs,
           estado: 'PENDIENTE',
-          atencion: 'si',
+          // El inner join en el select ya exige al menos un comentario.
+          atencion: '',
         },
       )
       if (raErr) throw new Error(raErr.message || 'No se pudo calcular notas que requieren atención')
