@@ -63,14 +63,10 @@ function formatDiasDesdeHoy(fechaNota) {
   return Number.isFinite(diff) ? String(diff) : '—'
 }
 
-/** El API de detalle no envía `tiene_comentarios`; se infiere de aclaraciones. */
+/** El API de detalle expone requiere_atencion en nota. */
 function notaDetalleMuestraAtencion(detalle) {
   if (!detalle?.nota) return false
-  return notaMuestraAtencion({
-    ...detalle.nota,
-    tiene_comentarios:
-      Array.isArray(detalle.aclaraciones) && detalle.aclaraciones.length > 0,
-  })
+  return notaMuestraAtencion(detalle.nota)
 }
 
 async function copyText(text) {

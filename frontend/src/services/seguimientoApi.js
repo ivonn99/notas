@@ -56,16 +56,10 @@ async function getCurrentAuthMeta() {
 
 function normalizeSort(sort) {
   const raw = String(sort || '').trim().toLowerCase()
-  // Compatibilidad con filtros guardados previamente.
-  const key =
-    raw === 'fecha_corriente_desc'
-      ? 'fecha_nota_desc'
-      : raw === 'fecha_corriente_asc'
-        ? 'fecha_nota_asc'
-        : raw
+  if (raw === 'fecha_corriente_desc') return 'fecha_nota_desc'
+  if (raw === 'fecha_corriente_asc') return 'fecha_nota_asc'
+  if (raw === 'default' || raw === 'atencion') return 'fecha_nota_asc'
   const allowed = new Set([
-    'default',
-    'atencion',
     'fecha_ultima_desc',
     'fecha_ultima_asc',
     'fecha_nota_desc',
@@ -73,7 +67,7 @@ function normalizeSort(sort) {
     'dias_corriente_desc',
     'dias_corriente_asc',
   ])
-  return allowed.has(key) ? key : 'default'
+  return allowed.has(raw) ? raw : 'fecha_nota_asc'
 }
 
 async function attachAclaracionesToNotas(notas) {
@@ -127,47 +121,29 @@ async function resolveAllowedRutaIds(meta) {
 }
 
 function applySort(query, sort) {
-  if (sort === 'default' || sort === 'atencion') {
+  if (sort === 'fecha_ultima_desc') {
     return query
       .order('fecha_ultima_actualizacion', { ascending: false, nullsFirst: false })
       .order('id', { ascending: false, nullsFirst: false })
   }
-  if (sort === 'fecha_ultima_desc') return query.order('fecha_ultima_actualizacion', { ascending: false, nullsFirst: false }).order('id', { ascending: false, nullsFirst: false })
-  if (sort === 'fecha_ultima_asc') return query.order('fecha_ultima_actualizacion', { ascending: true, nullsFirst: false }).order('id', { ascending: true, nullsFirst: false })
-  if (sort === 'fecha_nota_desc') return query.order('fecha_nota', { ascending: false, nullsFirst: false }).order('id', { ascending: false, nullsFirst: false })
-  if (sort === 'fecha_nota_asc') return query.order('fecha_nota', { ascending: true, nullsFirst: false }).order('id', { ascending: true, nullsFirst: false })
+  if (sort === 'fecha_ultima_asc') {
+    return query
+      .order('fecha_ultima_actualizacion', { ascending: true, nullsFirst: false })
+      .order('id', { ascending: true, nullsFirst: false })
+  }
+  if (sort === 'fecha_nota_desc') {
+    return query.order('fecha_nota', { ascending: false, nullsFirst: false }).order('id', { ascending: false, nullsFirst: false })
+  }
+  if (sort === 'fecha_nota_asc') {
+    return query.order('fecha_nota', { ascending: true, nullsFirst: false }).order('id', { ascending: true, nullsFirst: false })
+  }
   if (sort === 'dias_corriente_desc') {
     return query.order('fecha_nota', { ascending: true, nullsFirst: false }).order('id', { ascending: true, nullsFirst: false })
   }
   if (sort === 'dias_corriente_asc') {
     return query.order('fecha_nota', { ascending: false, nullsFirst: false }).order('id', { ascending: false, nullsFirst: false })
   }
-  return query
-    .order('fecha_ultima_actualizacion', { ascending: false, nullsFirst: false })
-    .order('id', { ascending: false, nullsFirst: false })
-}
-
-async function fetchNotaIdsConComentarios() {
-  const { data, error } = await supabase.from('aclaraciones').select('nota_id')
-  if (error) throw new Error(error.message || 'No se pudieron cargar comentarios')
-  return [...new Set((data || []).map((row) => row.nota_id).filter((id) => id != null))]
-}
-
-function mergeAtencionFilterArgs(filterArgs, atencion, notaIdsConComentarios) {
-  const norm = String(atencion ?? '').trim().toLowerCase()
-  const next = { ...filterArgs, atencion: '' }
-  if (['si', 'sí', 'true', '1'].includes(norm)) {
-    next.estado = 'PENDIENTE'
-    next.restrictNotaIds = notaIdsConComentarios.length ? notaIdsConComentarios : [-1]
-    return next
-  }
-  if (['no', 'false', '0'].includes(norm)) {
-    if (notaIdsConComentarios.length) {
-      next.atencionExcludeOr = `estado.neq.PENDIENTE,id.not.in.(${notaIdsConComentarios.join(',')})`
-    }
-    return next
-  }
-  return next
+  return query.order('fecha_nota', { ascending: true, nullsFirst: false }).order('id', { ascending: true, nullsFirst: false })
 }
 
 function applySeguimientoListFilters(
@@ -176,33 +152,48 @@ function applySeguimientoListFilters(
     estado,
     empresa,
     q,
+    atencion,
     allowedFinal,
     fechaNotaDesde,
     fechaNotaHasta,
     diasBucketOr,
-    restrictNotaIds,
-    atencionExcludeOr,
+    soloRequiereAtencion,
   },
 ) {
   let qy = query
   if (estado) qy = qy.eq('estado', estado)
   if (empresa) qy = qy.eq('empresa', empresa)
-  if (q) {
-    qy = qy.or(`serie_folio.ilike.%${q}%,cliente.ilike.%${q}%,usuario_vendedor_pv.ilike.%${q}%`)
-  }
-  if (Array.isArray(restrictNotaIds) && restrictNotaIds.length) {
-    qy = qy.in('id', restrictNotaIds)
-  }
-  if (atencionExcludeOr) {
-    qy = qy.or(atencionExcludeOr)
-  }
   if (Array.isArray(allowedFinal)) qy = qy.in('ruta_id', allowedFinal)
+
+  const atencionNorm = String(atencion ?? '').trim().toLowerCase()
+  if (['si', 'sí', 'true', '1'].includes(atencionNorm)) {
+    qy = qy.eq('requiere_atencion', true)
+  } else if (['no', 'false', '0'].includes(atencionNorm)) {
+    qy = qy.eq('requiere_atencion', false)
+  } else if (soloRequiereAtencion) {
+    qy = qy.eq('requiere_atencion', true)
+  }
+
+  const orGroups = []
+  if (q) {
+    orGroups.push(
+      `or(serie_folio.ilike.%${q}%,cliente.ilike.%${q}%,usuario_vendedor_pv.ilike.%${q}%)`,
+    )
+  }
   if (diasBucketOr) {
-    qy = qy.or(diasBucketOr)
+    orGroups.push(`or(${diasBucketOr})`)
   } else {
     if (fechaNotaDesde) qy = qy.gte('fecha_nota', fechaNotaDesde)
     if (fechaNotaHasta) qy = qy.lt('fecha_nota', fechaNotaHasta)
   }
+
+  if (orGroups.length > 1) {
+    qy = qy.filter('and', `(${orGroups.join(',')})`)
+  } else if (orGroups.length === 1) {
+    const group = orGroups[0]
+    qy = qy.or(group.startsWith('or(') ? group.slice(3, -1) : group)
+  }
+
   return qy
 }
 
@@ -534,6 +525,7 @@ async function fetchSeguimientoListSupabase(params = {}) {
     estado,
     empresa,
     q,
+    atencion,
     allowedFinal,
     fechaNotaDesde,
     fechaNotaHasta,
@@ -541,28 +533,24 @@ async function fetchSeguimientoListSupabase(params = {}) {
   }
 
   const atencionNorm = String(atencion ?? '').trim().toLowerCase()
-  const notaIdsConComentarios = await fetchNotaIdsConComentarios()
-  const resolvedFilterArgs = mergeAtencionFilterArgs(filterArgs, atencion, notaIdsConComentarios)
+  const estadoNorm = String(estado ?? '').trim().toUpperCase()
 
   const { count: totalCount, error: countError } = await applySeguimientoListFilters(
     supabase.from('notas_credito').select('id', { count: 'exact', head: true }),
-    resolvedFilterArgs,
+    filterArgs,
   )
   if (countError) throw new Error(countError.message || 'No se pudo cargar seguimiento')
 
-  /** Misma regla que el API SQL: entre el total filtrado, cuántas están PENDIENTE con al menos un comentario. */
   let requiereAtencionTotal = 0
   if (includeAggregates) {
-    const estadoNorm = String(estado ?? '').trim().toUpperCase()
-    if (!['no', 'false', '0'].includes(atencionNorm) && estadoNorm !== 'RESUELTA' && estadoNorm !== 'CANCELADA') {
-      const raFilterArgs = {
-        ...filterArgs,
-        estado: 'PENDIENTE',
-        restrictNotaIds: notaIdsConComentarios.length ? notaIdsConComentarios : [-1],
-      }
+    if (
+      !['no', 'false', '0'].includes(atencionNorm) &&
+      estadoNorm !== 'RESUELTA' &&
+      estadoNorm !== 'CANCELADA'
+    ) {
       const { count: raCount, error: raErr } = await applySeguimientoListFilters(
         supabase.from('notas_credito').select('id', { count: 'exact', head: true }),
-        raFilterArgs,
+        { ...filterArgs, atencion: '', soloRequiereAtencion: true },
       )
       if (raErr) throw new Error(raErr.message || 'No se pudo calcular notas que requieren atención')
       requiereAtencionTotal = raCount ?? 0
@@ -586,7 +574,7 @@ async function fetchSeguimientoListSupabase(params = {}) {
     `,
       { count: 'exact' },
     )
-  baseQuery = applySeguimientoListFilters(baseQuery, resolvedFilterArgs)
+  baseQuery = applySeguimientoListFilters(baseQuery, filterArgs)
 
   let listQuery = applySort(baseQuery, sort).range(fromSafe, toSafe)
   const { data: rows, error } = await listQuery

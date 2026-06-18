@@ -49,9 +49,23 @@ const BUCKET_LABELS = {
   d366_plus: 'Más de 365 días',
 }
 
+const SITUACION_LABELS = {
+  requiere_atencion: 'Requiere atención',
+  sin_comentarios: 'Sin comentarios',
+  sin_ruta: 'Sin ruta asignada',
+  sin_vendedor: 'Sin vendedor',
+  antiguedad_90: 'Más de 90 días',
+  antiguedad_180: 'Más de 180 días',
+  saldo_cero: 'Saldo en cero',
+  resuelta_automatica: 'Resuelta automáticamente',
+}
+
 const TAB_INDICADORES = 'indicadores'
+const TAB_ATRASO_ESTRUCTURAL = 'atraso_estructural'
 const TAB_PANEL_GENERAL = 'panel_general'
 const TAB_TABLAS = 'tablas'
+
+const TABS_REPORTE = [TAB_INDICADORES, TAB_ATRASO_ESTRUCTURAL, TAB_PANEL_GENERAL, TAB_TABLAS]
 
 function loadStoredReportFilters() {
   try {
@@ -73,6 +87,12 @@ function money(value) {
     currency: 'MXN',
     maximumFractionDigits: 2,
   }).format(n)
+}
+
+function pct(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return '—'
+  return `${n.toFixed(1)}%`
 }
 
 function fmtDate(value) {
@@ -161,6 +181,142 @@ function ReporteRutaIndicadorCardMovil({ r }) {
   )
 }
 
+function ReporteSituacionCardMovil({ r, labels, onClick }) {
+  const clickable = Boolean(onClick)
+  return (
+    <div
+      className={`card border shadow-sm${clickable ? ' cursor-pointer' : ''}`}
+      onClick={clickable ? onClick : undefined}
+      onKeyDown={
+        clickable
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') onClick()
+            }
+          : undefined
+      }
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+    >
+      <div className="card-body py-2">
+        <div className="fw-medium mb-2">{labels[r.situacion_id] || r.situacion_id}</div>
+        <div className="d-flex justify-content-between small">
+          <span className="text-body-secondary">Notas</span>
+          <span>{r.notas?.toLocaleString?.('es-MX') ?? r.notas}</span>
+        </div>
+        <div className="d-flex justify-content-between small">
+          <span className="text-body-secondary">Saldo</span>
+          <span className="fw-medium">{money(r.saldo_total)}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ReporteClienteCardMovil({ r, onClick }) {
+  const clickable = Boolean(onClick)
+  return (
+    <div
+      className={`card border shadow-sm${clickable ? ' cursor-pointer' : ''}`}
+      onClick={clickable ? onClick : undefined}
+      onKeyDown={
+        clickable
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') onClick()
+            }
+          : undefined
+      }
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+    >
+      <div className="card-body py-2">
+        <div className="fw-medium mb-2 text-break">{r.cliente}</div>
+        <div className="d-flex justify-content-between small">
+          <span className="text-body-secondary">Notas</span>
+          <span>{r.notas?.toLocaleString?.('es-MX') ?? r.notas}</span>
+        </div>
+        <div className="d-flex justify-content-between small">
+          <span className="text-body-secondary">Saldo</span>
+          <span className="fw-medium">{money(r.saldo_total)}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ReporteAtrasoEstructuralCardMovil({ r, onClick }) {
+  return (
+    <div
+      className="card border border-danger-subtle shadow-sm cursor-pointer"
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') onClick?.()
+      }}
+      role="button"
+      tabIndex={0}
+    >
+      <div className="card-body py-2">
+        <div className="d-flex justify-content-between align-items-start gap-2 mb-2">
+          <div className="fw-medium text-break">{r.cliente}</div>
+          <span className="badge text-bg-danger flex-shrink-0">Atraso estructural</span>
+        </div>
+        <div className="d-flex justify-content-between small">
+          <span className="text-body-secondary">Saldo 0–30 d</span>
+          <span>{money(r.saldo_0_30)}</span>
+        </div>
+        <div className="d-flex justify-content-between small">
+          <span className="text-body-secondary">Saldo &gt;30 d</span>
+          <span className="fw-medium">{money(r.saldo_mas_30)}</span>
+        </div>
+        <div className="d-flex justify-content-between small">
+          <span className="text-body-secondary">% &gt;30 d</span>
+          <span className="fw-semibold text-danger">{pct(r.pct_mas_30)}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ReporteAtrasoRutaCardMovil({ r, onClick }) {
+  return (
+    <div
+      className={`card border shadow-sm${onClick ? ' cursor-pointer' : ''}${r.atraso_estructural ? ' border-danger-subtle' : ''}`}
+      onClick={onClick}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') onClick()
+            }
+          : undefined
+      }
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+    >
+      <div className="card-body py-2">
+        <div className="d-flex justify-content-between align-items-start gap-2 mb-2">
+          <div className="fw-medium">{r.ruta_codigo}</div>
+          {r.atraso_estructural ? (
+            <span className="badge text-bg-danger flex-shrink-0">Atraso</span>
+          ) : (
+            <span className="badge text-bg-success flex-shrink-0">OK</span>
+          )}
+        </div>
+        <div className="d-flex justify-content-between small">
+          <span className="text-body-secondary">Saldo 0–30 d</span>
+          <span>{money(r.saldo_0_30)}</span>
+        </div>
+        <div className="d-flex justify-content-between small">
+          <span className="text-body-secondary">Saldo &gt;30 d</span>
+          <span className="fw-medium">{money(r.saldo_mas_30)}</span>
+        </div>
+        <div className="d-flex justify-content-between small">
+          <span className="text-body-secondary">% &gt;30 d</span>
+          <span className={r.atraso_estructural ? 'fw-semibold text-danger' : ''}>{pct(r.pct_mas_30)}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ReporteRutaTablasCardMovil({ r }) {
   return (
     <div className="card border shadow-sm">
@@ -229,7 +385,7 @@ export default function ReportePage() {
   const rutasDebounced = useDebounced(rutasStr.replace(/\s+/g, ''), 450)
   const [sort, setSort] = useState(storedFilters?.sort || 'saldo_desc')
   const [pestanaPrincipal, setPestanaPrincipal] = useState(
-    [TAB_INDICADORES, TAB_PANEL_GENERAL, TAB_TABLAS].includes(storedFilters?.pestanaPrincipal)
+    TABS_REPORTE.includes(storedFilters?.pestanaPrincipal)
       ? storedFilters.pestanaPrincipal
       : TAB_PANEL_GENERAL,
   )
@@ -261,6 +417,47 @@ export default function ReportePage() {
       estado: estado === 'TODOS' ? '' : estado,
       q: '',
       atencion: '',
+    })
+    navigate(ROUTES.seguimiento, { state: { fromReport: true } })
+  }
+
+  function handleClickSituacion(situacionId) {
+    if (situacionId !== 'requiere_atencion') return
+    setSeguimientoFilters({
+      empresaActiva,
+      rutas: rutasStr.replace(/\s+/g, ''),
+      estado: estado === 'TODOS' ? '' : estado,
+      q: '',
+      atencion: 'si',
+      dias_bucket: '',
+    })
+    navigate(ROUTES.seguimiento, { state: { fromReport: true } })
+  }
+
+  function handleClickClienteAtraso(cliente) {
+    const nombre = String(cliente ?? '').trim()
+    if (!nombre || nombre === '(sin cliente)') return
+    setSeguimientoFilters({
+      empresaActiva,
+      rutas: rutasStr.replace(/\s+/g, ''),
+      estado: 'PENDIENTE',
+      q: nombre,
+      atencion: '',
+      dias_bucket: '',
+    })
+    navigate(ROUTES.seguimiento, { state: { fromReport: true } })
+  }
+
+  function handleClickRutaAtraso(rutaCodigo) {
+    const codigo = String(rutaCodigo ?? '').trim()
+    if (!codigo || codigo === '(sin ruta)') return
+    setSeguimientoFilters({
+      empresaActiva,
+      rutas: codigo,
+      estado: 'PENDIENTE',
+      q: '',
+      atencion: '',
+      dias_bucket: '',
     })
     navigate(ROUTES.seguimiento, { state: { fromReport: true } })
   }
@@ -367,6 +564,11 @@ export default function ReportePage() {
   const items = payload?.items ?? []
   const porRuta = payload?.porRuta ?? []
   const porAntiguedad = payload?.porAntiguedad ?? []
+  const porCliente = payload?.porCliente ?? []
+  const porSituacion = payload?.porSituacion ?? []
+  const atrasoEstructural = payload?.atrasoEstructural
+  const clientesAtrasoEstructural = (atrasoEstructural?.items ?? []).filter((r) => r.atraso_estructural)
+  const atrasoPorRuta = atrasoEstructural?.porRuta ?? []
   const resumenPivot = payload?.resumenPivot ?? []
   const bucketOrder = [
     'negativo',
@@ -485,6 +687,15 @@ export default function ReportePage() {
         <li className="nav-item">
           <button
             type="button"
+            className={`nav-link${pestanaPrincipal === TAB_ATRASO_ESTRUCTURAL ? ' active' : ''}`}
+            onClick={() => setPestanaPrincipal(TAB_ATRASO_ESTRUCTURAL)}
+          >
+            Atraso estructural
+          </button>
+        </li>
+        <li className="nav-item">
+          <button
+            type="button"
             className={`nav-link${pestanaPrincipal === TAB_TABLAS ? ' active' : ''}`}
             onClick={() => setPestanaPrincipal(TAB_TABLAS)}
           >
@@ -494,6 +705,7 @@ export default function ReportePage() {
       </ul>
 
       {pestanaPrincipal === TAB_INDICADORES ? (
+        <>
         <div className="row g-2 mb-3">
         <div className="col-6 col-md-4 col-lg-2">
           <div className="card h-100 border-0 shadow-sm">
@@ -549,7 +761,57 @@ export default function ReportePage() {
             </div>
           </div>
         </div>
-      </div>
+        <div className="col-6 col-md-4 col-lg-2">
+          <div className="card h-100 border-0 shadow-sm border-warning-subtle">
+            <div className="card-body py-2 px-3">
+              <div className="text-body-secondary small">Requieren atención</div>
+              <div className="fs-5 fw-semibold text-warning-emphasis">
+                {loading ? '…' : (kpis?.requiere_atencion ?? 0).toLocaleString('es-MX')}
+              </div>
+              <div className="small text-body-secondary">
+                {loading ? '…' : pct(kpis?.requiere_atencion_pct)}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="col-6 col-md-4 col-lg-2">
+          <div className="card h-100 border-0 shadow-sm">
+            <div className="card-body py-2 px-3">
+              <div className="text-body-secondary small">% recuperado</div>
+              <div className="fs-5 fw-semibold text-success">
+                {loading ? '…' : pct(kpis?.pct_recuperado)}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="col-6 col-md-4 col-lg-2">
+          <div className="card h-100 border-0 shadow-sm">
+            <div className="card-body py-2 px-3">
+              <div className="text-body-secondary small">Saldo &gt;90 días</div>
+              <div className="fs-6 fw-semibold text-danger">
+                {loading ? '…' : money(kpis?.saldo_mas_90)}
+              </div>
+              <div className="small text-body-secondary">
+                {loading ? '…' : `${(kpis?.notas_mas_90 ?? 0).toLocaleString('es-MX')} notas`}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="col-6 col-md-4 col-lg-2">
+          <div className="card h-100 border-0 shadow-sm">
+            <div className="card-body py-2 px-3">
+              <div className="text-body-secondary small">Saldo &gt;180 días</div>
+              <div className="fs-6 fw-semibold text-danger">
+                {loading ? '…' : money(kpis?.saldo_mas_180)}
+              </div>
+              <div className="small text-body-secondary">
+                {loading ? '…' : `${(kpis?.notas_mas_180 ?? 0).toLocaleString('es-MX')} notas`}
+              </div>
+            </div>
+          </div>
+        </div>
+        </div>
+        </>
       ) : null}
 
       {/* Filtros */}
@@ -657,6 +919,7 @@ export default function ReportePage() {
       </div>
 
       {pestanaPrincipal === TAB_INDICADORES ? (
+        <>
         <div className="row g-3 mb-3">
           <div className="col-12 col-xl-6">
             <div className="card h-100">
@@ -767,6 +1030,377 @@ export default function ReportePage() {
             </div>
           </div>
         </div>
+        <div className="row g-3 mb-3">
+          <div className="col-12 col-xl-6">
+            <div className="card h-100">
+              <div className="card-header">Por situación</div>
+              <div className="card-body p-0">
+                <div className="d-none d-md-block table-responsive">
+                  <table className="table table-sm table-striped mb-0">
+                    <thead className="table-light">
+                      <tr>
+                        <th>Situación</th>
+                        <th className="text-end">Notas</th>
+                        <th className="text-end">Saldo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {loading ? (
+                        <tr>
+                          <td colSpan={3} className="text-center py-4">
+                            Cargando…
+                          </td>
+                        </tr>
+                      ) : porSituacion.length === 0 ? (
+                        <tr>
+                          <td colSpan={3} className="text-center py-4 text-body-secondary">
+                            Sin datos.
+                          </td>
+                        </tr>
+                      ) : (
+                        porSituacion.map((r) => (
+                          <tr
+                            key={r.situacion_id}
+                            className={r.situacion_id === 'requiere_atencion' ? 'cursor-pointer' : undefined}
+                            onClick={
+                              r.situacion_id === 'requiere_atencion'
+                                ? () => handleClickSituacion(r.situacion_id)
+                                : undefined
+                            }
+                          >
+                            <td>{SITUACION_LABELS[r.situacion_id] || r.situacion_id}</td>
+                            <td className="text-end">{r.notas?.toLocaleString?.('es-MX') ?? r.notas}</td>
+                            <td className="text-end fw-medium">{money(r.saldo_total)}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="d-md-none p-2 p-sm-3">
+                  {loading ? (
+                    <p className="text-center text-body-secondary py-4 mb-0">Cargando…</p>
+                  ) : porSituacion.length === 0 ? (
+                    <p className="text-center text-body-secondary py-4 mb-0">Sin datos.</p>
+                  ) : (
+                    <div className="d-flex flex-column gap-2">
+                      {porSituacion.map((r) => (
+                        <ReporteSituacionCardMovil
+                          key={r.situacion_id}
+                          r={r}
+                          labels={SITUACION_LABELS}
+                          onClick={
+                            r.situacion_id === 'requiere_atencion'
+                              ? () => handleClickSituacion(r.situacion_id)
+                              : undefined
+                          }
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="col-12 col-xl-6">
+            <div className="card h-100">
+              <div className="card-header">Top clientes por saldo</div>
+              <div className="card-body p-0">
+                <div className="d-none d-md-block table-responsive">
+                  <table className="table table-sm table-striped mb-0">
+                    <thead className="table-light">
+                      <tr>
+                        <th>Cliente</th>
+                        <th className="text-end">Notas</th>
+                        <th className="text-end">Saldo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {loading ? (
+                        <tr>
+                          <td colSpan={3} className="text-center py-4">
+                            Cargando…
+                          </td>
+                        </tr>
+                      ) : porCliente.length === 0 ? (
+                        <tr>
+                          <td colSpan={3} className="text-center py-4 text-body-secondary">
+                            Sin datos.
+                          </td>
+                        </tr>
+                      ) : (
+                        porCliente.map((r) => (
+                          <tr key={r.cliente}>
+                            <td className="text-break">{r.cliente}</td>
+                            <td className="text-end">{r.notas?.toLocaleString?.('es-MX') ?? r.notas}</td>
+                            <td className="text-end fw-medium">{money(r.saldo_total)}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="d-md-none p-2 p-sm-3">
+                  {loading ? (
+                    <p className="text-center text-body-secondary py-4 mb-0">Cargando…</p>
+                  ) : porCliente.length === 0 ? (
+                    <p className="text-center text-body-secondary py-4 mb-0">Sin datos.</p>
+                  ) : (
+                    <div className="d-flex flex-column gap-2">
+                      {porCliente.map((r) => (
+                        <ReporteClienteCardMovil key={r.cliente} r={r} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        </>
+      ) : null}
+
+      {pestanaPrincipal === TAB_ATRASO_ESTRUCTURAL ? (
+        <>
+          <div className="row g-2 mb-3">
+            <div className="col-12">
+              <div className="small text-body-secondary">
+                Composición de cartera (solo PENDIENTE con saldo). Umbral{' '}
+                {atrasoEstructural?.umbral_pct ?? 50}% · corte {atrasoEstructural?.dias_corte ?? 30} días.
+                Indicador informativo: no deberían recibir más producto.
+              </div>
+            </div>
+            <div className="col-6 col-md-3">
+              <div className="card h-100 border-0 shadow-sm border-danger-subtle">
+                <div className="card-body py-2 px-3">
+                  <div className="text-body-secondary small">Rutas con atraso</div>
+                  <div className="fs-5 fw-semibold text-danger">
+                    {loading ? '…' : (kpis?.atraso_estructural_rutas ?? 0).toLocaleString('es-MX')}
+                  </div>
+                  <div className="small text-body-secondary">
+                    {loading
+                      ? '…'
+                      : `${pct(kpis?.atraso_estructural_rutas_pct)} de ${(atrasoEstructural?.rutas_total ?? 0).toLocaleString('es-MX')} rutas`}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="col-6 col-md-3">
+              <div className="card h-100 border-0 shadow-sm border-danger-subtle">
+                <div className="card-body py-2 px-3">
+                  <div className="text-body-secondary small">Clientes con atraso</div>
+                  <div className="fs-5 fw-semibold text-danger">
+                    {loading ? '…' : (kpis?.atraso_estructural_clientes ?? 0).toLocaleString('es-MX')}
+                  </div>
+                  <div className="small text-body-secondary">
+                    {loading
+                      ? '…'
+                      : `${pct(kpis?.atraso_estructural_clientes_pct)} de ${(atrasoEstructural?.clientes_total ?? 0).toLocaleString('es-MX')} clientes`}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="col-6 col-md-3">
+              <div className="card h-100 border-0 shadow-sm border-danger-subtle">
+                <div className="card-body py-2 px-3">
+                  <div className="text-body-secondary small">Saldo en atraso (clientes)</div>
+                  <div className="fs-6 fw-semibold text-danger">
+                    {loading ? '…' : money(kpis?.atraso_estructural_saldo)}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="col-6 col-md-3">
+              <div className="card h-100 border-0 shadow-sm">
+                <div className="card-body py-2 px-3">
+                  <div className="text-body-secondary small">Cartera pendiente total</div>
+                  <div className="fs-6 fw-semibold">
+                    {loading ? '…' : money(atrasoEstructural?.saldo_cartera_total)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="row g-3 mb-3">
+            <div className="col-12">
+              <div className="card">
+                <div className="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                  <span>Atraso estructural por ruta</span>
+                  <span className="small text-body-secondary fw-normal">
+                    {loading
+                      ? '…'
+                      : `${(kpis?.atraso_estructural_rutas ?? 0).toLocaleString('es-MX')} rutas con atraso (${pct(kpis?.atraso_estructural_rutas_pct)})`}
+                  </span>
+                </div>
+                <div className="card-body p-0">
+                  <div className="d-none d-md-block table-responsive">
+                    <table className="table table-sm table-hover mb-0">
+                      <thead className="table-light">
+                        <tr>
+                          <th>Ruta</th>
+                          <th className="text-end">Notas</th>
+                          <th className="text-end">Saldo 0–30 d</th>
+                          <th className="text-end">Saldo &gt;30 d</th>
+                          <th className="text-end">% &gt;30 d</th>
+                          <th className="text-end">Saldo total</th>
+                          <th>Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {loading ? (
+                          <tr>
+                            <td colSpan={7} className="text-center py-4">
+                              Cargando…
+                            </td>
+                          </tr>
+                        ) : atrasoPorRuta.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="text-center py-4 text-body-secondary">
+                              Sin rutas con cartera pendiente en los filtros actuales.
+                            </td>
+                          </tr>
+                        ) : (
+                          atrasoPorRuta.map((r) => (
+                            <tr
+                              key={r.ruta_codigo}
+                              className={
+                                r.atraso_estructural && r.ruta_codigo !== '(sin ruta)'
+                                  ? 'cursor-pointer'
+                                  : undefined
+                              }
+                              onClick={
+                                r.atraso_estructural && r.ruta_codigo !== '(sin ruta)'
+                                  ? () => handleClickRutaAtraso(r.ruta_codigo)
+                                  : undefined
+                              }
+                            >
+                              <td>{r.ruta_codigo}</td>
+                              <td className="text-end">{r.notas?.toLocaleString?.('es-MX') ?? r.notas}</td>
+                              <td className="text-end">{money(r.saldo_0_30)}</td>
+                              <td className="text-end fw-medium">{money(r.saldo_mas_30)}</td>
+                              <td
+                                className={`text-end${r.atraso_estructural ? ' fw-semibold text-danger' : ''}`}
+                              >
+                                {pct(r.pct_mas_30)}
+                              </td>
+                              <td className="text-end">{money(r.saldo_total)}</td>
+                              <td>
+                                {r.atraso_estructural ? (
+                                  <span className="badge text-bg-danger">Atraso estructural</span>
+                                ) : (
+                                  <span className="badge text-bg-success">OK</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="d-md-none p-2 p-sm-3">
+                    {loading ? (
+                      <p className="text-center text-body-secondary py-4 mb-0">Cargando…</p>
+                    ) : atrasoPorRuta.length === 0 ? (
+                      <p className="text-center text-body-secondary py-4 mb-0">
+                        Sin rutas con cartera pendiente en los filtros actuales.
+                      </p>
+                    ) : (
+                      <div className="d-flex flex-column gap-2">
+                        {atrasoPorRuta.map((r) => (
+                          <ReporteAtrasoRutaCardMovil
+                            key={r.ruta_codigo}
+                            r={r}
+                            onClick={
+                              r.atraso_estructural && r.ruta_codigo !== '(sin ruta)'
+                                ? () => handleClickRutaAtraso(r.ruta_codigo)
+                                : undefined
+                            }
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="row g-3 mb-3">
+            <div className="col-12">
+              <div className="card">
+                <div className="card-header">Clientes con atraso estructural</div>
+                <div className="card-body p-0">
+                  <div className="d-none d-md-block table-responsive">
+                    <table className="table table-sm table-hover mb-0">
+                      <thead className="table-light">
+                        <tr>
+                          <th>Cliente</th>
+                          <th className="text-end">Notas</th>
+                          <th className="text-end">Saldo 0–30 d</th>
+                          <th className="text-end">Saldo &gt;30 d</th>
+                          <th className="text-end">% &gt;30 d</th>
+                          <th className="text-end">Saldo total</th>
+                          <th>Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {loading ? (
+                          <tr>
+                            <td colSpan={7} className="text-center py-4">
+                              Cargando…
+                            </td>
+                          </tr>
+                        ) : clientesAtrasoEstructural.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="text-center py-4 text-body-secondary">
+                              Ningún cliente con atraso estructural en los filtros actuales.
+                            </td>
+                          </tr>
+                        ) : (
+                          clientesAtrasoEstructural.map((r) => (
+                            <tr
+                              key={r.cliente}
+                              className="cursor-pointer"
+                              onClick={() => handleClickClienteAtraso(r.cliente)}
+                            >
+                              <td className="text-break">{r.cliente}</td>
+                              <td className="text-end">{r.notas?.toLocaleString?.('es-MX') ?? r.notas}</td>
+                              <td className="text-end">{money(r.saldo_0_30)}</td>
+                              <td className="text-end fw-medium">{money(r.saldo_mas_30)}</td>
+                              <td className="text-end fw-semibold text-danger">{pct(r.pct_mas_30)}</td>
+                              <td className="text-end">{money(r.saldo_total)}</td>
+                              <td>
+                                <span className="badge text-bg-danger">Atraso estructural</span>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="d-md-none p-2 p-sm-3">
+                    {loading ? (
+                      <p className="text-center text-body-secondary py-4 mb-0">Cargando…</p>
+                    ) : clientesAtrasoEstructural.length === 0 ? (
+                      <p className="text-center text-body-secondary py-4 mb-0">
+                        Ningún cliente con atraso estructural en los filtros actuales.
+                      </p>
+                    ) : (
+                      <div className="d-flex flex-column gap-2">
+                        {clientesAtrasoEstructural.map((r) => (
+                          <ReporteAtrasoEstructuralCardMovil
+                            key={r.cliente}
+                            r={r}
+                            onClick={() => handleClickClienteAtraso(r.cliente)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
       ) : null}
 
       {debugMode ? (

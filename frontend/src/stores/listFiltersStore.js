@@ -18,7 +18,7 @@ const initialSeguimiento = {
   rutas: '',
   q: '',
   dias_bucket: '',
-  orden: 'default',
+  orden: 'fecha_nota_asc',
   mostrarComentarios: false,
 }
 
@@ -42,9 +42,8 @@ function normalizeSeguimientoOrden(orden) {
   const raw = String(orden || '').trim().toLowerCase()
   if (raw === 'fecha_corriente_desc') return 'fecha_nota_desc'
   if (raw === 'fecha_corriente_asc') return 'fecha_nota_asc'
+  if (raw === 'default' || raw === 'atencion') return 'fecha_nota_asc'
   return [
-    'default',
-    'atencion',
     'fecha_ultima_desc',
     'fecha_ultima_asc',
     'fecha_nota_desc',
@@ -76,7 +75,7 @@ export const useListFiltersStore = create(
     }),
     {
       name: 'nc_list_filters_v1',
-      version: 6,
+      version: 7,
       migrate: (persisted) => {
         if (!persisted || typeof persisted !== 'object') return persisted
         const state = persisted

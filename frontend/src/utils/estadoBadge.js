@@ -7,9 +7,9 @@ export function estadoBadgeClass(estado) {
 }
 
 /**
- * Atención se determina por regla de negocio visible:
- * nota pendiente + al menos un comentario registrado.
+ * Bandera operativa en notas_credito (comentario pendiente de revisión).
+ * Distinto de «tiene comentarios» (historial en aclaraciones).
  */
 export function notaMuestraAtencion(nota) {
-  return String(nota?.estado || '').toUpperCase() === 'PENDIENTE' && Boolean(nota?.tiene_comentarios)
+  return Boolean(nota?.requiere_atencion)
 }

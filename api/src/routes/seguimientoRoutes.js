@@ -31,10 +31,6 @@ function canManageRoute(user) {
 
 /** Orden SQL permitido (evita inyección). Clave = query param `sort`. */
 const SEGUIMIENTO_ORDER_BY = {
-  default:
-    '((n.estado = \'PENDIENTE\') AND EXISTS (SELECT 1 FROM aclaraciones a WHERE a.nota_id = n.id)) DESC, n.fecha_ultima_actualizacion DESC NULLS LAST, n.id DESC',
-  atencion:
-    '((n.estado = \'PENDIENTE\') AND EXISTS (SELECT 1 FROM aclaraciones a WHERE a.nota_id = n.id)) DESC, n.fecha_ultima_actualizacion DESC NULLS LAST, n.id DESC',
   fecha_ultima_desc: 'n.fecha_ultima_actualizacion DESC NULLS LAST, n.id DESC',
   fecha_ultima_asc: 'n.fecha_ultima_actualizacion ASC NULLS LAST, n.id ASC',
   // Compatibilidad: si llega el sort viejo de fecha_corriente, usar fecha_nota.
@@ -133,12 +129,10 @@ router.get('/', requireAuth, async (req, res, next) => {
     }
 
     const atencion = String(req.query.atencion ?? '').trim().toLowerCase()
-    // Atención: nota pendiente con al menos un comentario/aclaración.
     if (['si', 'sí', 'true', '1'].includes(atencion)) {
-      where.push(`n.estado = 'PENDIENTE'`)
-      where.push('EXISTS (SELECT 1 FROM aclaraciones a WHERE a.nota_id = n.id)')
+      where.push('n.requiere_atencion = true')
     } else if (['no', 'false', '0'].includes(atencion)) {
-      where.push('NOT (n.estado = \'PENDIENTE\' AND EXISTS (SELECT 1 FROM aclaraciones a WHERE a.nota_id = n.id))')
+      where.push('n.requiere_atencion = false')
     }
 
     const q = String(req.query.q ?? '').trim()
@@ -165,8 +159,9 @@ router.get('/', requireAuth, async (req, res, next) => {
       .toLowerCase()
     const includeAggregates = !['false', '0', 'no'].includes(includeAggregatesRaw)
     const sortKeyRaw = String(req.query.sort ?? '').trim().toLowerCase()
+    const sortKeyNorm = ['default', 'atencion'].includes(sortKeyRaw) ? 'fecha_nota_asc' : sortKeyRaw
     const orderBy =
-      SEGUIMIENTO_ORDER_BY[sortKeyRaw] || SEGUIMIENTO_ORDER_BY.default
+      SEGUIMIENTO_ORDER_BY[sortKeyNorm] || SEGUIMIENTO_ORDER_BY.fecha_nota_asc
 
     const countR = await pool.query(
       `
@@ -188,10 +183,7 @@ router.get('/', requireAuth, async (req, res, next) => {
           `
       SELECT
         COUNT(*)::int AS total_filtrado,
-        COUNT(*) FILTER (
-          WHERE n.estado = 'PENDIENTE'
-            AND EXISTS (SELECT 1 FROM aclaraciones a WHERE a.nota_id = n.id)
-        )::int AS requiere_atencion
+        COUNT(*) FILTER (WHERE n.requiere_atencion = true)::int AS requiere_atencion
       FROM notas_credito n
       LEFT JOIN rutas r ON r.id = n.ruta_id
       ${whereSql}
@@ -323,7 +315,7 @@ router.get('/', requireAuth, async (req, res, next) => {
         dias_bucket: diasBucketsList.length ? diasBucket : null,
         atencion: atencion || null,
         q: q || null,
-        sort: sortKeyRaw && SEGUIMIENTO_ORDER_BY[sortKeyRaw] ? sortKeyRaw : 'default',
+        sort: SEGUIMIENTO_ORDER_BY[sortKeyNorm] ? sortKeyNorm : 'fecha_nota_asc',
       },
       resumen,
       porRuta,

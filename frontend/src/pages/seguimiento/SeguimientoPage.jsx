@@ -765,11 +765,10 @@ export default function SeguimientoPage() {
                 value={seguimientoFilters.orden}
                 onChange={(e) => updateSeguimientoFilters({ orden: e.target.value })}
               >
-                <option value="default">Atención y última actividad (predeterminado)</option>
+                <option value="fecha_nota_asc">Fecha nota — más antigua (predeterminado)</option>
                 <option value="fecha_ultima_desc">Última actualización — más reciente</option>
                 <option value="fecha_ultima_asc">Última actualización — más antigua</option>
                 <option value="fecha_nota_desc">Fecha nota — más reciente</option>
-                <option value="fecha_nota_asc">Fecha nota — más antigua</option>
                 <option value="dias_corriente_desc">Días — mayor antigüedad</option>
                 <option value="dias_corriente_asc">Días — menor antigüedad</option>
               </select>

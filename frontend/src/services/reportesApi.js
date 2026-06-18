@@ -1,4 +1,9 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
+import {
+  PARAM_UMBRAL_ATRASO_CLAVE,
+  buildAtrasoEstructuralPayload,
+  parseUmbralAtrasoPct,
+} from '../utils/atrasoEstructural.js'
 import { http } from './http.js'
 
 function toQuery(params) {
@@ -64,6 +69,128 @@ function bucketMatch(dias, diasBucket) {
   return true
 }
 
+function emptyCarteraResponse(empresa, estadoRaw, diasBucket, q, fechaDesde, fechaHasta, rutasList, sortKey) {
+  return {
+    ok: true,
+    empresa,
+    estadoFiltro: estadoRaw === 'TODOS' ? null : estadoRaw || 'PENDIENTE',
+    filters: {
+      dias_bucket: diasBucket,
+      q: q || null,
+      fecha_desde: fechaDesde || null,
+      fecha_hasta: fechaHasta || null,
+      rutas: rutasList.length ? rutasList : null,
+      sort: sortKey,
+    },
+    kpis: {
+      registros: 0,
+      saldo_total: 0,
+      abonos_total: 0,
+      monto_total: 0,
+      dias_promedio: 0,
+      vencidos_365: 0,
+      rutas_activas: 0,
+      requiere_atencion: 0,
+      requiere_atencion_pct: 0,
+      pct_recuperado: 0,
+      saldo_mas_90: 0,
+      saldo_mas_180: 0,
+      notas_mas_90: 0,
+      notas_mas_180: 0,
+      atraso_estructural_clientes: 0,
+      atraso_estructural_clientes_pct: 0,
+      atraso_estructural_saldo: 0,
+      atraso_estructural_rutas: 0,
+      atraso_estructural_rutas_pct: 0,
+    },
+    atrasoEstructural: {
+      umbral_pct: parseUmbralAtrasoPct(),
+      dias_corte: 30,
+      clientes_total: 0,
+      clientes_atraso: 0,
+      clientes_atraso_pct: 0,
+      saldo_cartera_total: 0,
+      saldo_atraso_total: 0,
+      rutas_total: 0,
+      rutas_atraso: 0,
+      rutas_atraso_pct: 0,
+      saldo_atraso_rutas_total: 0,
+      items: [],
+      porRuta: [],
+    },
+    total: 0,
+    truncated: false,
+    maxRows: MAX_ROWS,
+    porRuta: [],
+    porAntiguedad: [],
+    porCliente: [],
+    porSituacion: [],
+    resumenPivot: [],
+    items: [],
+  }
+}
+
+function sinVendedor(row) {
+  const pv = String(row.usuario_vendedor_pv ?? '').trim()
+  const user = String(row.vendedor_username ?? '').trim()
+  return !pv && !user && row.usuario_id == null
+}
+
+function sinRuta(row) {
+  const codigo = String(row.ruta_codigo ?? '').trim()
+  return !codigo
+}
+
+function buildPorSituacion(filtered) {
+  const defs = [
+    {
+      situacion_id: 'requiere_atencion',
+      match: (r) => Boolean(r.requiere_atencion),
+    },
+    {
+      situacion_id: 'sin_comentarios',
+      match: (r) => !r.tiene_comentarios,
+    },
+    {
+      situacion_id: 'sin_ruta',
+      match: sinRuta,
+    },
+    {
+      situacion_id: 'sin_vendedor',
+      match: sinVendedor,
+    },
+    {
+      situacion_id: 'antiguedad_90',
+      match: (r) => Number(r.dias) > 90,
+    },
+    {
+      situacion_id: 'antiguedad_180',
+      match: (r) => Number(r.dias) > 180,
+    },
+    {
+      situacion_id: 'saldo_cero',
+      match: (r) => Number(r.saldo || 0) <= 0,
+    },
+    {
+      situacion_id: 'resuelta_automatica',
+      match: (r) => Boolean(r.resuelta_automaticamente),
+    },
+  ]
+  const rows = []
+  for (const def of defs) {
+    let notas = 0
+    let saldoTotal = 0
+    for (const r of filtered) {
+      if (!def.match(r)) continue
+      notas += 1
+      saldoTotal += Number(r.saldo || 0)
+    }
+    if (notas > 0) rows.push({ situacion_id: def.situacion_id, notas, saldo_total: saldoTotal })
+  }
+  rows.sort((a, b) => b.saldo_total - a.saldo_total || String(a.situacion_id).localeCompare(String(b.situacion_id)))
+  return rows
+}
+
 function sorterFor(sortKey) {
   if (sortKey === 'saldo_asc') return (a, b) => (a.saldo || 0) - (b.saldo || 0) || a.id - b.id
   if (sortKey === 'dias_desc') return (a, b) => (b.dias ?? -1) - (a.dias ?? -1) || b.id - a.id
@@ -73,6 +200,51 @@ function sorterFor(sortKey) {
   if (sortKey === 'cliente_asc') return (a, b) => String(a.cliente || '').localeCompare(String(b.cliente || '')) || a.id - b.id
   if (sortKey === 'folio_asc') return (a, b) => String(a.serie_folio || '').localeCompare(String(b.serie_folio || '')) || a.id - b.id
   return (a, b) => (b.saldo || 0) - (a.saldo || 0) || b.id - a.id
+}
+
+async function loadUmbralAtrasoSupabase() {
+  try {
+    const { data, error } = await supabase
+      .from('parametros')
+      .select('valor')
+      .eq('clave', PARAM_UMBRAL_ATRASO_CLAVE)
+      .limit(1)
+    if (error) return parseUmbralAtrasoPct()
+    return parseUmbralAtrasoPct(data?.[0]?.valor)
+  } catch {
+    return parseUmbralAtrasoPct()
+  }
+}
+
+async function fetchComposicionRowsSupabase({
+  empresa,
+  q,
+  fechaDesde,
+  fechaHasta,
+  allowedRutaIds,
+}) {
+  let query = supabase
+    .from('notas_credito')
+    .select('cliente, saldo, fecha_nota, rutas:ruta_id(codigo)')
+    .eq('empresa', empresa)
+    .eq('estado', 'PENDIENTE')
+    .gt('saldo', 0)
+
+  if (allowedRutaIds) query = query.in('ruta_id', allowedRutaIds)
+  if (q) {
+    query = query.or(`cliente.ilike.%${q}%,serie_folio.ilike.%${q}%,usuario_vendedor_pv.ilike.%${q}%`)
+  }
+  if (fechaDesde) query = query.gte('fecha_nota', fechaDesde)
+  if (fechaHasta) query = query.lte('fecha_nota', fechaHasta)
+
+  const { data, error } = await query.limit(20000)
+  if (error) throw new Error(error.message || 'No se pudo cargar composición de cartera')
+  return (data || []).map((row) => ({
+    cliente: row.cliente,
+    ruta_codigo: row.rutas?.codigo || null,
+    saldo: row.saldo,
+    dias: diasFromFechaNota(row.fecha_nota),
+  }))
 }
 
 async function fetchCarteraReporteSupabase(params = {}) {
@@ -110,20 +282,7 @@ async function fetchCarteraReporteSupabase(params = {}) {
     if (rutasErr) throw new Error(rutasErr.message || 'No se pudo filtrar rutas')
     allowedRutaIds = (rutasRows || []).map((r) => r.id)
     if (allowedRutaIds.length === 0) {
-      return {
-        ok: true,
-        empresa,
-        estadoFiltro: estadoRaw === 'TODOS' ? null : estadoRaw || 'PENDIENTE',
-        filters: { dias_bucket: diasBucket, q: q || null, fecha_desde: fechaDesde || null, fecha_hasta: fechaHasta || null, rutas: rutasList.length ? rutasList : null, sort: sortKey },
-        kpis: { registros: 0, saldo_total: 0, abonos_total: 0, monto_total: 0, dias_promedio: 0, vencidos_365: 0, rutas_activas: 0 },
-        total: 0,
-        truncated: false,
-        maxRows: MAX_ROWS,
-        porRuta: [],
-        porAntiguedad: [],
-        resumenPivot: [],
-        items: [],
-      }
+      return emptyCarteraResponse(empresa, estadoRaw, diasBucket, q, fechaDesde, fechaHasta, rutasList, sortKey)
     }
   }
 
@@ -132,7 +291,7 @@ async function fetchCarteraReporteSupabase(params = {}) {
     .select(
       `
       id, serie_folio, cliente, empresa, estado, monto, abono, saldo, fecha_nota, fecha_corriente, created_at,
-      usuario_vendedor_pv, ruta_id, usuario_id,
+      usuario_vendedor_pv, ruta_id, usuario_id, requiere_atencion, resuelta_automaticamente,
       rutas:ruta_id(codigo),
       vendedor:usuario_id(username)
     `,
@@ -152,11 +311,29 @@ async function fetchCarteraReporteSupabase(params = {}) {
   const { data, error } = await query.limit(20000)
   if (error) throw new Error(error.message || 'No se pudo cargar reporte desde Supabase')
 
+  const notaIds = (data || []).map((row) => row.id).filter((id) => id != null)
+  const comentariosSet = new Set()
+  if (notaIds.length > 0) {
+    const chunkSize = 500
+    for (let i = 0; i < notaIds.length; i += chunkSize) {
+      const chunk = notaIds.slice(i, i + chunkSize)
+      const { data: aclRows, error: aclErr } = await supabase
+        .from('aclaraciones')
+        .select('nota_id')
+        .in('nota_id', chunk)
+      if (aclErr) throw new Error(aclErr.message || 'No se pudieron cargar comentarios para el reporte')
+      for (const row of aclRows || []) {
+        if (row?.nota_id != null) comentariosSet.add(row.nota_id)
+      }
+    }
+  }
+
   const allRows = (data || []).map((row) => ({
     ...row,
     ruta_codigo: row.rutas?.codigo || null,
     vendedor_username: row.vendedor?.username || null,
     dias: diasFromFechaNota(row.fecha_nota),
+    tiene_comentarios: comentariosSet.has(row.id),
   }))
 
   const filtered = allRows.filter((r) => bucketMatch(r.dias, diasBucket))
@@ -170,21 +347,36 @@ async function fetchCarteraReporteSupabase(params = {}) {
   let diasSum = 0
   let diasCount = 0
   let vencidos365 = 0
+  let requiereAtencion = 0
+  let saldoMas90 = 0
+  let saldoMas180 = 0
+  let notasMas90 = 0
+  let notasMas180 = 0
   const rutasSet = new Set()
   for (const r of filtered) {
     saldoTotal += Number(r.saldo || 0)
     abonosTotal += Number(r.abono || 0)
     montoTotal += Number(r.monto || 0)
+    if (r.requiere_atencion) requiereAtencion += 1
     if (Number.isFinite(r.dias)) {
       diasSum += r.dias
       diasCount += 1
       if (r.dias > 365) vencidos365 += 1
+      if (r.dias > 90) {
+        notasMas90 += 1
+        saldoMas90 += Number(r.saldo || 0)
+      }
+      if (r.dias > 180) {
+        notasMas180 += 1
+        saldoMas180 += Number(r.saldo || 0)
+      }
     }
     if (r.ruta_codigo && String(r.ruta_codigo).trim()) rutasSet.add(String(r.ruta_codigo).trim())
   }
 
   const porRutaMap = new Map()
   const porAntMap = new Map()
+  const porClienteMap = new Map()
   const pivotMap = new Map()
   for (const r of filtered) {
     const ruta = r.ruta_codigo && String(r.ruta_codigo).trim() ? String(r.ruta_codigo).trim() : '(sin ruta)'
@@ -205,6 +397,13 @@ async function fetchCarteraReporteSupabase(params = {}) {
     antPrev.saldo_total += saldo
     porAntMap.set(bucket, antPrev)
 
+    const cliente =
+      r.cliente && String(r.cliente).trim() ? String(r.cliente).trim() : '(sin cliente)'
+    const clientePrev = porClienteMap.get(cliente) || { cliente, notas: 0, saldo_total: 0 }
+    clientePrev.notas += 1
+    clientePrev.saldo_total += saldo
+    porClienteMap.set(cliente, clientePrev)
+
     const pivotKey = `${bucket}||${ruta}`
     const pivotPrev = pivotMap.get(pivotKey) || { bucket_id: bucket, ruta_codigo: ruta, notas: 0, saldo_total: 0 }
     pivotPrev.notas += 1
@@ -219,6 +418,19 @@ async function fetchCarteraReporteSupabase(params = {}) {
   const porAntiguedad = Array.from(porAntMap.values()).sort(
     (a, b) => bucketOrder.indexOf(a.bucket_id) - bucketOrder.indexOf(b.bucket_id),
   )
+  const porCliente = Array.from(porClienteMap.values())
+    .sort((a, b) => b.saldo_total - a.saldo_total || String(a.cliente).localeCompare(String(b.cliente)))
+    .slice(0, 15)
+  const porSituacion = buildPorSituacion(filtered)
+  const umbralAtrasoPct = await loadUmbralAtrasoSupabase()
+  const composicionRows = await fetchComposicionRowsSupabase({
+    empresa,
+    q,
+    fechaDesde,
+    fechaHasta,
+    allowedRutaIds,
+  })
+  const atrasoEstructural = buildAtrasoEstructuralPayload(composicionRows, umbralAtrasoPct)
   const resumenPivot = Array.from(pivotMap.values()).sort((a, b) => {
     const byBucket = bucketOrder.indexOf(a.bucket_id) - bucketOrder.indexOf(b.bucket_id)
     if (byBucket !== 0) return byBucket
@@ -245,12 +457,28 @@ async function fetchCarteraReporteSupabase(params = {}) {
       dias_promedio: diasCount > 0 ? diasSum / diasCount : 0,
       vencidos_365: vencidos365,
       rutas_activas: rutasSet.size,
+      requiere_atencion: requiereAtencion,
+      requiere_atencion_pct:
+        totalFiltered > 0 ? Math.round((requiereAtencion / totalFiltered) * 1000) / 10 : 0,
+      pct_recuperado: montoTotal > 0 ? Math.round((abonosTotal / montoTotal) * 1000) / 10 : 0,
+      saldo_mas_90: saldoMas90,
+      saldo_mas_180: saldoMas180,
+      notas_mas_90: notasMas90,
+      notas_mas_180: notasMas180,
+      atraso_estructural_clientes: atrasoEstructural.clientes_atraso,
+      atraso_estructural_clientes_pct: atrasoEstructural.clientes_atraso_pct,
+      atraso_estructural_saldo: atrasoEstructural.saldo_atraso_total,
+      atraso_estructural_rutas: atrasoEstructural.rutas_atraso,
+      atraso_estructural_rutas_pct: atrasoEstructural.rutas_atraso_pct,
     },
+    atrasoEstructural,
     total: totalFiltered,
     truncated: totalFiltered > MAX_ROWS,
     maxRows: MAX_ROWS,
     porRuta,
     porAntiguedad,
+    porCliente,
+    porSituacion,
     resumenPivot,
     items,
   }
