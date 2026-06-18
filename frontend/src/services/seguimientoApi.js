@@ -147,20 +147,42 @@ function applySort(query, sort) {
     .order('id', { ascending: false, nullsFirst: false })
 }
 
-function buildSeguimientoCountSelect({ atencion, requiereComentarios = false }) {
-  const parts = ['id']
-  const atencionNorm = String(atencion ?? '').trim().toLowerCase()
-  if (requiereComentarios || ['si', 'sí', 'true', '1'].includes(atencionNorm)) {
-    parts.push('aclaraciones!inner(id)')
-  } else if (['no', 'false', '0'].includes(atencionNorm)) {
-    parts.push('aclaraciones!left(id)')
+async function fetchNotaIdsConComentarios() {
+  const { data, error } = await supabase.from('aclaraciones').select('nota_id')
+  if (error) throw new Error(error.message || 'No se pudieron cargar comentarios')
+  return [...new Set((data || []).map((row) => row.nota_id).filter((id) => id != null))]
+}
+
+function mergeAtencionFilterArgs(filterArgs, atencion, notaIdsConComentarios) {
+  const norm = String(atencion ?? '').trim().toLowerCase()
+  const next = { ...filterArgs, atencion: '' }
+  if (['si', 'sí', 'true', '1'].includes(norm)) {
+    next.estado = 'PENDIENTE'
+    next.restrictNotaIds = notaIdsConComentarios.length ? notaIdsConComentarios : [-1]
+    return next
   }
-  return parts.join(', ')
+  if (['no', 'false', '0'].includes(norm)) {
+    if (notaIdsConComentarios.length) {
+      next.atencionExcludeOr = `estado.neq.PENDIENTE,id.not.in.(${notaIdsConComentarios.join(',')})`
+    }
+    return next
+  }
+  return next
 }
 
 function applySeguimientoListFilters(
   query,
-  { estado, empresa, q, atencion, allowedFinal, fechaNotaDesde, fechaNotaHasta, diasBucketOr },
+  {
+    estado,
+    empresa,
+    q,
+    allowedFinal,
+    fechaNotaDesde,
+    fechaNotaHasta,
+    diasBucketOr,
+    restrictNotaIds,
+    atencionExcludeOr,
+  },
 ) {
   let qy = query
   if (estado) qy = qy.eq('estado', estado)
@@ -168,11 +190,11 @@ function applySeguimientoListFilters(
   if (q) {
     qy = qy.or(`serie_folio.ilike.%${q}%,cliente.ilike.%${q}%,usuario_vendedor_pv.ilike.%${q}%`)
   }
-  if (['si', 'sí', 'true', '1'].includes(atencion)) {
-    qy = qy.eq('estado', 'PENDIENTE').not('aclaraciones', 'is', null)
+  if (Array.isArray(restrictNotaIds) && restrictNotaIds.length) {
+    qy = qy.in('id', restrictNotaIds)
   }
-  if (['no', 'false', '0'].includes(atencion)) {
-    qy = qy.or('estado.neq.PENDIENTE,aclaraciones.is.null')
+  if (atencionExcludeOr) {
+    qy = qy.or(atencionExcludeOr)
   }
   if (Array.isArray(allowedFinal)) qy = qy.in('ruta_id', allowedFinal)
   if (diasBucketOr) {
@@ -512,7 +534,6 @@ async function fetchSeguimientoListSupabase(params = {}) {
     estado,
     empresa,
     q,
-    atencion,
     allowedFinal,
     fechaNotaDesde,
     fechaNotaHasta,
@@ -520,13 +541,12 @@ async function fetchSeguimientoListSupabase(params = {}) {
   }
 
   const atencionNorm = String(atencion ?? '').trim().toLowerCase()
-  const countSelect = buildSeguimientoCountSelect({ atencion })
-  const countFilterArgs = ['si', 'sí', 'true', '1'].includes(atencionNorm)
-    ? { ...filterArgs, atencion: '', estado: 'PENDIENTE' }
-    : filterArgs
+  const notaIdsConComentarios = await fetchNotaIdsConComentarios()
+  const resolvedFilterArgs = mergeAtencionFilterArgs(filterArgs, atencion, notaIdsConComentarios)
+
   const { count: totalCount, error: countError } = await applySeguimientoListFilters(
-    supabase.from('notas_credito').select(countSelect, { count: 'exact', head: true }),
-    countFilterArgs,
+    supabase.from('notas_credito').select('id', { count: 'exact', head: true }),
+    resolvedFilterArgs,
   )
   if (countError) throw new Error(countError.message || 'No se pudo cargar seguimiento')
 
@@ -535,15 +555,14 @@ async function fetchSeguimientoListSupabase(params = {}) {
   if (includeAggregates) {
     const estadoNorm = String(estado ?? '').trim().toUpperCase()
     if (!['no', 'false', '0'].includes(atencionNorm) && estadoNorm !== 'RESUELTA' && estadoNorm !== 'CANCELADA') {
-      const raCountSelect = buildSeguimientoCountSelect({ requiereComentarios: true })
+      const raFilterArgs = {
+        ...filterArgs,
+        estado: 'PENDIENTE',
+        restrictNotaIds: notaIdsConComentarios.length ? notaIdsConComentarios : [-1],
+      }
       const { count: raCount, error: raErr } = await applySeguimientoListFilters(
-        supabase.from('notas_credito').select(raCountSelect, { count: 'exact', head: true }),
-        {
-          ...filterArgs,
-          estado: 'PENDIENTE',
-          // El inner join en el select ya exige al menos un comentario.
-          atencion: '',
-        },
+        supabase.from('notas_credito').select('id', { count: 'exact', head: true }),
+        raFilterArgs,
       )
       if (raErr) throw new Error(raErr.message || 'No se pudo calcular notas que requieren atención')
       requiereAtencionTotal = raCount ?? 0
@@ -567,7 +586,7 @@ async function fetchSeguimientoListSupabase(params = {}) {
     `,
       { count: 'exact' },
     )
-  baseQuery = applySeguimientoListFilters(baseQuery, filterArgs)
+  baseQuery = applySeguimientoListFilters(baseQuery, resolvedFilterArgs)
 
   let listQuery = applySort(baseQuery, sort).range(fromSafe, toSafe)
   const { data: rows, error } = await listQuery
