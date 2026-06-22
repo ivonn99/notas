@@ -102,6 +102,82 @@ function fmtDate(value) {
   return d.toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
+function ReporteAtrasoEstructuralExplicacion({ umbralPct, diasCorte }) {
+  return (
+    <div className="card border mb-0">
+      <div className="card-body py-3">
+        <div className="fw-semibold mb-2 text-body">¿Qué mide el atraso estructural?</div>
+        <p className="small mb-2 text-body">
+          Compara la <strong>composición de la cartera pendiente</strong> (notas PENDIENTE con saldo) entre
+          saldo reciente <strong>0–{diasCorte} días</strong> desde la fecha de nota y saldo antiguo{' '}
+          <strong>&gt;{diasCorte} días</strong>. No mira una nota aislada: evalúa si, en conjunto, la deuda
+          está más vencida que reciente.
+        </p>
+        <p className="small mb-2 text-body">
+          Hay <strong>atraso estructural</strong> cuando el saldo &gt;{diasCorte} d supera al de 0–{diasCorte} d{' '}
+          <em>o</em> cuando más del <strong>{umbralPct}%</strong> de la cartera cae en el tramo antiguo.
+        </p>
+        <div className="small border rounded bg-body-secondary bg-opacity-10 p-2 p-md-3 mb-2 text-body">
+          <div className="fw-medium mb-2">Ejemplo (cliente con 3 notas pendientes)</div>
+          <div className="table-responsive">
+            <table className="table table-sm table-bordered mb-2 mb-md-2">
+              <thead>
+                <tr>
+                  <th>Nota</th>
+                  <th className="text-end">Días</th>
+                  <th className="text-end">Saldo</th>
+                  <th>Tramo</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>NC-101</td>
+                  <td className="text-end">12</td>
+                  <td className="text-end">$3,000</td>
+                  <td>0–{diasCorte} d</td>
+                </tr>
+                <tr>
+                  <td>NC-088</td>
+                  <td className="text-end">45</td>
+                  <td className="text-end">$5,000</td>
+                  <td>&gt;{diasCorte} d</td>
+                </tr>
+                <tr>
+                  <td>NC-072</td>
+                  <td className="text-end">95</td>
+                  <td className="text-end">$2,000</td>
+                  <td>&gt;{diasCorte} d</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <ul className="mb-2 ps-3">
+            <li>
+              Saldo 0–{diasCorte} d = <strong>$3,000</strong> · Saldo &gt;{diasCorte} d = <strong>$7,000</strong>{' '}
+              · Total = <strong>$10,000</strong>
+            </li>
+            <li>
+              % &gt;{diasCorte} d = 7,000 ÷ 10,000 = <strong>70%</strong>
+            </li>
+            <li>
+              $7,000 &gt; $3,000 <em>y</em> 70% &gt; {umbralPct}% →{' '}
+              <span className="badge text-bg-danger">Atraso estructural</span>
+            </li>
+          </ul>
+          <div className="text-body-secondary">
+            Por ruta se hace igual: se suman todas las notas pendientes de esa ruta y se aplica la misma regla.
+          </div>
+        </div>
+        <p className="small mb-0 text-body-secondary">
+          Es un indicador <strong>informativo</strong> para crédito y rutas: señala clientes o rutas donde, por
+          composición, <strong>no deberían recibir más producto</strong> hasta equilibrar la cartera. La decisión
+          final sigue siendo operativa.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 function ReporteDetalleCardMovil({ row }) {
   return (
     <div className="card border shadow-sm">
@@ -1164,11 +1240,10 @@ export default function ReportePage() {
         <>
           <div className="row g-2 mb-3">
             <div className="col-12">
-              <div className="small text-body-secondary">
-                Composición de cartera (solo PENDIENTE con saldo). Umbral{' '}
-                {atrasoEstructural?.umbral_pct ?? 50}% · corte {atrasoEstructural?.dias_corte ?? 30} días.
-                Indicador informativo: no deberían recibir más producto.
-              </div>
+              <ReporteAtrasoEstructuralExplicacion
+                umbralPct={atrasoEstructural?.umbral_pct ?? 50}
+                diasCorte={atrasoEstructural?.dias_corte ?? 30}
+              />
             </div>
             <div className="col-6 col-md-3">
               <div className="card h-100 border-0 shadow-sm border-danger-subtle">

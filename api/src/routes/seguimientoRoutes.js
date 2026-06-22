@@ -211,7 +211,8 @@ router.get('/', requireAuth, async (req, res, next) => {
           CASE
             WHEN n.fecha_nota IS NULL THEN NULL
             ELSE (CURRENT_DATE - n.fecha_nota::date)::int
-          END AS dias
+          END AS dias,
+          n.saldo
         FROM notas_credito n
         LEFT JOIN rutas r ON r.id = n.ruta_id
         ${whereSql}
@@ -228,11 +229,12 @@ router.get('/', requireAuth, async (req, res, next) => {
             WHEN base.dias <= 365 THEN 'd181_365'
             ELSE 'd366_plus'
           END AS bucket_id,
-          COUNT(*)::int AS registros
+          COUNT(*)::int AS registros,
+          COALESCE(SUM(base.saldo), 0)::float8 AS saldo_total
         FROM base
         GROUP BY 1
       )
-      SELECT bucket_id, registros
+      SELECT bucket_id, registros, saldo_total
       FROM agrupado
       ORDER BY
         CASE agrupado.bucket_id

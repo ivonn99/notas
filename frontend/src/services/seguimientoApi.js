@@ -592,36 +592,42 @@ async function fetchSeguimientoListSupabase(params = {}) {
   let porRuta = []
   let porAntiguedad = []
   if (includeAggregates) {
+    let aggQuery = supabase
+      .from('notas_credito')
+      .select('fecha_nota, saldo, rutas:ruta_id(codigo)')
+    aggQuery = applySeguimientoListFilters(aggQuery, filterArgs)
+    const { data: aggRows, error: aggError } = await aggQuery
+    if (aggError) throw new Error(aggError.message || 'No se pudieron cargar resúmenes')
+
     const porRutaMap = new Map()
-    for (const row of items) {
-      const key = String(row.ruta_codigo || '(sin ruta)')
-      porRutaMap.set(key, (porRutaMap.get(key) || 0) + 1)
+    const bucketOrder = ['negativo', 'd0_30', 'd31_45', 'd46_60', 'd61_90', 'd91_180', 'd181_365', 'd366_plus']
+    const bucketMap = new Map(bucketOrder.map((k) => [k, { registros: 0, saldo_total: 0 }]))
+    const now = Date.now()
+    for (const row of aggRows || []) {
+      const rutaKey = String(row.rutas?.codigo || '(sin ruta)')
+      porRutaMap.set(rutaKey, (porRutaMap.get(rutaKey) || 0) + 1)
+
+      let key = 'negativo'
+      if (row.fecha_nota) {
+        const dias = Math.floor((now - new Date(row.fecha_nota).getTime()) / (24 * 60 * 60 * 1000))
+        key = 'd366_plus'
+        if (!Number.isFinite(dias) || dias < 0) key = 'negativo'
+        else if (dias <= 30) key = 'd0_30'
+        else if (dias <= 45) key = 'd31_45'
+        else if (dias <= 60) key = 'd46_60'
+        else if (dias <= 90) key = 'd61_90'
+        else if (dias <= 180) key = 'd91_180'
+        else if (dias <= 365) key = 'd181_365'
+      }
+      const entry = bucketMap.get(key)
+      entry.registros += 1
+      entry.saldo_total += Number(row.saldo || 0)
     }
     porRuta = Array.from(porRutaMap.entries())
       .map(([ruta_codigo, registros]) => ({ ruta_codigo, registros }))
       .sort((a, b) => b.registros - a.registros || String(a.ruta_codigo).localeCompare(String(b.ruta_codigo)))
-
-    const bucketOrder = ['negativo', 'd0_30', 'd31_45', 'd46_60', 'd61_90', 'd91_180', 'd181_365', 'd366_plus']
-    const bucketMap = new Map(bucketOrder.map((k) => [k, 0]))
-    const now = Date.now()
-    for (const row of items) {
-      if (!row.fecha_nota) {
-        bucketMap.set('negativo', (bucketMap.get('negativo') || 0) + 1)
-        continue
-      }
-      const dias = Math.floor((now - new Date(row.fecha_nota).getTime()) / (24 * 60 * 60 * 1000))
-      let key = 'd366_plus'
-      if (!Number.isFinite(dias) || dias < 0) key = 'negativo'
-      else if (dias <= 30) key = 'd0_30'
-      else if (dias <= 45) key = 'd31_45'
-      else if (dias <= 60) key = 'd46_60'
-      else if (dias <= 90) key = 'd61_90'
-      else if (dias <= 180) key = 'd91_180'
-      else if (dias <= 365) key = 'd181_365'
-      bucketMap.set(key, (bucketMap.get(key) || 0) + 1)
-    }
     porAntiguedad = bucketOrder
-      .map((bucket_id) => ({ bucket_id, registros: bucketMap.get(bucket_id) || 0 }))
+      .map((bucket_id) => ({ bucket_id, ...bucketMap.get(bucket_id) }))
       .filter((r) => r.registros > 0)
   }
 

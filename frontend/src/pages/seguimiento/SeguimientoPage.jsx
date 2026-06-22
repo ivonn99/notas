@@ -33,6 +33,16 @@ const BUCKET_LABELS = {
   ...DIAS_BUCKET_LABELS,
 }
 
+const BUCKET_TO_R = {
+  d0_30: 'r1',
+  d31_45: 'r2',
+  d46_60: 'r2b',
+  d61_90: 'r3',
+  d91_180: 'r4',
+  d181_365: 'r5',
+  d366_plus: 'r6',
+}
+
 function formatFechaComentario(value) {
   if (value == null || value === '') return ''
   const d = new Date(value)
@@ -338,6 +348,17 @@ export default function SeguimientoPage() {
     if (tramosSeleccionados.length === 0) return 'Todos'
     return tramosSeleccionados.map((id) => BUCKET_LABELS[id] || id).join(', ')
   }, [tramosSeleccionados])
+
+  const totalesAntiguedad = useMemo(() => {
+    const rows = data?.porAntiguedad || []
+    return rows.reduce(
+      (acc, r) => ({
+        registros: acc.registros + (r.registros ?? 0),
+        saldo: acc.saldo + Number(r.saldo_total || 0),
+      }),
+      { registros: 0, saldo: 0 },
+    )
+  }, [data?.porAntiguedad])
   const cacheKey = useMemo(() => JSON.stringify(filtros), [filtros])
 
   const totalPages = data.totalPages || 1
@@ -548,6 +569,16 @@ export default function SeguimientoPage() {
 
   function handleTodasTramos() {
     updateSeguimientoFilters({ dias_bucket: '' })
+  }
+
+  function handleClickSaldoAntiguedad(bucketId) {
+    if (bucketId === 'all') {
+      handleTodasTramos()
+      return
+    }
+    const rId = BUCKET_TO_R[bucketId]
+    if (!rId) return
+    updateSeguimientoFilters({ dias_bucket: rId })
   }
 
   function toggleTramo(bucketId) {
@@ -902,28 +933,64 @@ export default function SeguimientoPage() {
                     <tr>
                       <th>Rango</th>
                       <th className="text-end">Registros</th>
+                      <th className="text-end">Saldo</th>
                     </tr>
                   </thead>
                   <tbody>
                     {loading ? (
                       <tr>
-                        <td colSpan="2" className="text-center py-3">Cargando...</td>
+                        <td colSpan="3" className="text-center py-3">Cargando...</td>
                       </tr>
                     ) : (data?.porAntiguedad?.length || 0) === 0 ? (
                       <tr>
-                        <td colSpan="2" className="text-center py-3 text-body-secondary">Sin datos</td>
+                        <td colSpan="3" className="text-center py-3 text-body-secondary">Sin datos</td>
                       </tr>
                     ) : (
-                      (data.porAntiguedad || []).map((r) => (
-                        <tr key={r.bucket_id}>
-                          <td>{BUCKET_LABELS[r.bucket_id] || r.bucket_id}</td>
-                          <td className="text-end">{(r.registros ?? 0).toLocaleString('es-MX')}</td>
-                        </tr>
-                      ))
+                      (data.porAntiguedad || []).map((r) => {
+                        const rId = BUCKET_TO_R[r.bucket_id]
+                        const saldoClickable = Boolean(rId) && (r.registros ?? 0) > 0
+                        return (
+                          <tr key={r.bucket_id}>
+                            <td>{BUCKET_LABELS[r.bucket_id] || r.bucket_id}</td>
+                            <td className="text-end">{(r.registros ?? 0).toLocaleString('es-MX')}</td>
+                            <td
+                              className={`text-end fw-medium${saldoClickable ? ' text-decoration-underline' : ''}`}
+                              style={{ cursor: saldoClickable ? 'pointer' : 'default' }}
+                              onClick={() => saldoClickable && handleClickSaldoAntiguedad(r.bucket_id)}
+                              title={saldoClickable ? 'Filtrar notas de este tramo' : undefined}
+                            >
+                              {money(r.saldo_total)}
+                            </td>
+                          </tr>
+                        )
+                      })
                     )}
                   </tbody>
+                  {!loading && (data?.porAntiguedad?.length || 0) > 0 ? (
+                    <tfoot className="table-light">
+                      <tr>
+                        <td className="fw-semibold">Total</td>
+                        <td className="text-end fw-semibold">
+                          {totalesAntiguedad.registros.toLocaleString('es-MX')}
+                        </td>
+                        <td
+                          className={`text-end fw-semibold${totalesAntiguedad.registros > 0 ? ' text-decoration-underline' : ''}`}
+                          style={{ cursor: totalesAntiguedad.registros > 0 ? 'pointer' : 'default' }}
+                          onClick={() =>
+                            totalesAntiguedad.registros > 0 && handleClickSaldoAntiguedad('all')
+                          }
+                          title={totalesAntiguedad.registros > 0 ? 'Quitar filtro por tramo' : undefined}
+                        >
+                          {money(totalesAntiguedad.saldo)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  ) : null}
                 </table>
               </div>
+              <p className="small text-body-secondary mb-0 px-3 py-2">
+                Clic en un saldo para filtrar el listado por ese tramo.
+              </p>
             </div>
           </div>
         </div>
