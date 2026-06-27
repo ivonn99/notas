@@ -3,6 +3,8 @@ import RequireAuth from '../components/RequireAuth.jsx'
 import RequireRole from '../components/RequireRole.jsx'
 import MainLayout from '../layouts/MainLayout.jsx'
 import ForbiddenPage from '../pages/public/ForbiddenPage.jsx'
+import NotFoundPage from '../pages/public/NotFoundPage.jsx'
+import RouteErrorPage from '../pages/public/RouteErrorPage.jsx'
 import HealthzPage from '../pages/public/HealthzPage.jsx'
 import LoginPage from '../pages/auth/LoginPage.jsx'
 import PaginaPrincipalPage from '../pages/dashboard/PaginaPrincipalPage.jsx'
@@ -29,7 +31,7 @@ import NotificacionesPage from '../pages/cuenta/NotificacionesPage.jsx'
 import EnlacesImagenesPage from '../pages/herramientas/EnlacesImagenesPage.jsx'
 
 export const router = createBrowserRouter([
-  { path: '/login', element: <LoginPage /> },
+  { path: '/login', element: <LoginPage />, errorElement: <RouteErrorPage /> },
   { path: '/forbidden', element: <ForbiddenPage /> },
   {
     path: '/',
@@ -38,6 +40,7 @@ export const router = createBrowserRouter([
         <MainLayout />
       </RequireAuth>
     ),
+    errorElement: <RouteErrorPage />,
     children: [
       { index: true, element: <PaginaPrincipalPage /> },
       { path: 'notas-credito', element: <TodasLasNotasPage /> },
@@ -175,6 +178,8 @@ export const router = createBrowserRouter([
           </RequireRole>
         ),
       },
+      { path: '*', element: <NotFoundPage /> },
     ],
   },
+  { path: '*', element: <NotFoundPage /> },
 ])
