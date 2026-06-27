@@ -219,9 +219,10 @@ Archivos que concentran demasiada lógica:
 
 ### Fase 3 — Mantenibilidad (continuo)
 
-1. Dividir `ReportePage` y `importacionesRoutes`.
-2. TypeScript en servicios API críticos.
+1. Dividir `ReportePage` e `importacionesRoutes` (monolitos).
+2. TypeScript gradual en servicios críticos.
 3. Storage adjuntos si aplica.
+4. **Reportes en Supabase** — ver plan detallado en [`plan-reportes-supabase.md`](plan-reportes-supabase.md) (KPIs RPC → tabla paginada → atraso estructural).
 
 ---
 
