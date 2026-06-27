@@ -4,6 +4,10 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  test: {
+    environment: 'node',
+    include: ['test/**/*.test.js'],
+  },
   server: {
     proxy: {
       // 127.0.0.1 evita en Windows que `localhost` resuelva a IPv6 y el proxy no llegue al API
