@@ -259,50 +259,93 @@ export function buildRutaMapFromRows(rutasRows) {
   return rutaMap
 }
 
-async function ensureRutaId(supabase, codigoRaw, rutaMap) {
-  const finalCodigo = String(codigoRaw || '')
-    .trim()
-    .toUpperCase() || 'SIN_RUTA'
-  if (rutaMap.has(finalCodigo)) return rutaMap.get(finalCodigo)
+export function normalizeRutaCodigo(codigoRaw) {
+  return (
+    String(codigoRaw || '')
+      .trim()
+      .toUpperCase() || 'SIN_RUTA'
+  )
+}
 
-  const { data: found, error: selErr } = await supabase
-    .from('rutas')
-    .select('id')
-    .eq('codigo', finalCodigo)
-    .limit(1)
-  if (selErr) throw new Error(selErr.message || 'No se pudo leer ruta')
-  let rid = found?.[0]?.id
-  if (rid == null) {
-    const { data: found2 } = await supabase.from('rutas').select('id').ilike('codigo', finalCodigo).limit(1)
-    rid = found2?.[0]?.id
-  }
-  if (rid != null) {
-    rutaMap.set(finalCodigo, rid)
-    return rid
-  }
-
+function rutaInsertPayload(finalCodigo) {
   const nombre =
     finalCodigo === 'SIN_RUTA' ? 'Sin ruta especificada' : `Ruta ${finalCodigo}`
   const descripcion =
     finalCodigo === 'SIN_RUTA'
       ? 'Creada automáticamente por importación (sin ruta en archivo)'
       : 'Creada automáticamente por importación'
+  return { codigo: finalCodigo, nombre, descripcion, activa: true }
+}
 
-  const { data: ins, error: insErr } = await supabase
-    .from('rutas')
-    .insert({
-      codigo: finalCodigo,
-      nombre,
-      descripcion,
-      activa: true,
-    })
-    .select('id')
-    .limit(1)
-  if (insErr) throw new Error(insErr.message || 'No se pudo crear ruta')
-  const id = ins?.[0]?.id
-  if (id == null) throw new Error('Ruta insertada sin id')
-  rutaMap.set(finalCodigo, id)
-  return id
+/** Resuelve códigos de ruta en lote (evita N+1 en importación). */
+export async function ensureRutaIdsBatch(supabase, codigosRaw, rutaMap) {
+  const pending = new Set()
+  for (const raw of codigosRaw) {
+    const c = normalizeRutaCodigo(raw)
+    if (!rutaMap.has(c)) pending.add(c)
+  }
+  if (pending.size === 0) return
+
+  const list = Array.from(pending)
+  const inChunk = 100
+
+  for (let i = 0; i < list.length; i += inChunk) {
+    const chunk = list.slice(i, i + inChunk)
+    const { data, error } = await supabase.from('rutas').select('id, codigo').in('codigo', chunk)
+    if (error) throw new Error(error.message || 'No se pudo leer ruta')
+    for (const r of data || []) {
+      const c = String(r.codigo ?? '')
+        .trim()
+        .toUpperCase()
+      if (c) rutaMap.set(c, r.id)
+    }
+  }
+
+  let stillMissing = list.filter((c) => !rutaMap.has(c))
+  if (stillMissing.length === 0) return
+
+  for (const finalCodigo of stillMissing) {
+    const { data: found2 } = await supabase
+      .from('rutas')
+      .select('id, codigo')
+      .ilike('codigo', finalCodigo)
+      .limit(1)
+    const rid = found2?.[0]?.id
+    if (rid != null) {
+      rutaMap.set(finalCodigo, rid)
+    }
+  }
+
+  stillMissing = list.filter((c) => !rutaMap.has(c))
+  if (stillMissing.length === 0) return
+
+  for (let i = 0; i < stillMissing.length; i += inChunk) {
+    const chunk = stillMissing.slice(i, i + inChunk)
+    const { data: ins, error: insErr } = await supabase
+      .from('rutas')
+      .insert(chunk.map((c) => rutaInsertPayload(c)))
+      .select('id, codigo')
+    if (insErr) {
+      const { data: retry, error: retryErr } = await supabase
+        .from('rutas')
+        .select('id, codigo')
+        .in('codigo', chunk)
+      if (retryErr) throw new Error(insErr.message || 'No se pudo crear ruta')
+      for (const r of retry || []) {
+        const c = String(r.codigo ?? '')
+          .trim()
+          .toUpperCase()
+        if (c) rutaMap.set(c, r.id)
+      }
+      continue
+    }
+    for (const r of ins || []) {
+      const c = String(r.codigo ?? '')
+        .trim()
+        .toUpperCase()
+      if (c) rutaMap.set(c, r.id)
+    }
+  }
 }
 
 async function fetchPrevEstados(supabase, chunk) {
@@ -409,6 +452,7 @@ export async function ejecutarImportacionSupabase({
     }
 
     const validRows = []
+    const stagedRows = []
     for (let i = 0; i < records.length; i += 1) {
       const raw = records[i]
       const rowNum = i + 2
@@ -420,8 +464,20 @@ export async function ejecutarImportacionSupabase({
         job.errorCount += 1
         continue
       }
+      stagedRows.push({ row })
+    }
 
-      const rutaId = await ensureRutaId(supabase, row.rutaCodigo, rutaMap)
+    await ensureRutaIdsBatch(
+      supabase,
+      stagedRows.map(({ row }) => row.rutaCodigo),
+      rutaMap,
+    )
+
+    for (const { row } of stagedRows) {
+      const finalCodigo = normalizeRutaCodigo(row.rutaCodigo)
+      const rutaId = rutaMap.get(finalCodigo)
+      if (rutaId == null) throw new Error(`No se pudo resolver ruta ${finalCodigo}`)
+
       const saldo = saldoFromMontoAbono(row.monto, row.abono)
       const uKey = String(row.usuarioVendedorPv || '')
         .trim()

@@ -189,6 +189,10 @@ Archivos que concentran demasiada lógica:
 | P1 | CI mínimo (lint + test + build) | **Hecho** — `.github/workflows/ci.yml` |
 | P1 | README de proyecto + onboarding | **Hecho** — [README.md](../README.md) |
 | P2 | Endurecer API (CORS, rate limit, helmet) | **Hecho** |
+| P2 | Aislar API legacy (solo WhatsApp + logs) | **Hecho** — `API_LEGACY_ROUTES` opt-in |
+| P2 | Rate limit login canónico (`db-login-jwt`) | **Hecho** |
+| P2 | Batch rutas importación (N+1) | **Hecho** |
+| P2 | Tests frontend (Vitest) | **Hecho** |
 | P2 | Refactor páginas/servicios monolíticos | Pendiente |
 | P2 | Migración demo anon sustituida por revocación | **Hecho** |
 | P3 | TypeScript gradual | Pendiente |
@@ -208,9 +212,10 @@ Archivos que concentran demasiada lógica:
 
 ### Fase 2 — Reducir deuda (2–4 semanas)
 
-1. Decidir stack canónico (recomendado: **Supabase + RLS** ya listo; API solo para WhatsApp, importación pesada o tareas batch).
-2. Tests automatizados: importación, auth, `requiere_atencion`.
-3. CORS restrictivo + rate limit en login.
+1. ~~Stack canónico~~ — front Supabase-only; API complementario (WhatsApp + logs) por defecto (`API_LEGACY_ROUTES` opt-in).
+2. ~~Tests automatizados~~ — API + `shared/` + frontend Vitest (importación, auth/roles, `requiere_atencion`).
+3. ~~CORS + rate limit login~~ — API legacy; rate limit en Edge `db-login-jwt` (20 intentos / 15 min por IP).
+4. ~~Batch rutas en importación~~ — `ensureRutaIdsBatch` elimina N+1 por fila.
 
 ### Fase 3 — Mantenibilidad (continuo)
 

@@ -8,6 +8,11 @@ import {
   verifyDjangoPassword,
 } from "../_shared/djangoPassword.ts"
 
+import {
+  checkLoginRateLimit,
+  clientIpFromRequest,
+} from "../_shared/loginRateLimit.ts"
+
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -33,6 +38,14 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    })
+  }
+
+  const rateMsg = checkLoginRateLimit(clientIpFromRequest(req))
+  if (rateMsg) {
+    return new Response(JSON.stringify({ error: rateMsg }), {
+      status: 429,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     })
   }

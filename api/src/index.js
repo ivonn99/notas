@@ -10,6 +10,7 @@ import express from 'express'
 
 import { createCorsOptions, logCorsStartup } from './config/cors.js'
 import { createHelmetMiddleware, logHelmetStartup } from './config/helmet.js'
+import { isDbPingEnabled, isLegacyApiEnabled, logApiModeStartup } from './config/legacyRoutes.js'
 import { applyTrustProxy, logRateLimitStartup } from './config/rateLimit.js'
 import { closePool, getDbConnectionMeta, getPool } from './db.js'
 import adminRouter from './routes/adminRoutes.js'
@@ -77,6 +78,7 @@ async function markInterruptedImportaciones() {
 logHelmetStartup()
 logCorsStartup()
 logRateLimitStartup()
+logApiModeStartup()
 app.use(createHelmetMiddleware())
 app.use(cors(createCorsOptions()))
 app.use(cookieParser())
@@ -91,17 +93,22 @@ app.use((req, res, next) => {
   next()
 })
 
-app.use('/api/auth', authRouter)
-app.use('/api/notas-credito', notasCreditoRouter)
-app.use('/api/seguimiento', seguimientoRouter)
-app.use('/api/alertas', alertasRouter)
-app.use('/api/admin', adminRouter)
-app.use('/api/profile', profileRouter)
-app.use('/api/importaciones', importacionesRouter)
+const legacyApi = isLegacyApiEnabled()
+
+if (legacyApi) {
+  app.use('/api/auth', authRouter)
+  app.use('/api/notas-credito', notasCreditoRouter)
+  app.use('/api/seguimiento', seguimientoRouter)
+  app.use('/api/alertas', alertasRouter)
+  app.use('/api/admin', adminRouter)
+  app.use('/api/profile', profileRouter)
+  app.use('/api/importaciones', importacionesRouter)
+  app.use('/api/notificaciones', notificacionesRouter)
+  app.use('/api/auditoria', auditoriaRouter)
+  app.use('/api/reportes', reportesRouter)
+}
+
 app.use('/api/logs-sistema', logsRouter)
-app.use('/api/notificaciones', notificacionesRouter)
-app.use('/api/auditoria', auditoriaRouter)
-app.use('/api/reportes', reportesRouter)
 app.use('/api/whatsapp', whatsappRouter)
 app.use('/api/whatsapp', whatsappCobranzaRouter)
 
@@ -114,39 +121,41 @@ app.get('/api/healthz', (_req, res) => {
   res.json({ status: 'ok' })
 })
 
-/** Comprueba conexión a la base de datos y, si existe la tabla, cuenta notas de crédito. */
-app.get('/api/db/ping', async (_req, res) => {
-  const t0 = Date.now()
-  try {
-    const pool = getPool()
-    await pool.query('SELECT 1 AS ok')
-
-    const meta = getDbConnectionMeta()
-    let notasCreditoCount = null
+/** Comprueba conexión a la base de datos (solo legacy o DB_PING_ENABLED=true). */
+if (isDbPingEnabled()) {
+  app.get('/api/db/ping', async (_req, res) => {
+    const t0 = Date.now()
     try {
-      const r = await pool.query(
-        'SELECT COUNT(*)::int AS c FROM notas_credito',
-      )
-      notasCreditoCount = r.rows[0]?.c ?? null
-    } catch {
-      // Tabla ausente, otro esquema o sin permiso: el ping igual es válido.
-    }
+      const pool = getPool()
+      await pool.query('SELECT 1 AS ok')
 
-    res.json({
-      ok: true,
-      dbSource: meta?.source,
-      latencyMs: Date.now() - t0,
-      notasCreditoCount,
-      dbHost: meta?.host,
-    })
-  } catch (err) {
-    console.error('DB ping:', err.message)
-    res.status(503).json({
-      ok: false,
-      error: 'No se pudo conectar a la base de datos. Revisa SUPABASE_DB_URL (o DATABASE_URL) en api/.env.',
-    })
-  }
-})
+      const meta = getDbConnectionMeta()
+      let notasCreditoCount = null
+      try {
+        const r = await pool.query(
+          'SELECT COUNT(*)::int AS c FROM notas_credito',
+        )
+        notasCreditoCount = r.rows[0]?.c ?? null
+      } catch {
+        // Tabla ausente, otro esquema o sin permiso: el ping igual es válido.
+      }
+
+      res.json({
+        ok: true,
+        dbSource: meta?.source,
+        latencyMs: Date.now() - t0,
+        notasCreditoCount,
+        dbHost: meta?.host,
+      })
+    } catch (err) {
+      console.error('DB ping:', err.message)
+      res.status(503).json({
+        ok: false,
+        error: 'No se pudo conectar a la base de datos. Revisa SUPABASE_DB_URL (o DATABASE_URL) en api/.env.',
+      })
+    }
+  })
+}
 
 app.use((err, _req, res, _next) => {
   const status = Number(err?.status || 500)
