@@ -1,10 +1,14 @@
 {
   "name": "notas-de-credito",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "concurrently -k -n api,web -c cyan,magenta \"npm run dev --prefix api\" \"wait-on -t 120000 http://127.0.0.1:3001/api/health && npm run dev --prefix frontend\"",
     "dev:api": "npm run dev --prefix api",
-    "dev:web": "npm run dev --prefix frontend"
+    "dev:web": "npm run dev --prefix frontend",
+    "test": "npm test --prefix api",
+    "lint": "npm run lint --prefix frontend",
+    "build": "npm run build --prefix frontend"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

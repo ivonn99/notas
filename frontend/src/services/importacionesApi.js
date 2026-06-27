@@ -1,5 +1,3 @@
-import { apiUrl } from '../utils/apiUrl.js'
-import { getApiAuthorizationHeader } from '../utils/apiAuthHeaders.js'
 import {
   analizarImportacionPrevia,
   buildPreviewPayload,
@@ -12,13 +10,11 @@ import {
   sampleCsv,
 } from '../lib/importacionReporte.js'
 import { canAdmin, getSupabaseAuthMeta } from '../lib/supabaseAuth.js'
-import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
-import { http } from './http.js'
+import { supabase } from '../lib/supabaseClient.js'
 import { logsApi } from './logsApi.js'
 
 export const importacionesApi = {
   list: async () => {
-    if (!isSupabaseConfigured) return http('/api/importaciones')
     const meta = await getSupabaseAuthMeta()
     if (!canAdmin(meta)) throw new Error('Sin permiso')
     const { data, error } = await supabase
@@ -51,7 +47,6 @@ export const importacionesApi = {
   },
   logs: () => logsFallback(),
   progreso: async (id) => {
-    if (!isSupabaseConfigured) return http(`/api/importaciones/${id}/progreso`)
     const meta = await getSupabaseAuthMeta()
     if (!canAdmin(meta)) throw new Error('Sin permiso')
     const impId = Number.parseInt(String(id), 10)
@@ -100,27 +95,6 @@ export const importacionesApi = {
   preview: async (file, mapping = null, empresaImportacion = null) => {
     const scope = parseEmpresaImportacion(empresaImportacion)
     if (!scope) throw new Error('Selecciona la empresa del reporte (DISTRIBUIDORA o RODRIGO)')
-    if (!isSupabaseConfigured) {
-      const fd = new FormData()
-      fd.append('file', file)
-      fd.append('empresa_scope', scope)
-      if (mapping) fd.append('mapping', JSON.stringify(mapping))
-      const res = await fetch(apiUrl('/api/importaciones/preview'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { ...(getApiAuthorizationHeader() || {}) },
-        body: fd,
-      })
-      const text = await res.text()
-      let data = {}
-      try {
-        data = text ? JSON.parse(text) : {}
-      } catch {
-        data = {}
-      }
-      if (!res.ok) throw new Error(data.error || `Error HTTP ${res.status}`)
-      return data
-    }
 
     const meta = await getSupabaseAuthMeta()
     if (!canAdmin(meta)) throw new Error('Sin permiso')
@@ -141,27 +115,6 @@ export const importacionesApi = {
   analizarAntesDeImportar: async (file, mapping = null, empresaImportacion = null) => {
     const scope = parseEmpresaImportacion(empresaImportacion)
     if (!scope) throw new Error('Selecciona la empresa del reporte (DISTRIBUIDORA o RODRIGO)')
-    if (!isSupabaseConfigured) {
-      const fd = new FormData()
-      fd.append('file', file)
-      fd.append('empresa_scope', scope)
-      if (mapping) fd.append('mapping', JSON.stringify(mapping))
-      const res = await fetch(apiUrl('/api/importaciones/analizar'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { ...(getApiAuthorizationHeader() || {}) },
-        body: fd,
-      })
-      const text = await res.text()
-      let data = {}
-      try {
-        data = text ? JSON.parse(text) : {}
-      } catch {
-        data = {}
-      }
-      if (!res.ok) throw new Error(data.error || `Error HTTP ${res.status}`)
-      return data
-    }
 
     const meta = await getSupabaseAuthMeta()
     if (!canAdmin(meta)) throw new Error('Sin permiso')
@@ -178,14 +131,6 @@ export const importacionesApi = {
     })
   },
   downloadErroresTxt: async (id) => {
-    if (!isSupabaseConfigured) {
-      const res = await fetch(apiUrl(`/api/importaciones/${id}/errores-txt`), {
-        credentials: 'include',
-        headers: { ...(getApiAuthorizationHeader() || {}) },
-      })
-      if (!res.ok) throw new Error(`Error HTTP ${res.status}`)
-      return res.text()
-    }
     const meta = await getSupabaseAuthMeta()
     if (!canAdmin(meta)) throw new Error('Sin permiso')
     const impId = Number.parseInt(String(id), 10)
@@ -209,14 +154,6 @@ export const importacionesApi = {
     return content
   },
   downloadMuestra: async () => {
-    if (!isSupabaseConfigured) {
-      const res = await fetch(apiUrl('/api/importaciones/muestra'), {
-        credentials: 'include',
-        headers: { ...(getApiAuthorizationHeader() || {}) },
-      })
-      if (!res.ok) throw new Error(`Error HTTP ${res.status}`)
-      return res.text()
-    }
     const meta = await getSupabaseAuthMeta()
     if (!canAdmin(meta)) throw new Error('Sin permiso')
     return sampleCsv()
@@ -224,27 +161,6 @@ export const importacionesApi = {
   uploadCsv: async (file, mapping = null, empresaImportacion = null) => {
     const scope = parseEmpresaImportacion(empresaImportacion)
     if (!scope) throw new Error('Selecciona la empresa del reporte (DISTRIBUIDORA o RODRIGO)')
-    if (!isSupabaseConfigured) {
-      const fd = new FormData()
-      fd.append('file', file)
-      fd.append('empresa_scope', scope)
-      if (mapping) fd.append('mapping', JSON.stringify(mapping))
-      const res = await fetch(apiUrl('/api/importaciones/upload'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { ...(getApiAuthorizationHeader() || {}) },
-        body: fd,
-      })
-      const text = await res.text()
-      let data = {}
-      try {
-        data = text ? JSON.parse(text) : {}
-      } catch {
-        data = {}
-      }
-      if (!res.ok) throw new Error(data.error || `Error HTTP ${res.status}`)
-      return data
-    }
 
     const meta = await getSupabaseAuthMeta()
     if (!canAdmin(meta)) throw new Error('Sin permiso')
@@ -292,6 +208,5 @@ export const importacionesApi = {
 }
 
 function logsFallback() {
-  if (isSupabaseConfigured) return logsApi.importaciones()
-  return http('/api/logs-sistema')
+  return logsApi.importaciones()
 }

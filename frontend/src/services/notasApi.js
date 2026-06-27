@@ -1,32 +1,8 @@
 import { getSupabaseAuthMeta } from '../lib/supabaseAuth.js'
-import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
-import { apiUrl } from '../utils/apiUrl.js'
-
-function toQuery(params) {
-  const q = new URLSearchParams()
-  Object.entries(params).forEach(([k, v]) => {
-    if (v == null) return
-    const s = String(v).trim()
-    if (!s) return
-    q.set(k, s)
-  })
-  return q.toString()
-}
+import { supabase } from '../lib/supabaseClient.js'
 
 export async function fetchNotasCredito(params = {}) {
-  if (isSupabaseConfigured) {
-    return fetchNotasCreditoSupabase(params)
-  }
-
-  const query = toQuery(params)
-  const url = query ? `/api/notas-credito?${query}` : '/api/notas-credito'
-
-  const res = await fetch(apiUrl(url), { credentials: 'include' })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new Error(data.error || `Error HTTP ${res.status} al cargar notas`)
-  }
-  return data
+  return fetchNotasCreditoSupabase(params)
 }
 
 function normalizeSort(sort) {
@@ -97,7 +73,7 @@ async function fetchNotasCreditoSupabase(params = {}) {
   if (rol === 'VENDEDOR' && !isSuperuser) {
     if (usuarioId == null) {
       throw new Error(
-        'Falta user_metadata.usuarioId para filtrar rutas de vendedor en Supabase. Configura ese metadato o usa el backend.',
+        'Falta user_metadata.usuarioId para filtrar rutas de vendedor en Supabase.',
       )
     }
     const { data: rutasRows, error: rutasErr } = await supabase

@@ -1,10 +1,8 @@
 import { canCredito, getSupabaseAuthMeta } from '../lib/supabaseAuth.js'
-import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
-import { http } from './http.js'
+import { supabase } from '../lib/supabaseClient.js'
 
 export const notificacionesApi = {
   list: async () => {
-    if (!isSupabaseConfigured) return http('/api/notificaciones')
     const meta = await getSupabaseAuthMeta()
     const items = []
     let allowedNoteIds = null
@@ -67,14 +65,12 @@ export const notificacionesApi = {
     return { ok: true, items: items.slice(0, 150) }
   },
   resumen: async () => {
-    if (!isSupabaseConfigured) return http('/api/notificaciones/resumen')
     const data = await notificacionesApi.list()
     const aclaraciones = data.items.filter((x) => x.tipo === 'ACLARACION').length
     const alertas = data.items.filter((x) => x.tipo === 'ALERTA').length
     return { ok: true, counts: { aclaraciones, alertas, total: aclaraciones + alertas } }
   },
   marcarTodas: async () => {
-    if (!isSupabaseConfigured) return http('/api/notificaciones/leer-todo', { method: 'POST' })
     const data = await notificacionesApi.list()
     let updated = 0
     const aclarIds = data.items.filter((x) => x.tipo === 'ACLARACION').map((x) => x.id)
@@ -92,7 +88,6 @@ export const notificacionesApi = {
     return { ok: true, updated }
   },
   marcarLeida: async (kind, id) => {
-    if (!isSupabaseConfigured) return http(`/api/notificaciones/${kind}/${id}/leer`, { method: 'POST' })
     const k = String(kind || '').toUpperCase()
     const targetId = Number.parseInt(String(id), 10)
     if (!Number.isFinite(targetId) || targetId <= 0) throw new Error('ID inválido')

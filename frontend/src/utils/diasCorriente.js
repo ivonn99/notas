@@ -36,7 +36,7 @@ export function diasDesdeFechaNota(fechaNota) {
   return diasEntreNotaYCorriente(fechaNota, null)
 }
 
-export function formatDiasNotaCorriente(fechaNota, _fechaCorriente) {
+export function formatDiasNotaCorriente(fechaNota) {
   const n = diasDesdeFechaNota(fechaNota)
   if (n == null) return '—'
   return String(n)

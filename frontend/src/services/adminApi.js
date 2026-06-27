@@ -1,8 +1,7 @@
 import { decodeDbJwtPayloadUnsafe, isDbJwtLoginEnabled } from '../lib/dbJwtSession.js'
 import { canAdmin, getSupabaseAuthMeta } from '../lib/supabaseAuth.js'
 import { getEdgeFunctionBearer } from '../lib/supabaseSessionToken.js'
-import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
-import { http } from './http.js'
+import { supabase } from '../lib/supabaseClient.js'
 
 /** Si no defines VITE_SUPABASE_ADMIN_*_ENDPOINT, se usa VITE_SUPABASE_URL + /functions/v1/<nombre>. */
 function supabaseFunctionUrl(name) {
@@ -287,7 +286,6 @@ async function syncAuthUserMetadataFromDb(usuarioId) {
 
 export const adminApi = {
   listUsuarios: async () => {
-    if (!isSupabaseConfigured) return http('/api/admin/usuarios')
     await assertAdmin()
     const { data, error } = await supabase
       .from('usuarios')
@@ -301,7 +299,6 @@ export const adminApi = {
     return { ok: true, items: (data || []).map((u) => ({ ...u, rutas_enlazadas: countByUser[u.id] || 0 })) }
   },
   createUsuario: async (body) => {
-    if (!isSupabaseConfigured) return http('/api/admin/usuarios', { method: 'POST', body: JSON.stringify(body) })
     await assertAdmin()
     const username = String(body?.username ?? '').trim()
     const nombreCompleto = String(body?.nombre_completo ?? '').trim()
@@ -354,7 +351,6 @@ export const adminApi = {
     return { ok: true, item }
   },
   getUsuario: async (id) => {
-    if (!isSupabaseConfigured) return http(`/api/admin/usuarios/${id}`)
     await assertAdmin()
     const uid = Number.parseInt(String(id), 10)
     const { data, error } = await supabase.from('usuarios').select('id, username, nombre_completo, email, telefono, rol, activo, is_active, is_superuser').eq('id', uid).limit(1)
@@ -363,7 +359,6 @@ export const adminApi = {
     return { ok: true, item: data[0] }
   },
   updateUsuario: async (id, body) => {
-    if (!isSupabaseConfigured) return http(`/api/admin/usuarios/${id}`, { method: 'PUT', body: JSON.stringify(body) })
     await assertAdmin()
     const uid = Number.parseInt(String(id), 10)
     const username = String(body?.username ?? '').trim()
@@ -434,16 +429,9 @@ export const adminApi = {
     return { ok: true, item: data[0], authEmailSync, authMetadataSync }
   },
   resetUsuarioPassword: async (id, newPassword) => {
-    if (!isSupabaseConfigured) {
-      return http(`/api/admin/usuarios/${id}/reset-password`, {
-        method: 'POST',
-        body: JSON.stringify({ newPassword }),
-      })
-    }
     return adminResetPasswordViaSupabase(id, newPassword)
   },
   deleteUsuario: async (id) => {
-    if (!isSupabaseConfigured) return http(`/api/admin/usuarios/${id}`, { method: 'DELETE' })
     await assertAdmin()
     const uid = Number.parseInt(String(id), 10)
     const { data, error } = await supabase
@@ -457,7 +445,6 @@ export const adminApi = {
     return { ok: true, item: data[0] }
   },
   eliminarUsuarioPermanente: async (id) => {
-    if (!isSupabaseConfigured) return http(`/api/admin/usuarios/${id}/eliminar-permanente`, { method: 'POST' })
     await assertAdmin()
     const uid = Number.parseInt(String(id), 10)
     const { data: del, error } = await supabase.from('usuarios').delete().eq('id', uid).select('id, username').limit(1)
@@ -466,7 +453,6 @@ export const adminApi = {
     return { ok: true, item: del[0] }
   },
   getUsuarioRutas: async (id) => {
-    if (!isSupabaseConfigured) return http(`/api/admin/usuarios/${id}/rutas`)
     await assertAdmin()
     const uid = Number.parseInt(String(id), 10)
     const { data: userRows, error: userErr } = await supabase.from('usuarios').select('id, username, nombre_completo').eq('id', uid).limit(1)
@@ -480,7 +466,6 @@ export const adminApi = {
     return { ok: true, user: userRows[0], rutas: (rutas || []).map((r) => ({ ...r, asignada: set.has(r.id) })) }
   },
   updateUsuarioRutas: async (id, rutaIds) => {
-    if (!isSupabaseConfigured) return http(`/api/admin/usuarios/${id}/rutas`, { method: 'PUT', body: JSON.stringify({ rutaIds }) })
     await assertAdmin()
     const uid = Number.parseInt(String(id), 10)
     const cleanIds = Array.isArray(rutaIds) ? rutaIds.map((v) => Number.parseInt(String(v), 10)).filter((v) => Number.isFinite(v) && v > 0) : []
@@ -494,7 +479,6 @@ export const adminApi = {
   },
 
   listRutas: async () => {
-    if (!isSupabaseConfigured) return http('/api/admin/rutas')
     await assertAdmin()
     const { data, error } = await supabase.from('rutas').select('id, codigo, nombre, descripcion, activa, created_at').order('codigo', { ascending: true })
     if (error) throw new Error(error.message || 'No se pudieron cargar rutas')
@@ -505,7 +489,6 @@ export const adminApi = {
     return { ok: true, items: (data || []).map((r) => ({ ...r, rutas_enlazadas: countByRuta[r.id] || 0 })) }
   },
   listRutasSinAsignarVendedor: async () => {
-    if (!isSupabaseConfigured) return http('/api/admin/rutas/sin-asignar-vendedor')
     await assertAdmin()
     const { data: rutas, error: rutasErr } = await supabase.from('rutas').select('id, codigo, nombre, descripcion, activa').order('codigo', { ascending: true })
     if (rutasErr) throw new Error(rutasErr.message || 'No se pudieron cargar rutas')
@@ -522,13 +505,6 @@ export const adminApi = {
     return { ok: true, items: (rutas || []).filter((r) => (count[r.id] || 0) === 0).map((r) => ({ ...r, vendedores_asignados: 0 })) }
   },
   listNotasSinAsignarVendedor: async (empresa, page = 1, pageSize = 100) => {
-    if (!isSupabaseConfigured) {
-      return http(
-        empresa
-          ? `/api/admin/notas/sin-asignar-vendedor?empresa=${encodeURIComponent(empresa)}&page=${page}&pageSize=${pageSize}`
-          : `/api/admin/notas/sin-asignar-vendedor?page=${page}&pageSize=${pageSize}`,
-      )
-    }
     await assertAdmin()
     const emp = String(empresa || '').trim().toUpperCase()
     const p = Math.max(1, Number.parseInt(String(page), 10) || 1)
@@ -551,7 +527,6 @@ export const adminApi = {
     return { ok: true, empresa: emp || null, page: p, pageSize: ps, hasMore: items.length === ps, items }
   },
   createRuta: async (body) => {
-    if (!isSupabaseConfigured) return http('/api/admin/rutas', { method: 'POST', body: JSON.stringify(body) })
     await assertAdmin()
     const codigo = String(body?.codigo ?? '').trim().toUpperCase()
     const nombre = String(body?.nombre ?? '').trim()
@@ -566,7 +541,6 @@ export const adminApi = {
     return { ok: true, item: data?.[0] || null }
   },
   getRuta: async (id) => {
-    if (!isSupabaseConfigured) return http(`/api/admin/rutas/${id}`)
     await assertAdmin()
     const rid = Number.parseInt(String(id), 10)
     const { data, error } = await supabase.from('rutas').select('id, codigo, nombre, descripcion, activa').eq('id', rid).limit(1)
@@ -575,7 +549,6 @@ export const adminApi = {
     return { ok: true, item: data[0] }
   },
   updateRuta: async (id, body) => {
-    if (!isSupabaseConfigured) return http(`/api/admin/rutas/${id}`, { method: 'PUT', body: JSON.stringify(body) })
     await assertAdmin()
     const rid = Number.parseInt(String(id), 10)
     const codigo = String(body?.codigo ?? '').trim().toUpperCase()
@@ -593,7 +566,6 @@ export const adminApi = {
     return { ok: true, item: data[0] }
   },
   getRutaUsuarios: async (id) => {
-    if (!isSupabaseConfigured) return http(`/api/admin/rutas/${id}/usuarios`)
     await assertAdmin()
     const rid = Number.parseInt(String(id), 10)
     const { data: rutaRows, error: rutaErr } = await supabase.from('rutas').select('id, codigo, nombre').eq('id', rid).limit(1)
@@ -607,7 +579,6 @@ export const adminApi = {
     return { ok: true, ruta: rutaRows[0], usuarios: (users || []).map((u) => ({ ...u, asignado: set.has(u.id) })) }
   },
   updateRutaUsuarios: async (id, usuarioIds) => {
-    if (!isSupabaseConfigured) return http(`/api/admin/rutas/${id}/usuarios`, { method: 'PUT', body: JSON.stringify({ usuarioIds }) })
     await assertAdmin()
     const rid = Number.parseInt(String(id), 10)
     const clean = [...new Set((Array.isArray(usuarioIds) ? usuarioIds : []).map((x) => Number.parseInt(String(x), 10)).filter((x) => Number.isFinite(x) && x > 0))]
@@ -620,7 +591,6 @@ export const adminApi = {
     return { ok: true, assignedCount: clean.length }
   },
   deleteRuta: async (id) => {
-    if (!isSupabaseConfigured) return http(`/api/admin/rutas/${id}`, { method: 'DELETE' })
     await assertAdmin()
     const rid = Number.parseInt(String(id), 10)
     const { data: notas, error: notasErr } = await supabase.from('notas_credito').select('id', { count: 'exact' }).eq('ruta_id', rid).limit(1)
@@ -634,14 +604,12 @@ export const adminApi = {
   },
 
   listParametros: async () => {
-    if (!isSupabaseConfigured) return http('/api/admin/parametros')
     await assertAdmin()
     const { data, error } = await supabase.from('parametros').select('id, clave, valor, descripcion, updated_at').order('clave', { ascending: true })
     if (error) throw new Error(error.message || 'No se pudieron cargar parámetros')
     return { ok: true, items: data || [] }
   },
   getParametro: async (id) => {
-    if (!isSupabaseConfigured) return http(`/api/admin/parametros/${id}`)
     await assertAdmin()
     const pid = Number.parseInt(String(id), 10)
     const { data, error } = await supabase.from('parametros').select('id, clave, valor, descripcion, updated_at').eq('id', pid).limit(1)
@@ -650,7 +618,6 @@ export const adminApi = {
     return { ok: true, item: data[0] }
   },
   updateParametro: async (id, body) => {
-    if (!isSupabaseConfigured) return http(`/api/admin/parametros/${id}`, { method: 'PUT', body: JSON.stringify(body) })
     await assertAdmin()
     const pid = Number.parseInt(String(id), 10)
     const valor = String(body?.valor ?? '').trim()

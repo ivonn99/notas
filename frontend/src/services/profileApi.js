@@ -1,7 +1,6 @@
 import { getDbJwtToken, isDbJwtLoginEnabled } from '../lib/dbJwtSession.js'
-import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
+import { supabase } from '../lib/supabaseClient.js'
 import { getSupabaseAuthMeta } from '../lib/supabaseAuth.js'
-import { http } from './http.js'
 
 function dbChangeOwnPasswordUrl() {
   const explicit = String(import.meta.env.VITE_SUPABASE_DB_CHANGE_PASSWORD_ENDPOINT || '').trim()
@@ -14,7 +13,6 @@ function dbChangeOwnPasswordUrl() {
 
 export const profileApi = {
   getMe: async () => {
-    if (!isSupabaseConfigured) return http('/api/profile/me')
     const meta = await getSupabaseAuthMeta()
     if (meta.usuarioId == null) {
       throw new Error('Falta user_metadata.usuarioId para cargar perfil')
@@ -41,12 +39,6 @@ export const profileApi = {
     }
   },
   changePassword: async (currentPassword, newPassword) => {
-    if (!isSupabaseConfigured) {
-      return http('/api/profile/password', {
-        method: 'POST',
-        body: JSON.stringify({ currentPassword, newPassword }),
-      })
-    }
     if (isDbJwtLoginEnabled()) {
       const token = getDbJwtToken()
       if (!token) {

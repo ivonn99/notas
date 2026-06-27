@@ -8,18 +8,17 @@ import path from 'node:path'
 import { getPool } from '../db.js'
 import { requireAuth, requireRoles } from '../middleware/auth.js'
 import { logAudit } from '../services/audit.js'
+import {
+  parseEmpresaImportacion,
+  validateNormalized,
+} from '../../../shared/importValidation.js'
 
 const router = Router()
 const upload = multer({ storage: multer.memoryStorage() })
 const progressByImportId = new Map()
-const EMPRESAS_VALIDAS = new Set(['DISTRIBUIDORA', 'RODRIGO'])
-const ESTADOS_VALIDOS = new Set(['PENDIENTE', 'RESUELTA', 'CANCELADA'])
 
 function parseEmpresaScope(raw) {
-  const e = String(raw ?? '')
-    .trim()
-    .toUpperCase()
-  return EMPRESAS_VALIDAS.has(e) ? e : null
+  return parseEmpresaImportacion(raw)
 }
 
 function toNum(value) {
@@ -220,32 +219,6 @@ function detectMappingFromHeaders(records) {
     if (idx >= 0) mapping[field] = headers[idx]
   }
   return { headers, mapping }
-}
-
-function validateNormalized(row, rutaMap, empresaScope = null) {
-  const errors = []
-  if (!row.serieFolio) errors.push('serie_folio obligatorio')
-  if (!row.empresa) errors.push('empresa obligatoria')
-  if (row.empresa && !EMPRESAS_VALIDAS.has(row.empresa)) {
-    errors.push(`empresa inv?lida: ${row.empresa}`)
-  }
-  if (empresaScope) {
-    const got = String(row.empresa || '')
-      .trim()
-      .toUpperCase()
-    if (got !== empresaScope) {
-      errors.push(
-        `empresa de la fila (${got || 'vac?a'}) debe coincidir con la empresa elegida para esta importaci?n (${empresaScope})`,
-      )
-    }
-  }
-  if (row.estado && !ESTADOS_VALIDOS.has(row.estado)) {
-    errors.push(`estado inv?lido: ${row.estado}`)
-  }
-  if (row.monto == null) errors.push('monto inv?lido')
-  if (row.abono == null) errors.push('abono inv?lido')
-  if (!row.fechaNota) errors.push('fecha_nota inv?lida (usa dd/mm/aaaa o yyyy-mm-dd)')
-  return errors
 }
 
 function sampleCsv() {
@@ -605,7 +578,7 @@ async function runImportJob({
             nuevos,
             actualizados,
             resueltos,
-            `Procesando ${job.processed}/${records.length} ÿÿÿ ${originalName}`,
+            `Procesando ${job.processed}/${records.length} ??? ${originalName}`,
             importacionId,
           ],
         )

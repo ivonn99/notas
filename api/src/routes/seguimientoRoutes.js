@@ -6,6 +6,11 @@ import multer from 'multer'
 import { getPool } from '../db.js'
 import { requireAuth } from '../middleware/auth.js'
 import { logAudit } from '../services/audit.js'
+import {
+  canManageNotaEstado,
+  canManageNotaRuta,
+  shouldSetRequiereAtencionOnComment,
+} from '../../../shared/notasNegocio.js'
 
 const router = Router()
 const uploadsDir = path.resolve(process.cwd(), 'uploads', 'documentos')
@@ -22,11 +27,11 @@ function parsePositiveInt(value, fallback) {
 }
 
 function canManageState(user) {
-  return user?.isSuperuser || ROLES_CAMBIO_ESTADO.has(user?.rol)
+  return canManageNotaEstado(user)
 }
 
 function canManageRoute(user) {
-  return user?.isSuperuser || ROLES_CAMBIO_RUTA.has(user?.rol)
+  return canManageNotaRuta(user)
 }
 
 /** Orden SQL permitido (evita inyección). Clave = query param `sort`. */
@@ -621,7 +626,7 @@ router.post('/nota/:id/comentarios', requireAuth, async (req, res, next) => {
     // Comentar no reabre notas RESUELTA/CANCELADA.
     // Solo si ya estaba PENDIENTE, activamos la bandera de atención.
     const reabierta = false
-    if (prev && String(prev.estado || '').toUpperCase() === 'PENDIENTE') {
+    if (prev && shouldSetRequiereAtencionOnComment(prev.estado)) {
       await pool.query('UPDATE notas_credito SET requiere_atencion = true WHERE id = $1', [
         noteId,
       ])

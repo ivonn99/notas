@@ -1,6 +1,5 @@
 import { getSupabaseAuthMeta } from '../lib/supabaseAuth.js'
-import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
-import { apiUrl } from '../utils/apiUrl.js'
+import { supabase } from '../lib/supabaseClient.js'
 import {
   buildDiasBucketsSupabaseOr,
   diasBucketToDateRange,
@@ -9,41 +8,9 @@ import {
 } from '../utils/diasBuckets.js'
 import { fetchRutaIdsByCodigos, formatRutasList, parseRutasList } from '../utils/seguimientoRutas.js'
 
-function jsonOrEmpty(text) {
-  if (!text) return {}
-  try {
-    return JSON.parse(text)
-  } catch {
-    return {}
-  }
-}
-
-function buildQuery(params = {}) {
-  const q = new URLSearchParams()
-  Object.entries(params).forEach(([k, v]) => {
-    if (v == null) return
-    const s = String(v).trim()
-    if (!s) return
-    q.set(k, s)
-  })
-  return q.toString()
-}
-
 const ROLES_CAMBIO_ESTADO = new Set(['ADMIN', 'CREDITO'])
 const ROLES_CAMBIO_RUTA = new Set(['ADMIN'])
 const ESTADOS_VALIDOS = new Set(['PENDIENTE', 'RESUELTA', 'CANCELADA'])
-
-async function request(path, options = {}) {
-  const isFormData = options?.body instanceof FormData
-  const res = await fetch(apiUrl(path), {
-    credentials: 'include',
-    headers: isFormData ? undefined : { 'Content-Type': 'application/json' },
-    ...options,
-  })
-  const data = jsonOrEmpty(await res.text())
-  if (!res.ok) throw new Error(data.error || `Error HTTP ${res.status}`)
-  return data
-}
 
 async function getCurrentAuthMeta() {
   const m = await getSupabaseAuthMeta()
@@ -198,85 +165,41 @@ function applySeguimientoListFilters(
 }
 
 export async function fetchSeguimientoList(params = {}) {
-  if (isSupabaseConfigured) {
-    return fetchSeguimientoListSupabase(params)
-  }
-  const query = buildQuery(params)
-  return request(query ? `/api/seguimiento?${query}` : '/api/seguimiento')
+  return fetchSeguimientoListSupabase(params)
 }
 
 export function fetchSeguimientoDetalle(id) {
-  if (isSupabaseConfigured) {
-    return fetchSeguimientoDetalleSupabase(id)
-  }
-  return request(`/api/seguimiento/nota/${id}`)
+  return fetchSeguimientoDetalleSupabase(id)
 }
 
 export function fetchHistorialEstadosNotas(params = {}) {
-  if (isSupabaseConfigured) {
-    return fetchHistorialEstadosNotasSupabase(params)
-  }
-  const query = buildQuery({
-    limit: params.limit,
-    modo: params.modo,
-  })
-  return request(
-    query ? `/api/seguimiento/historial-estados?${query}` : '/api/seguimiento/historial-estados',
-  )
+  return fetchHistorialEstadosNotasSupabase(params)
 }
 
 export function postSeguimientoComentario(id, payload) {
-  if (isSupabaseConfigured) {
-    return postSeguimientoComentarioSupabase(id, payload)
-  }
-  return request(`/api/seguimiento/nota/${id}/comentarios`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
+  return postSeguimientoComentarioSupabase(id, payload)
 }
 
 export function deleteSeguimientoComentario(comentarioId) {
-  if (isSupabaseConfigured) {
-    return deleteSeguimientoComentarioSupabase(comentarioId)
-  }
-  return request(`/api/seguimiento/comentarios/${comentarioId}`, {
-    method: 'DELETE',
-  })
+  return deleteSeguimientoComentarioSupabase(comentarioId)
 }
 
 export function postSeguimientoEstado(id, payload) {
-  if (isSupabaseConfigured) {
-    return postSeguimientoEstadoSupabase(id, payload)
-  }
-  return request(`/api/seguimiento/nota/${id}/estado`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
+  return postSeguimientoEstadoSupabase(id, payload)
 }
 
 export function postSeguimientoRuta(id, rutaId) {
-  if (isSupabaseConfigured) {
-    return postSeguimientoRutaSupabase(id, rutaId)
-  }
-  return request(`/api/seguimiento/nota/${id}/ruta`, {
-    method: 'POST',
-    body: JSON.stringify({ rutaId }),
-  })
+  return postSeguimientoRutaSupabase(id, rutaId)
 }
 
 export function postSeguimientoDocumento(id, file) {
-  if (isSupabaseConfigured) {
-    const bucket = String(import.meta.env.VITE_SUPABASE_DOCUMENTOS_BUCKET || '').trim()
-    if (bucket) {
-      return postSeguimientoDocumentoSupabase(id, file, bucket)
-    }
+  const bucket = String(import.meta.env.VITE_SUPABASE_DOCUMENTOS_BUCKET || '').trim()
+  if (!bucket) {
+    throw new Error(
+      'Define VITE_SUPABASE_DOCUMENTOS_BUCKET (p. ej. documentos-notas) para adjuntar archivos.',
+    )
   }
-  const fd = new FormData()
-  fd.append('file', file)
-  return request(`/api/seguimiento/nota/${id}/documentos`, {
-    method: 'POST',
-    body: fd,
-  })
+  return postSeguimientoDocumentoSupabase(id, file, bucket)
 }
 
 function sanitizeFileName(name) {

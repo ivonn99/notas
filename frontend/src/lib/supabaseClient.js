@@ -4,16 +4,28 @@ import { getDbJwtToken, isDbJwtLoginEnabled } from './dbJwtSession.js'
 const supabaseUrl = String(import.meta.env.VITE_SUPABASE_URL || '').trim()
 const supabaseAnonKey = String(import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim()
 
-/**
- * Con URL + anon key el front usa Supabase (Auth + PostgREST) desde el navegador.
- * Sin ellas, todo va al API Node (cookies/JWT).
- */
-export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
+const CONFIG_MSG =
+  'Faltan variables de entorno de Supabase. Copia frontend/.env.example → frontend/.env y define ' +
+  'VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY y VITE_SUPABASE_DB_LOGIN=true.'
 
 /**
- * Sustituye el Bearer por el JWT de db-login. Debe conservar apikey y el resto de cabeceras
- * que ya añade supabase-js (incl. si el primer argumento es un objeto Request).
+ * Comprueba configuración obligatoria (Supabase + login db-login-jwt).
+ * Llamar al arrancar la app; no ejecutar en build estático sin env (CI usa placeholders).
  */
+export function assertSupabaseConfigured() {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error(CONFIG_MSG)
+  }
+  if (!isDbJwtLoginEnabled()) {
+    throw new Error(
+      'Define VITE_SUPABASE_DB_LOGIN=true en frontend/.env. El login usa la Edge Function db-login-jwt.',
+    )
+  }
+}
+
+/** @deprecated Siempre true cuando assertSupabaseConfigured() pasó. */
+export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
+
 function dbJwtAwareFetch(input, init = {}) {
   const next = { ...init }
   const headers = new Headers()
@@ -39,20 +51,23 @@ function dbJwtAwareFetch(input, init = {}) {
   return fetch(input, next)
 }
 
-export const supabase = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey, {
-      auth: isDbJwtLoginEnabled()
-        ? {
-            persistSession: false,
-            autoRefreshToken: false,
-            detectSessionInUrl: false,
-          }
-        : {
-            persistSession: true,
-            autoRefreshToken: true,
-          },
-      global: {
-        fetch: dbJwtAwareFetch,
-      },
-    })
-  : null
+export const supabase =
+  supabaseUrl && supabaseAnonKey
+    ? createClient(supabaseUrl, supabaseAnonKey, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+        },
+        global: {
+          fetch: dbJwtAwareFetch,
+        },
+      })
+    : null
+
+/** Cliente Supabase; lanza si falta configuración. */
+export function getSupabase() {
+  assertSupabaseConfigured()
+  if (!supabase) throw new Error(CONFIG_MSG)
+  return supabase
+}

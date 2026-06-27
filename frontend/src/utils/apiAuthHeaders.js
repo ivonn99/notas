@@ -1,9 +1,8 @@
 import { getDbJwtToken, isDbJwtLoginEnabled } from '../lib/dbJwtSession.js'
-import { isSupabaseConfigured } from '../lib/supabaseClient.js'
 
-/** Cabeceras para el API Node cuando la sesión es JWT en localStorage (db-login-jwt), no cookie. */
+/** Cabecera Authorization para rutas del API Node (WhatsApp, app.log) con sesión db-login-jwt. */
 export function getApiAuthorizationHeader() {
-  if (!isSupabaseConfigured || !isDbJwtLoginEnabled()) return null
+  if (!isDbJwtLoginEnabled()) return null
   const t = getDbJwtToken()
   return t ? { Authorization: `Bearer ${t}` } : null
 }

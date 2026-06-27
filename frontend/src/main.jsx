@@ -10,6 +10,9 @@ document.documentElement.setAttribute('data-theme', initialTheme)
 document.documentElement.setAttribute('data-bs-theme', initialTheme)
 import App from './App.jsx'
 import { AuthProvider } from './contexts/AuthContext.jsx'
+import { assertSupabaseConfigured } from './lib/supabaseClient.js'
+
+assertSupabaseConfigured()
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

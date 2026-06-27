@@ -1,10 +1,8 @@
 import { canCredito, getSupabaseAuthMeta } from '../lib/supabaseAuth.js'
-import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
-import { http } from './http.js'
+import { supabase } from '../lib/supabaseClient.js'
 
 export const alertasApi = {
   list: async () => {
-    if (!isSupabaseConfigured) return http('/api/alertas')
     const meta = await getSupabaseAuthMeta()
     if (!canCredito(meta)) throw new Error('Sin permiso')
     const { data, error } = await supabase
@@ -26,9 +24,6 @@ export const alertasApi = {
     }
   },
   marcarLeida: async (id) => {
-    if (!isSupabaseConfigured) {
-      return http(`/api/alertas/${id}/leer`, { method: 'POST' })
-    }
     const meta = await getSupabaseAuthMeta()
     if (!canCredito(meta)) throw new Error('Sin permiso')
     const alertId = Number.parseInt(String(id), 10)

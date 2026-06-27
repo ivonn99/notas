@@ -413,7 +413,7 @@ function ReporteRutaTablasCardMovil({ r }) {
   )
 }
 
-function ReporteResumenRutaCardMovil({ ruta, bucketOrder, resumenMatrix, resumenIdx, labels }) {
+function ReporteResumenRutaCardMovil({ ruta, bucketOrder, resumenMatrix, resumenIdx, labels, onClickResumen }) {
   const totalRuta = bucketOrder.reduce(
     (acc, bucketId) => acc + (resumenMatrix[resumenIdx[bucketId]]?.byRuta?.[ruta]?.saldo || 0),
     0,
@@ -430,7 +430,7 @@ function ReporteResumenRutaCardMovil({ ruta, bucketOrder, resumenMatrix, resumen
             <div
               key={bucketId}
               className={`d-flex justify-content-between small mb-1 gap-2${notas > 0 ? ' cursor-pointer' : ''}`}
-              onClick={() => notas > 0 && handleClickResumen(ruta, bucketId)}
+              onClick={() => notas > 0 && onClickResumen?.(ruta, bucketId)}
             >
               <span className="text-body-secondary text-break">{labels[bucketId] || bucketId}</span>
               <span className="text-nowrap">{money(saldo)}</span>
@@ -1885,6 +1885,7 @@ export default function ReportePage() {
                         resumenMatrix={resumenMatrix}
                         resumenIdx={resumenIdx}
                         labels={BUCKET_LABELS}
+                        onClickResumen={handleClickResumen}
                       />
                     ))}
                   </div>
