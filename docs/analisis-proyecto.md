@@ -132,7 +132,7 @@ Verificación **V.11 OK** en todas las comprobaciones:
 | Problema | Estado | Recomendación |
 |----------|--------|---------------|
 | RLS `anon` en `usuarios` | **Resuelto** | Mantener verificación V.11 |
-| CORS `origin: true` en API | Pendiente | Lista blanca de dominios Netlify + local |
+| CORS `origin: true` en API | **Resuelto** | `CORS_ORIGINS` + localhost solo en dev |
 | Sin rate limit en `/api/auth/login` | Pendiente | `express-rate-limit` |
 | Sin `helmet` | Pendiente | Headers de seguridad estándar |
 | Vendedor puede UPDATE notas vía PostgREST (RLS) | Parcial | Restringir columnas en política o forzar mutaciones vía API |
@@ -188,7 +188,7 @@ Archivos que concentran demasiada lógica:
 | P1 | Tests en importación, auth, seguimiento | **Hecho** — `api/test/` + módulos `shared/` |
 | P1 | CI mínimo (lint + test + build) | **Hecho** — `.github/workflows/ci.yml` |
 | P1 | README de proyecto + onboarding | **Hecho** — [README.md](../README.md) |
-| P2 | Endurecer API (CORS, rate limit, helmet) | Pendiente |
+| P2 | Endurecer API (CORS, rate limit, helmet) | **Parcial** — CORS hecho; rate limit y helmet pendientes |
 | P2 | Refactor páginas/servicios monolíticos | Pendiente |
 | P2 | Migración demo anon sustituida por revocación | **Hecho** |
 | P3 | TypeScript gradual | Pendiente |

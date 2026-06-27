@@ -70,6 +70,8 @@ VITE_SUPABASE_DB_LOGIN=true
 ```env
 SUPABASE_DB_URL=postgresql://...
 JWT_SECRET=...   # mismo valor que en Supabase Edge
+# Producción (Netlify → API en otro host):
+CORS_ORIGINS=https://tu-app.netlify.app,https://*.netlify.app
 ```
 
 ---
@@ -79,7 +81,7 @@ JWT_SECRET=...   # mismo valor que en Supabase Edge
 | Componente | Dónde | Notas |
 |------------|-------|-------|
 | Frontend | Netlify | Ver [`netlify.toml`](netlify.toml); variables `VITE_*` en build |
-| API | Render, Railway, VPS… | `SUPABASE_DB_URL`, `JWT_SECRET`, CORS |
+| API | Render, Railway, VPS… | `SUPABASE_DB_URL`, `JWT_SECRET`, `CORS_ORIGINS` |
 | BD + Auth | Supabase | RLS, Edge Functions, scripts en `supabase/scripts/` |
 
 En Netlify, configura **`VITE_SUPABASE_URL`**, **`VITE_SUPABASE_ANON_KEY`**, **`VITE_SUPABASE_DB_LOGIN=true`** y redeploy.

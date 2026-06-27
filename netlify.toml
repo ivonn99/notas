@@ -3,6 +3,7 @@
 #   VITE_API_URL = https://tu-servicio-api.example.com
 #
 # El backend debe permitir CORS con credenciales para el dominio de Netlify.
+# En el host del API (Render, Railway…): CORS_ORIGINS=https://tu-app.netlify.app,https://*.netlify.app
 
 [build]
   base = "frontend"

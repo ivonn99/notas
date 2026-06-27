@@ -8,6 +8,7 @@ import cors from 'cors'
 import dotenv from 'dotenv'
 import express from 'express'
 
+import { createCorsOptions, logCorsStartup } from './config/cors.js'
 import { closePool, getDbConnectionMeta, getPool } from './db.js'
 import adminRouter from './routes/adminRoutes.js'
 import alertasRouter from './routes/alertasRoutes.js'
@@ -69,7 +70,8 @@ async function markInterruptedImportaciones() {
   }
 }
 
-app.use(cors({ origin: true, credentials: true }))
+logCorsStartup()
+app.use(cors(createCorsOptions()))
 app.use(cookieParser())
 /** Default Express es ~100kb; lotes WhatsApp (/send-batch) con textos largos superan ese límite → 413. */
 const JSON_BODY_LIMIT = String(process.env.JSON_BODY_LIMIT || '15mb').trim() || '15mb'
