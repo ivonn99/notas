@@ -431,16 +431,22 @@ export const adminApi = {
   resetUsuarioPassword: async (id, newPassword) => {
     return adminResetPasswordViaSupabase(id, newPassword)
   },
-  deleteUsuario: async (id) => {
+  setUsuarioActivo: async (id, activo) => {
     await assertAdmin()
     const uid = Number.parseInt(String(id), 10)
+    const flag = Boolean(activo)
     const { data, error } = await supabase
       .from('usuarios')
-      .update({ activo: false, is_active: false })
+      .update({ activo: flag, is_active: flag })
       .eq('id', uid)
       .select('id, username, activo, is_active')
       .limit(1)
-    if (error) throw new Error(error.message || 'No se pudo desactivar usuario')
+    if (error) {
+      throw new Error(
+        error.message ||
+          (flag ? 'No se pudo activar usuario' : 'No se pudo desactivar usuario'),
+      )
+    }
     if (!data?.[0]) throw new Error('Usuario no encontrado')
     return { ok: true, item: data[0] }
   },

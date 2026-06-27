@@ -9,6 +9,8 @@ import dotenv from 'dotenv'
 import express from 'express'
 
 import { createCorsOptions, logCorsStartup } from './config/cors.js'
+import { createHelmetMiddleware, logHelmetStartup } from './config/helmet.js'
+import { applyTrustProxy, logRateLimitStartup } from './config/rateLimit.js'
 import { closePool, getDbConnectionMeta, getPool } from './db.js'
 import adminRouter from './routes/adminRoutes.js'
 import alertasRouter from './routes/alertasRoutes.js'
@@ -45,6 +47,8 @@ function appendAppLogLine(message) {
 const app = express()
 const PORT = Number(process.env.PORT) || 3001
 
+applyTrustProxy(app)
+
 async function markInterruptedImportaciones() {
   try {
     const pool = getPool()
@@ -70,7 +74,10 @@ async function markInterruptedImportaciones() {
   }
 }
 
+logHelmetStartup()
 logCorsStartup()
+logRateLimitStartup()
+app.use(createHelmetMiddleware())
 app.use(cors(createCorsOptions()))
 app.use(cookieParser())
 /** Default Express es ~100kb; lotes WhatsApp (/send-batch) con textos largos superan ese límite → 413. */

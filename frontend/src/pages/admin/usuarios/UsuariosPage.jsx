@@ -4,6 +4,7 @@ import {
   BsKeyFill,
   BsPencilSquare,
   BsPersonPlus,
+  BsPersonCheck,
   BsPersonX,
   BsSignpost2,
   BsTrash3,
@@ -28,7 +29,11 @@ function IconButton({ as: Comp = 'button', children, label, className = '', ...p
   )
 }
 
-function UsuarioCardMovil({ u, myId, authUser, resetPassword, desactivar, eliminarPermanente }) {
+function usuarioEstaActivo(u) {
+  return Boolean(u?.activo && u?.is_active)
+}
+
+function UsuarioCardMovil({ u, myId, authUser, resetPassword, cambiarEstadoActivo, eliminarPermanente }) {
   const esMiUsuario = myId != null && Number(u.id) === Number(myId)
   const superProtegido = u.is_superuser && !authUser?.isSuperuser
   return (
@@ -46,7 +51,7 @@ function UsuarioCardMovil({ u, myId, authUser, resetPassword, desactivar, elimin
           <dt className="col-5 text-body-secondary">Rol</dt>
           <dd className="col-7 mb-1">{u.rol || '—'}</dd>
           <dt className="col-5 text-body-secondary">Activo</dt>
-          <dd className="col-7 mb-0">{u.activo && u.is_active ? 'Sí' : 'No'}</dd>
+          <dd className="col-7 mb-0">{usuarioEstaActivo(u) ? 'Sí' : 'No'}</dd>
         </dl>
         <div className="d-flex flex-wrap align-items-center gap-1">
           <IconButton
@@ -70,11 +75,15 @@ function UsuarioCardMovil({ u, myId, authUser, resetPassword, desactivar, elimin
           </IconButton>
           {!esMiUsuario ? (
             <IconButton
-              label="Desactivar usuario"
-              className="btn-outline-danger"
-              onClick={() => desactivar(u.id, u.username)}
+              label={usuarioEstaActivo(u) ? 'Desactivar usuario' : 'Activar usuario'}
+              className={usuarioEstaActivo(u) ? 'btn-outline-danger' : 'btn-outline-success'}
+              onClick={() => cambiarEstadoActivo(u)}
             >
-              <BsPersonX className="fs-5" aria-hidden />
+              {usuarioEstaActivo(u) ? (
+                <BsPersonX className="fs-5" aria-hidden />
+              ) : (
+                <BsPersonCheck className="fs-5" aria-hidden />
+              )}
             </IconButton>
           ) : null}
           {!esMiUsuario && !superProtegido ? (
@@ -180,27 +189,39 @@ export default function UsuariosPage() {
     }
   }
 
-  async function desactivar(usuarioId, username) {
+  async function cambiarEstadoActivo(u) {
+    const usuarioId = u.id
+    const username = u.username
+    const activar = !usuarioEstaActivo(u)
     const r = await Swal.fire({
-      title: '¿Desactivar usuario?',
-      html: `El usuario <strong>${username || '#' + usuarioId}</strong> no podrá iniciar sesión. Los datos se conservan.`,
-      icon: 'warning',
+      title: activar ? '¿Activar usuario?' : '¿Desactivar usuario?',
+      html: activar
+        ? `El usuario <strong>${username || '#' + usuarioId}</strong> podrá iniciar sesión de nuevo.`
+        : `El usuario <strong>${username || '#' + usuarioId}</strong> no podrá iniciar sesión. Los datos se conservan.`,
+      icon: activar ? 'question' : 'warning',
       showCancelButton: true,
-      confirmButtonText: 'Sí, desactivar',
+      confirmButtonText: activar ? 'Sí, activar' : 'Sí, desactivar',
       cancelButtonText: 'Cancelar',
       reverseButtons: true,
-      confirmButtonColor: '#fd7e14',
+      confirmButtonColor: activar ? '#198754' : '#fd7e14',
     })
     if (!r.isConfirmed) return
     setError('')
     setOk('')
     try {
-      await adminApi.deleteUsuario(usuarioId)
+      await adminApi.setUsuarioActivo(usuarioId, activar)
       emitUsuariosChanged()
-      setOk(`Usuario #${usuarioId} desactivado`)
+      setOk(
+        activar
+          ? `Usuario #${usuarioId} activado`
+          : `Usuario #${usuarioId} desactivado`,
+      )
       await load()
     } catch (e) {
-      setError(e?.message || 'No se pudo desactivar usuario')
+      setError(
+        e?.message ||
+          (activar ? 'No se pudo activar usuario' : 'No se pudo desactivar usuario'),
+      )
     }
   }
 
@@ -346,7 +367,7 @@ export default function UsuariosPage() {
                       <td className="text-nowrap">{u.telefono || '—'}</td>
                       <td>{u.rutas_enlazadas ?? 0}</td>
                       <td>{u.rol || '—'}</td>
-                      <td>{u.activo && u.is_active ? 'Sí' : 'No'}</td>
+                      <td>{usuarioEstaActivo(u) ? 'Sí' : 'No'}</td>
                       <td>
                         <div className="d-flex flex-wrap align-items-center gap-1">
                           <IconButton
@@ -374,11 +395,17 @@ export default function UsuariosPage() {
                           </IconButton>
                           {!esMiUsuario ? (
                             <IconButton
-                              label="Desactivar usuario"
-                              className="btn-outline-danger"
-                              onClick={() => desactivar(u.id, u.username)}
+                              label={usuarioEstaActivo(u) ? 'Desactivar usuario' : 'Activar usuario'}
+                              className={
+                                usuarioEstaActivo(u) ? 'btn-outline-danger' : 'btn-outline-success'
+                              }
+                              onClick={() => cambiarEstadoActivo(u)}
                             >
-                              <BsPersonX className="fs-5" aria-hidden />
+                              {usuarioEstaActivo(u) ? (
+                                <BsPersonX className="fs-5" aria-hidden />
+                              ) : (
+                                <BsPersonCheck className="fs-5" aria-hidden />
+                              )}
                             </IconButton>
                           ) : null}
                           {!esMiUsuario && !superProtegido ? (
@@ -417,7 +444,7 @@ export default function UsuariosPage() {
                   myId={myId}
                   authUser={authUser}
                   resetPassword={resetPassword}
-                  desactivar={desactivar}
+                  cambiarEstadoActivo={cambiarEstadoActivo}
                   eliminarPermanente={eliminarPermanente}
                 />
               ))}

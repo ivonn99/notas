@@ -8,6 +8,7 @@ import {
   verifyDjangoPassword,
 } from '../auth/djangoPassword.js'
 import { COOKIE_NAME, signUserToken } from '../auth/tokens.js'
+import { createLoginRateLimiter } from '../config/rateLimit.js'
 import { getPool } from '../db.js'
 import { requireAuth, requireRoles } from '../middleware/auth.js'
 import { logAudit } from '../services/audit.js'
@@ -23,6 +24,7 @@ import {
 } from '../utils/authLoginLog.js'
 
 const router = Router()
+const loginRateLimiter = createLoginRateLimiter()
 
 /** GET de comprobación: abre http://127.0.0.1:3001/api/auth/ping en el navegador */
 router.get('/ping', (_req, res) => {
@@ -40,7 +42,7 @@ const COOKIE_OPTS = {
   maxAge: 7 * 24 * 60 * 60 * 1000,
 }
 
-router.post('/login', async (req, res) => {
+router.post('/login', loginRateLimiter, async (req, res) => {
   const username = String(req.body?.username ?? '').trim()
   const password = String(req.body?.password ?? '')
 

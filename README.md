@@ -70,6 +70,9 @@ VITE_SUPABASE_DB_LOGIN=true
 ```env
 SUPABASE_DB_URL=postgresql://...
 JWT_SECRET=...   # mismo valor que en Supabase Edge
+# Rate limit login API (legacy): 20 intentos fallidos / 15 min por IP (ajustable)
+# AUTH_RATE_LIMIT_MAX=20
+# AUTH_RATE_LIMIT_WINDOW_MS=900000
 # Producción (Netlify → API en otro host):
 CORS_ORIGINS=https://tu-app.netlify.app,https://*.netlify.app
 ```
