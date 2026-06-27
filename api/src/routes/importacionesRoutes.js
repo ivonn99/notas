@@ -10,6 +10,8 @@ import { requireAuth, requireRoles } from '../middleware/auth.js'
 import { logAudit } from '../services/audit.js'
 import {
   parseEmpresaImportacion,
+  roundMoney,
+  saldoFromMontoAbono,
   validateNormalized,
 } from '../../../shared/importValidation.js'
 
@@ -124,8 +126,8 @@ function normalizeRow(row) {
   const usuarioVendedorPv = String(
     pickField(row, ['usuario_vendedor_pv', 'vendedor', 'usuario_vendedor', 'usuario/vendedor']),
   ).trim()
-  const monto = toNum(pickField(row, ['monto', 'importe']))
-  const abono = toNum(pickField(row, ['abono', 'pago']))
+  const monto = roundMoney(toNum(pickField(row, ['monto', 'importe'])))
+  const abono = roundMoney(toNum(pickField(row, ['abono', 'pago'])))
   const fechaNota = parseDateToIso(
     pickField(row, ['fecha_nota', 'fecha nota', 'fecha', 'fecha_documento']),
   )
@@ -366,7 +368,7 @@ async function runImportJob({
       }
 
       const rutaId = await ensureRutaId(row.rutaCodigo)
-      const saldo = row.monto - row.abono
+      const saldo = saldoFromMontoAbono(row.monto, row.abono)
       const uKey = String(row.usuarioVendedorPv || '')
         .trim()
         .toLowerCase()

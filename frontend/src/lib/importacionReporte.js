@@ -8,10 +8,19 @@ import {
   EMPRESAS_VALIDAS,
   ESTADOS_VALIDOS,
   parseEmpresaImportacion,
+  roundMoney,
+  saldoFromMontoAbono,
   validateNormalized,
 } from '../../../shared/importValidation.js'
 
-export { EMPRESAS_VALIDAS, ESTADOS_VALIDOS, parseEmpresaImportacion, validateNormalized }
+export {
+  EMPRESAS_VALIDAS,
+  ESTADOS_VALIDOS,
+  parseEmpresaImportacion,
+  roundMoney,
+  saldoFromMontoAbono,
+  validateNormalized,
+}
 
 export function toNum(value) {
   const n = Number(String(value ?? '').replace(/,/g, '').trim())
@@ -107,8 +116,8 @@ function normalizeRow(row) {
   const usuarioVendedorPv = String(
     pickField(row, ['usuario_vendedor_pv', 'vendedor', 'usuario_vendedor', 'usuario/vendedor']),
   ).trim()
-  const monto = toNum(pickField(row, ['monto', 'importe']))
-  const abono = toNum(pickField(row, ['abono', 'pago']))
+  const monto = roundMoney(toNum(pickField(row, ['monto', 'importe'])))
+  const abono = roundMoney(toNum(pickField(row, ['abono', 'pago'])))
   const fechaNota = parseDateToIso(
     pickField(row, ['fecha_nota', 'fecha nota', 'fecha', 'fecha_documento']),
   )
@@ -413,7 +422,7 @@ export async function ejecutarImportacionSupabase({
       }
 
       const rutaId = await ensureRutaId(supabase, row.rutaCodigo, rutaMap)
-      const saldo = row.monto - row.abono
+      const saldo = saldoFromMontoAbono(row.monto, row.abono)
       const uKey = String(row.usuarioVendedorPv || '')
         .trim()
         .toLowerCase()

@@ -3,8 +3,18 @@ import assert from 'node:assert/strict'
 
 import {
   parseEmpresaImportacion,
+  roundMoney,
+  saldoFromMontoAbono,
   validateNormalized,
 } from '../../shared/importValidation.js'
+
+test('saldoFromMontoAbono cumple saldo = monto - abono (sin error float)', () => {
+  const monto = roundMoney(980.5)
+  const abono = roundMoney(300)
+  const saldo = saldoFromMontoAbono(monto, abono)
+  assert.equal(saldo, 680.5)
+  assert.equal(saldo, roundMoney(monto - abono))
+})
 
 test('parseEmpresaImportacion acepta empresas válidas', () => {
   assert.equal(parseEmpresaImportacion('distribuidora'), 'DISTRIBUIDORA')

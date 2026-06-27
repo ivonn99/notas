@@ -3,6 +3,21 @@
 export const EMPRESAS_VALIDAS = new Set(['DISTRIBUIDORA', 'RODRIGO'])
 export const ESTADOS_VALIDOS = new Set(['PENDIENTE', 'RESUELTA', 'CANCELADA'])
 
+/** Redondeo monetario a 2 decimales (evita violar notas_credito_saldo_chk por float JS). */
+export function roundMoney(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return null
+  return Math.round(n * 100) / 100
+}
+
+/** Saldo coherente con CHECK (saldo = monto - abono) en PostgreSQL numeric. */
+export function saldoFromMontoAbono(monto, abono) {
+  const m = roundMoney(monto)
+  const a = roundMoney(abono)
+  if (m == null || a == null) return null
+  return roundMoney(m - a)
+}
+
 /** @returns {'DISTRIBUIDORA' | 'RODRIGO' | null} */
 export function parseEmpresaImportacion(raw) {
   const e = String(raw ?? '')
