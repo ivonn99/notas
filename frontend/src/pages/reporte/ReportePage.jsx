@@ -1,8 +1,10 @@
 import { fetchCarteraReporte } from '../../services/reportesApi.js'
+import { exportarReportePdf } from '../../lib/exportarReportePdf.js'
 import { estadoBadgeClass } from '../../utils/estadoBadge.js'
 import { ROUTES } from '../../constants/routes.js'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import { FaArrowRotateRight, FaFilePdf } from 'react-icons/fa6'
 import { useListFiltersStore } from '../../stores/listFiltersStore.js'
 
 const REPORTES_STORAGE_KEY = 'reporte_cartera_filtros_v1'
@@ -541,6 +543,37 @@ export default function ReportePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [payload, setPayload] = useState(null)
+  const [exportingPdf, setExportingPdf] = useState(false)
+
+  function handleExportPdf() {
+    const puedeExportar =
+      pestanaPrincipal === TAB_ATRASO_ESTRUCTURAL || pestanaPrincipal === TAB_TABLAS
+    if (!payload || loading || exportingPdf || !puedeExportar) return
+    setExportingPdf(true)
+    setError('')
+    try {
+      exportarReportePdf({
+        payload,
+        meta: {
+          empresaActiva,
+          estado,
+          diasBucket,
+          fechaDesde,
+          fechaHasta,
+          rutas: rutasStr.replace(/\s+/g, ''),
+          q: qDebounced,
+          pestanaPrincipal,
+          subVista,
+          resumenSortKey,
+          resumenSortDir,
+        },
+      })
+    } catch (e) {
+      setError(e?.message || 'No se pudo generar el PDF')
+    } finally {
+      setExportingPdf(false)
+    }
+  }
 
   const load = useCallback(
     async (overrides = {}) => {
@@ -983,12 +1016,30 @@ export default function ReportePage() {
             <div className="col-12 col-md-auto d-flex gap-2">
               <button
                 type="button"
-                className="btn btn-primary"
+                className="btn btn-primary d-inline-flex align-items-center justify-content-center gap-2"
                 disabled={loading}
                 onClick={() => load({ q: q.trim(), rutas: rutasStr.replace(/\s+/g, '') })}
               >
+                <FaArrowRotateRight aria-hidden size={14} />
                 {loading ? 'Cargando…' : 'Actualizar'}
               </button>
+              {pestanaPrincipal === TAB_ATRASO_ESTRUCTURAL ||
+              pestanaPrincipal === TAB_TABLAS ? (
+                <button
+                  type="button"
+                  className="btn btn-primary d-inline-flex align-items-center justify-content-center gap-2"
+                  disabled={loading || exportingPdf || !payload}
+                  onClick={handleExportPdf}
+                  title={
+                    pestanaPrincipal === TAB_ATRASO_ESTRUCTURAL
+                      ? 'Descarga un PDF de atraso estructural con los filtros actuales'
+                      : 'Descarga un PDF del panel general (subvista activa) con los filtros actuales'
+                  }
+                >
+                  <FaFilePdf aria-hidden size={14} />
+                  {exportingPdf ? 'Generando PDF…' : 'Descargar PDF'}
+                </button>
+              ) : null}
             </div>
           </div>
         </div>

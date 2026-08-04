@@ -397,7 +397,7 @@ async function fetchSeguimientoListSupabase(params = {}) {
         pageSize,
         total: 0,
         totalPages: 1,
-        resumen: { total_filtrado: 0, requiere_atencion: 0 },
+        resumen: { total_filtrado: 0, requiere_atencion: 0, monto_total: 0, abono_total: 0, saldo_total: 0 },
         porRuta: [],
         porAntiguedad: [],
         items: [],
@@ -425,7 +425,7 @@ async function fetchSeguimientoListSupabase(params = {}) {
         pageSize,
         total: 0,
         totalPages: 1,
-        resumen: { total_filtrado: 0, requiere_atencion: 0 },
+        resumen: { total_filtrado: 0, requiere_atencion: 0, monto_total: 0, abono_total: 0, saldo_total: 0 },
         porRuta: [],
         porAntiguedad: [],
         items: [],
@@ -514,10 +514,13 @@ async function fetchSeguimientoListSupabase(params = {}) {
 
   let porRuta = []
   let porAntiguedad = []
+  let montoTotal = 0
+  let abonoTotal = 0
+  let saldoTotal = 0
   if (includeAggregates) {
     let aggQuery = supabase
       .from('notas_credito')
-      .select('fecha_nota, saldo, rutas:ruta_id(codigo)')
+      .select('fecha_nota, monto, abono, saldo, rutas:ruta_id(codigo)')
     aggQuery = applySeguimientoListFilters(aggQuery, filterArgs)
     const { data: aggRows, error: aggError } = await aggQuery
     if (aggError) throw new Error(aggError.message || 'No se pudieron cargar resúmenes')
@@ -529,6 +532,13 @@ async function fetchSeguimientoListSupabase(params = {}) {
     for (const row of aggRows || []) {
       const rutaKey = String(row.rutas?.codigo || '(sin ruta)')
       porRutaMap.set(rutaKey, (porRutaMap.get(rutaKey) || 0) + 1)
+
+      const monto = Number(row.monto || 0)
+      const abono = Number(row.abono || 0)
+      const saldo = Number(row.saldo || 0)
+      if (Number.isFinite(monto)) montoTotal += monto
+      if (Number.isFinite(abono)) abonoTotal += abono
+      if (Number.isFinite(saldo)) saldoTotal += saldo
 
       let key = 'negativo'
       if (row.fecha_nota) {
@@ -544,7 +554,7 @@ async function fetchSeguimientoListSupabase(params = {}) {
       }
       const entry = bucketMap.get(key)
       entry.registros += 1
-      entry.saldo_total += Number(row.saldo || 0)
+      entry.saldo_total += Number.isFinite(saldo) ? saldo : 0
     }
     porRuta = Array.from(porRutaMap.entries())
       .map(([ruta_codigo, registros]) => ({ ruta_codigo, registros }))
@@ -572,6 +582,9 @@ async function fetchSeguimientoListSupabase(params = {}) {
     resumen: {
       total_filtrado: total,
       requiere_atencion: requiereAtencionTotal,
+      monto_total: montoTotal,
+      abono_total: abonoTotal,
+      saldo_total: saldoTotal,
     },
     porRuta,
     porAntiguedad,

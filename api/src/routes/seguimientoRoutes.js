@@ -179,7 +179,13 @@ router.get('/', requireAuth, async (req, res, next) => {
     )
     const total = countR.rows[0]?.total ?? 0
 
-    let resumen = { total_filtrado: total, requiere_atencion: 0 }
+    let resumen = {
+      total_filtrado: total,
+      requiere_atencion: 0,
+      monto_total: 0,
+      abono_total: 0,
+      saldo_total: 0,
+    }
     let porRuta = []
     let porAntiguedad = []
     if (includeAggregates) {
@@ -188,7 +194,10 @@ router.get('/', requireAuth, async (req, res, next) => {
           `
       SELECT
         COUNT(*)::int AS total_filtrado,
-        COUNT(*) FILTER (WHERE n.requiere_atencion = true)::int AS requiere_atencion
+        COUNT(*) FILTER (WHERE n.requiere_atencion = true)::int AS requiere_atencion,
+        COALESCE(SUM(n.monto), 0)::float8 AS monto_total,
+        COALESCE(SUM(n.abono), 0)::float8 AS abono_total,
+        COALESCE(SUM(n.saldo), 0)::float8 AS saldo_total
       FROM notas_credito n
       LEFT JOIN rutas r ON r.id = n.ruta_id
       ${whereSql}

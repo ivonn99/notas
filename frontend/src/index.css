@@ -42,9 +42,11 @@
   color-scheme: dark;
 }
 
-/* thead.table-light fija gris claro (#f8f9fa); en oscuro debe seguir el tema Bootstrap */
+/* thead/tfoot.table-light fija gris claro (#f8f9fa); en oscuro debe seguir el tema Bootstrap */
 [data-bs-theme='dark'] thead.table-light,
-[data-theme='dark'] thead.table-light {
+[data-theme='dark'] thead.table-light,
+[data-bs-theme='dark'] tfoot.table-light,
+[data-theme='dark'] tfoot.table-light {
   --bs-table-color: var(--bs-body-color);
   --bs-table-bg: var(--bs-tertiary-bg);
   --bs-table-border-color: var(--bs-border-color);

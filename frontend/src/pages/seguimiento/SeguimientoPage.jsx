@@ -1,12 +1,13 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { FaComment, FaEye } from 'react-icons/fa6'
+import { FaComment, FaEye, FaFilePdf } from 'react-icons/fa6'
 import { ROUTES } from '../../constants/routes.js'
 import { useAuth } from '../../contexts/AuthContext.jsx'
 import { useDomainSyncStore } from '../../stores/domainSyncStore.js'
 import { profileApi } from '../../services/profileApi.js'
 import { fetchSeguimientoList } from '../../services/seguimientoApi.js'
 import { exportarSeguimientoExcelConFiltros } from '../../utils/exportSeguimientoExcel.js'
+import { exportarSeguimientoPdfConFiltros } from '../../utils/exportSeguimientoPdf.js'
 import { useListCacheStore } from '../../stores/listCacheStore.js'
 import { useListFiltersStore } from '../../stores/listFiltersStore.js'
 import { estadoBadgeClass, notaMuestraAtencion } from '../../utils/estadoBadge.js'
@@ -237,6 +238,7 @@ export default function SeguimientoPage() {
   const [error, setError] = useState('')
   const [loadingMore, setLoadingMore] = useState(false)
   const [exportandoExcel, setExportandoExcel] = useState(false)
+  const [exportandoPdf, setExportandoPdf] = useState(false)
   const [copyToast, setCopyToast] = useState('')
   const [comentarioNota, setComentarioNota] = useState(null)
   const [rutasInput, setRutasInput] = useState(seguimientoFilters.rutas || '')
@@ -830,7 +832,7 @@ export default function SeguimientoPage() {
               <button
                 type="button"
                 className="btn btn-success btn-nc-export-excel"
-                disabled={exportandoExcel || loading}
+                disabled={exportandoExcel || exportandoPdf || loading}
                 onClick={async () => {
                   setExportandoExcel(true)
                   try {
@@ -849,13 +851,37 @@ export default function SeguimientoPage() {
               >
                 {exportandoExcel ? 'Exportando…' : 'Exportar Excel (filtros actuales)'}
               </button>
+              <button
+                type="button"
+                className="btn btn-success btn-nc-export-excel d-inline-flex align-items-center justify-content-center gap-2"
+                disabled={exportandoExcel || exportandoPdf || loading}
+                onClick={async () => {
+                  setExportandoPdf(true)
+                  try {
+                    const r = await exportarSeguimientoPdfConFiltros(filtrosExportacion)
+                    if (r.truncated) {
+                      window.alert(
+                        `Se exportaron ${r.rowCount.toLocaleString('es-MX')} filas al PDF. El total filtrado es ${r.totalReported.toLocaleString('es-MX')}; el archivo se cortó por límite de seguridad (máx. 5000 filas).`,
+                      )
+                    }
+                  } catch (e) {
+                    window.alert(e?.message || 'No se pudo generar el PDF')
+                  } finally {
+                    setExportandoPdf(false)
+                  }
+                }}
+                title="Descarga un PDF del listado con los filtros actuales"
+              >
+                <FaFilePdf aria-hidden size={14} />
+                {exportandoPdf ? 'Generando PDF…' : 'Descargar PDF'}
+              </button>
             </div>
           </div>
         </div>
       </div>
 
       <div className="row g-3 mb-3">
-        <div className="col-12 col-md-4">
+        <div className="col-6 col-md-4 col-xl-2">
           <div className="card h-100 border-0 shadow-sm">
             <div className="card-body py-2 px-3">
               <div className="text-body-secondary small">Total filtrado</div>
@@ -865,7 +891,7 @@ export default function SeguimientoPage() {
             </div>
           </div>
         </div>
-        <div className="col-12 col-md-4">
+        <div className="col-6 col-md-4 col-xl-2">
           <div className="card h-100 border-0 shadow-sm">
             <div className="card-body py-2 px-3">
               <div className="text-body-secondary small">Requieren atención</div>
@@ -875,12 +901,42 @@ export default function SeguimientoPage() {
             </div>
           </div>
         </div>
-        <div className="col-12 col-md-4">
+        <div className="col-6 col-md-4 col-xl-2">
           <div className="card h-100 border-0 shadow-sm">
             <div className="card-body py-2 px-3">
               <div className="text-body-secondary small">Rutas con notas</div>
               <div className="fs-5 fw-semibold">
                 {(data?.porRuta?.length ?? 0).toLocaleString('es-MX')}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="col-6 col-md-4 col-xl-2">
+          <div className="card h-100 border-0 shadow-sm">
+            <div className="card-body py-2 px-3">
+              <div className="text-body-secondary small">Monto total</div>
+              <div className="fs-6 fw-semibold">
+                {loading ? '…' : money(data?.resumen?.monto_total)}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="col-6 col-md-4 col-xl-2">
+          <div className="card h-100 border-0 shadow-sm">
+            <div className="card-body py-2 px-3">
+              <div className="text-body-secondary small">Abono total</div>
+              <div className="fs-6 fw-semibold">
+                {loading ? '…' : money(data?.resumen?.abono_total)}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="col-6 col-md-4 col-xl-2">
+          <div className="card h-100 border-0 shadow-sm">
+            <div className="card-body py-2 px-3">
+              <div className="text-body-secondary small">Saldo total</div>
+              <div className="fs-6 fw-semibold text-primary">
+                {loading ? '…' : money(data?.resumen?.saldo_total)}
               </div>
             </div>
           </div>
@@ -1128,6 +1184,22 @@ export default function SeguimientoPage() {
                 </tr>
               )}
             </tbody>
+            {!loading && data.items?.length ? (
+              <tfoot className="table-light">
+                <tr>
+                  <td colSpan={7} className="small fw-semibold">
+                    Suma filtrada
+                    <span className="fw-normal text-body-secondary ms-1">
+                      ({(data?.resumen?.total_filtrado ?? data?.total ?? 0).toLocaleString('es-MX')} notas)
+                    </span>
+                  </td>
+                  <td className="text-end small fw-semibold">{money(data?.resumen?.monto_total)}</td>
+                  <td className="text-end small fw-semibold">{money(data?.resumen?.abono_total)}</td>
+                  <td className="text-end small fw-semibold text-primary">{money(data?.resumen?.saldo_total)}</td>
+                  <td colSpan={3} />
+                </tr>
+              </tfoot>
+            ) : null}
           </table>
         </div>
         <div className="d-md-none p-2 p-sm-3">
@@ -1144,6 +1216,28 @@ export default function SeguimientoPage() {
                   mostrarComentarios={seguimientoFilters.mostrarComentarios}
                 />
               ))}
+              <div className="card border shadow-sm bg-body-tertiary">
+                <div className="card-body py-3">
+                  <div className="fw-semibold mb-2">
+                    Suma filtrada
+                    <span className="fw-normal text-body-secondary ms-1">
+                      ({(data?.resumen?.total_filtrado ?? data?.total ?? 0).toLocaleString('es-MX')} notas)
+                    </span>
+                  </div>
+                  <div className="d-flex justify-content-between small mb-1 gap-2">
+                    <span className="text-body-secondary">Monto</span>
+                    <span className="fw-medium">{money(data?.resumen?.monto_total)}</span>
+                  </div>
+                  <div className="d-flex justify-content-between small mb-1 gap-2">
+                    <span className="text-body-secondary">Abono</span>
+                    <span className="fw-medium">{money(data?.resumen?.abono_total)}</span>
+                  </div>
+                  <div className="d-flex justify-content-between small fw-semibold gap-2 border-top pt-2 mt-1">
+                    <span>Saldo</span>
+                    <span className="text-primary">{money(data?.resumen?.saldo_total)}</span>
+                  </div>
+                </div>
+              </div>
             </div>
           ) : (
             <p className="text-center text-body-secondary py-4 mb-0">Sin resultados</p>
