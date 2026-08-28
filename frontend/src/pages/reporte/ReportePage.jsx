@@ -1389,13 +1389,9 @@ export default function ReportePage() {
                           atrasoPorRuta.map((r) => (
                             <tr
                               key={r.ruta_codigo}
-                              className={
-                                r.atraso_estructural && r.ruta_codigo !== '(sin ruta)'
-                                  ? 'cursor-pointer'
-                                  : undefined
-                              }
+                              className={r.ruta_codigo !== '(sin ruta)' ? 'cursor-pointer' : undefined}
                               onClick={
-                                r.atraso_estructural && r.ruta_codigo !== '(sin ruta)'
+                                r.ruta_codigo !== '(sin ruta)'
                                   ? () => handleClickRutaAtraso(r.ruta_codigo)
                                   : undefined
                               }
@@ -1437,7 +1433,7 @@ export default function ReportePage() {
                             key={r.ruta_codigo}
                             r={r}
                             onClick={
-                              r.atraso_estructural && r.ruta_codigo !== '(sin ruta)'
+                              r.ruta_codigo !== '(sin ruta)'
                                 ? () => handleClickRutaAtraso(r.ruta_codigo)
                                 : undefined
                             }
