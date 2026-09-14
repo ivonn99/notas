@@ -1,12 +1,13 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { formatDiasBucketsList, parseDiasBucketsList } from '../utils/diasBuckets.js'
 
 const initialNotas = {
   empresaActiva: 'DISTRIBUIDORA',
-  estado: '',
+  estado: 'PENDIENTE',
   ruta: '',
   q: '',
-  dias: '',
+  dias_bucket: '',
   sort: 'fecha_nota_desc',
   mostrarComentarios: false,
 }
@@ -55,6 +56,18 @@ function normalizeSeguimientoOrden(orden) {
     : initialSeguimiento.orden
 }
 
+/** Mapea el viejo filtro «últimos N días» a chips de antigüedad. */
+function legacyDiasToBuckets(diasRaw) {
+  const dias = Number.parseInt(String(diasRaw ?? ''), 10)
+  if (!Number.isFinite(dias) || dias <= 0) return ''
+  if (dias <= 30) return 'r1'
+  if (dias <= 60) return formatDiasBucketsList(['r1', 'r2', 'r2b'])
+  if (dias <= 90) return formatDiasBucketsList(['r1', 'r2', 'r2b', 'r3'])
+  if (dias <= 180) return formatDiasBucketsList(['r1', 'r2', 'r2b', 'r3', 'r4'])
+  if (dias <= 365) return formatDiasBucketsList(['r1', 'r2', 'r2b', 'r3', 'r4', 'r5'])
+  return ''
+}
+
 export const useListFiltersStore = create(
   persist(
     (set) => ({
@@ -75,7 +88,7 @@ export const useListFiltersStore = create(
     }),
     {
       name: 'nc_list_filters_v1',
-      version: 7,
+      version: 9,
       migrate: (persisted) => {
         if (!persisted || typeof persisted !== 'object') return persisted
         const state = persisted
@@ -92,32 +105,50 @@ export const useListFiltersStore = create(
               ? String(seguimiento.ruta)
               : initialSeguimiento.rutas
 
-        let diasBucket =
+        let diasBucketSeg =
           seguimiento.dias_bucket != null ? String(seguimiento.dias_bucket) : initialSeguimiento.dias_bucket
-        if (!diasBucket) {
+        if (!diasBucketSeg) {
           const legacyDias = Number.parseInt(String(seguimiento.dias ?? ''), 10)
           if (Number.isFinite(legacyDias) && legacyDias > 0 && legacyDias <= 30) {
-            diasBucket = 'r1'
+            diasBucketSeg = 'r1'
           }
         }
+
+        let diasBucketNotas =
+          notas.dias_bucket != null && String(notas.dias_bucket).trim()
+            ? formatDiasBucketsList(parseDiasBucketsList(notas.dias_bucket))
+            : ''
+        if (!diasBucketNotas && notas.dias != null && String(notas.dias).trim()) {
+          diasBucketNotas = legacyDiasToBuckets(notas.dias)
+        }
+
+        // Antes el default de "Todas las notas" era estado vacío (= Todos).
+        // A partir de v9 el default es PENDIENTE (alineado con Seguimiento).
+        const estadoNotas =
+          notas.estado != null && String(notas.estado).trim()
+            ? String(notas.estado).trim().toUpperCase()
+            : initialNotas.estado
 
         const migrated = {
           ...state,
           notas: {
             ...initialNotas,
             ...notas,
+            estado: estadoNotas,
+            dias_bucket: diasBucketNotas,
             sort: normalizeNotasSort(notas.sort),
           },
           seguimiento: {
             ...initialSeguimiento,
             ...seguimiento,
             rutas: rutasLegacy,
-            dias_bucket: diasBucket,
+            dias_bucket: diasBucketSeg,
             orden: normalizeSeguimientoOrden(seguimiento.orden),
           },
         }
         delete migrated.seguimiento.ruta
         delete migrated.seguimiento.dias
+        delete migrated.notas.dias
 
         return migrated
       },
@@ -128,4 +159,3 @@ export const useListFiltersStore = create(
     },
   ),
 )
-

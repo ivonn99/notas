@@ -1,3 +1,5 @@
+import { notaRequiereAtencion } from '../../../shared/notasNegocio.js'
+
 export function estadoBadgeClass(estado) {
   const s = String(estado || '').toUpperCase()
   if (s === 'PENDIENTE') return 'text-bg-warning'
@@ -7,9 +9,9 @@ export function estadoBadgeClass(estado) {
 }
 
 /**
- * Bandera operativa en notas_credito (comentario pendiente de revisión).
- * Distinto de «tiene comentarios» (historial en aclaraciones).
+ * ¿La nota «requiere atención» en UI?
+ * Regla: PENDIENTE + tiene comentarios (bandera BD como respaldo).
  */
 export function notaMuestraAtencion(nota) {
-  return Boolean(nota?.requiere_atencion)
+  return notaRequiereAtencion(nota)
 }

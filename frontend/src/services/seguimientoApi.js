@@ -1,5 +1,6 @@
 import { getSupabaseAuthMeta } from '../lib/supabaseAuth.js'
 import { supabase } from '../lib/supabaseClient.js'
+import { requiereAtencionFromComentariosRestantes } from '../../../shared/notasNegocio.js'
 import {
   buildDiasBucketsSupabaseOr,
   diasBucketToDateRange,
@@ -134,6 +135,8 @@ function applySeguimientoListFilters(
 
   const atencionNorm = String(atencion ?? '').trim().toLowerCase()
   if (['si', 'sí', 'true', '1'].includes(atencionNorm)) {
+    // Bandera ya implica PENDIENTE + comentarios (no forzar estado otra vez:
+    // chocaría con el filtro Estado si el usuario eligió otra cosa).
     qy = qy.eq('requiere_atencion', true)
   } else if (['no', 'false', '0'].includes(atencionNorm)) {
     qy = qy.eq('requiere_atencion', false)
@@ -776,6 +779,23 @@ async function deleteSeguimientoComentarioSupabase(comentarioId) {
     .delete()
     .eq('id', cId)
   if (delErr) throw new Error(delErr.message || 'No se pudo eliminar el comentario')
+
+  // Regla: requiere_atencion = PENDIENTE + quedan comentarios.
+  const { data: noteRows } = await supabase
+    .from('notas_credito')
+    .select('id, estado')
+    .eq('id', row.nota_id)
+    .limit(1)
+  const noteEstado = noteRows?.[0]?.estado
+  const { count: restantes } = await supabase
+    .from('aclaraciones')
+    .select('id', { count: 'exact', head: true })
+    .eq('nota_id', row.nota_id)
+  const nextFlag = requiereAtencionFromComentariosRestantes(noteEstado, restantes ?? 0)
+  await supabase
+    .from('notas_credito')
+    .update({ requiere_atencion: nextFlag })
+    .eq('id', row.nota_id)
 
   // Registrar en historial
   await supabase.from('historial_notas').insert({

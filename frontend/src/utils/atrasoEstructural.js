@@ -151,3 +151,54 @@ export function buildAtrasoEstructuralPayload(rows, umbralPct) {
     saldo_atraso_rutas_total: resumenRutas.saldo_atraso_total,
   }
 }
+
+/**
+ * Reaplica un umbral a un payload de atraso ya calculado (mismas saldos por grupo).
+ * Útil para escenarios en UI sin volver a consultar la BD.
+ * @param {ReturnType<typeof buildAtrasoEstructuralPayload> | null | undefined} atrasoPayload
+ * @param {number|string} umbralPct
+ */
+export function reapplyUmbralAtrasoEstructural(atrasoPayload, umbralPct) {
+  if (!atrasoPayload || typeof atrasoPayload !== 'object') return null
+  const umbral = parseUmbralAtrasoPct(umbralPct)
+
+  function remapItems(items, labelField) {
+    const next = (Array.isArray(items) ? items : []).map((item) => {
+      const ev = evalAtrasoEstructural(item.saldo_0_30, item.saldo_mas_30, umbral)
+      return {
+        ...item,
+        saldo_total: ev.saldo_total,
+        pct_mas_30: ev.pct_mas_30,
+        atraso_estructural: ev.atraso_estructural,
+      }
+    })
+    next.sort(
+      (a, b) =>
+        Number(b.atraso_estructural) - Number(a.atraso_estructural) ||
+        b.pct_mas_30 - a.pct_mas_30 ||
+        b.saldo_total - a.saldo_total ||
+        String(a[labelField]).localeCompare(String(b[labelField])),
+    )
+    return next
+  }
+
+  const items = remapItems(atrasoPayload.items, 'cliente')
+  const porRuta = remapItems(atrasoPayload.porRuta, 'ruta_codigo')
+  const resumen = summarizeAtrasoEstructural(items, umbral)
+  const resumenRutas = summarizeAtrasoEstructuralGrupos(
+    porRuta,
+    umbral,
+    'rutas_total',
+    'rutas_atraso',
+  )
+  return {
+    ...atrasoPayload,
+    ...resumen,
+    items,
+    porRuta,
+    rutas_total: resumenRutas.rutas_total,
+    rutas_atraso: resumenRutas.rutas_atraso,
+    rutas_atraso_pct: resumenRutas.rutas_atraso_pct,
+    saldo_atraso_rutas_total: resumenRutas.saldo_atraso_total,
+  }
+}

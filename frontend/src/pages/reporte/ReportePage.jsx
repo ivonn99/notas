@@ -2,10 +2,17 @@ import { fetchCarteraReporte } from '../../services/reportesApi.js'
 import { exportarReportePdf } from '../../lib/exportarReportePdf.js'
 import { estadoBadgeClass } from '../../utils/estadoBadge.js'
 import { ROUTES } from '../../constants/routes.js'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { FaArrowRotateRight, FaFilePdf } from 'react-icons/fa6'
 import { useListFiltersStore } from '../../stores/listFiltersStore.js'
+import { useListCacheStore } from '../../stores/listCacheStore.js'
+import { useDomainSyncStore } from '../../stores/domainSyncStore.js'
+import {
+  ATRASO_ESTRUCTURAL_UMBRAL_DEFAULT,
+  parseUmbralAtrasoPct,
+  reapplyUmbralAtrasoEstructural,
+} from '../../utils/atrasoEstructural.js'
 
 const REPORTES_STORAGE_KEY = 'reporte_cartera_filtros_v1'
 
@@ -471,8 +478,16 @@ export default function ReportePage() {
   const [subVista, setSubVista] = useState(storedFilters?.subVista || 'tabla')
   const [resumenSortKey, setResumenSortKey] = useState(storedFilters?.resumenSortKey || 'total')
   const [resumenSortDir, setResumenSortDir] = useState(storedFilters?.resumenSortDir || 'desc')
+  const [umbralAtrasoPct, setUmbralAtrasoPct] = useState(() =>
+    parseUmbralAtrasoPct(storedFilters?.umbralAtrasoPct ?? ATRASO_ESTRUCTURAL_UMBRAL_DEFAULT),
+  )
   const navigate = useNavigate()
   const setSeguimientoFilters = useListFiltersStore((s) => s.setSeguimientoFilters)
+  const getCacheEntry = useListCacheStore((s) => s.getEntry)
+  const setCachePayload = useListCacheStore((s) => s.setPayload)
+  const clearCacheEntry = useListCacheStore((s) => s.clearEntry)
+  const clearScreenCache = useListCacheStore((s) => s.clearScreen)
+  const notasVersion = useDomainSyncStore((s) => s.notasVersion)
 
   const BUCKET_TO_R = {
     d0_30: 'r1',
@@ -545,63 +560,18 @@ export default function ReportePage() {
   const [payload, setPayload] = useState(null)
   const [exportingPdf, setExportingPdf] = useState(false)
 
-  function handleExportPdf() {
-    const puedeExportar =
-      pestanaPrincipal === TAB_ATRASO_ESTRUCTURAL || pestanaPrincipal === TAB_TABLAS
-    if (!payload || loading || exportingPdf || !puedeExportar) return
-    setExportingPdf(true)
-    setError('')
-    try {
-      exportarReportePdf({
-        payload,
-        meta: {
-          empresaActiva,
-          estado,
-          diasBucket,
-          fechaDesde,
-          fechaHasta,
-          rutas: rutasStr.replace(/\s+/g, ''),
-          q: qDebounced,
-          pestanaPrincipal,
-          subVista,
-          resumenSortKey,
-          resumenSortDir,
-        },
-      })
-    } catch (e) {
-      setError(e?.message || 'No se pudo generar el PDF')
-    } finally {
-      setExportingPdf(false)
-    }
-  }
-
-  const load = useCallback(
-    async (overrides = {}) => {
-      const qUse = overrides.q !== undefined ? overrides.q : qDebounced
-      const rutasUse =
-        overrides.rutas !== undefined ? overrides.rutas : rutasDebounced.replace(/\s+/g, '')
-      setLoading(true)
-      setError('')
-      try {
-        const data = await fetchCarteraReporte({
-          empresa: empresaActiva,
-          estado,
-          dias_bucket: diasBucket,
-          q: qUse,
-          fecha_desde: fechaDesde,
-          fecha_hasta: fechaHasta,
-          rutas: rutasUse,
-          sort,
-          ...(debugMode ? { debug: '1' } : {}),
-        })
-        setPayload(data)
-      } catch (e) {
-        setPayload(null)
-        setError(e?.message || 'No se pudo cargar el reporte')
-      } finally {
-        setLoading(false)
-      }
-    },
+  const reportParams = useMemo(
+    () => ({
+      empresa: empresaActiva,
+      estado,
+      dias_bucket: diasBucket,
+      q: qDebounced,
+      fecha_desde: fechaDesde,
+      fecha_hasta: fechaHasta,
+      rutas: rutasDebounced.replace(/\s+/g, ''),
+      sort,
+      ...(debugMode ? { debug: '1' } : {}),
+    }),
     [
       empresaActiva,
       estado,
@@ -614,10 +584,121 @@ export default function ReportePage() {
       debugMode,
     ],
   )
+  const [refreshNonce, setRefreshNonce] = useState(0)
+  const prevNotasVersionRef = useRef(notasVersion)
+
+  const atrasoEstructural = useMemo(
+    () => reapplyUmbralAtrasoEstructural(payload?.atrasoEstructural, umbralAtrasoPct),
+    [payload?.atrasoEstructural, umbralAtrasoPct],
+  )
+
+  const umbralServidor = parseUmbralAtrasoPct(
+    payload?.atrasoEstructural?.umbral_pct ?? ATRASO_ESTRUCTURAL_UMBRAL_DEFAULT,
+  )
+
+  function clampUmbralAtraso(raw) {
+    const n = Number(raw)
+    if (!Number.isFinite(n)) return
+    setUmbralAtrasoPct(Math.min(100, Math.max(1, Math.round(n))))
+  }
+
+  function handleExportPdf() {
+    const puedeExportar =
+      pestanaPrincipal === TAB_ATRASO_ESTRUCTURAL || pestanaPrincipal === TAB_TABLAS
+    if (!payload || loading || exportingPdf || !puedeExportar) return
+    setExportingPdf(true)
+    setError('')
+    try {
+      const exportPayload =
+        pestanaPrincipal === TAB_ATRASO_ESTRUCTURAL && atrasoEstructural
+          ? {
+              ...payload,
+              atrasoEstructural,
+              kpis: {
+                ...payload.kpis,
+                atraso_estructural_clientes: atrasoEstructural.clientes_atraso,
+                atraso_estructural_clientes_pct: atrasoEstructural.clientes_atraso_pct,
+                atraso_estructural_saldo: atrasoEstructural.saldo_atraso_total,
+                atraso_estructural_rutas: atrasoEstructural.rutas_atraso,
+                atraso_estructural_rutas_pct: atrasoEstructural.rutas_atraso_pct,
+              },
+            }
+          : payload
+      exportarReportePdf({
+        payload: exportPayload,
+        meta: {
+          empresaActiva,
+          estado,
+          diasBucket,
+          fechaDesde,
+          fechaHasta,
+          rutas: rutasStr.replace(/\s+/g, ''),
+          q: qDebounced,
+          pestanaPrincipal,
+          subVista,
+          resumenSortKey,
+          resumenSortDir,
+          umbralAtrasoPct,
+        },
+      })
+    } catch (e) {
+      setError(e?.message || 'No se pudo generar el PDF')
+    } finally {
+      setExportingPdf(false)
+    }
+  }
+
+  const load = useCallback(
+    async (overrides = {}) => {
+      const force = Boolean(overrides.force)
+      const qUse = overrides.q !== undefined ? overrides.q : reportParams.q
+      const rutasUse =
+        overrides.rutas !== undefined ? overrides.rutas : reportParams.rutas
+      const params = {
+        ...reportParams,
+        q: qUse,
+        rutas: rutasUse,
+      }
+      const key = JSON.stringify(params)
+
+      if (force) {
+        clearCacheEntry('reporte', key)
+      } else {
+        const cached = getCacheEntry('reporte', key)
+        if (cached?.payload) {
+          setPayload(cached.payload)
+          setError('')
+          setLoading(false)
+          return
+        }
+      }
+
+      setLoading(true)
+      setError('')
+      try {
+        const data = await fetchCarteraReporte(params)
+        setCachePayload('reporte', key, data)
+        setPayload(data)
+      } catch (e) {
+        setPayload(null)
+        setError(e?.message || 'No se pudo cargar el reporte')
+      } finally {
+        setLoading(false)
+      }
+    },
+    [reportParams, getCacheEntry, setCachePayload, clearCacheEntry],
+  )
+
+  useEffect(() => {
+    if (prevNotasVersionRef.current === notasVersion) return
+    prevNotasVersionRef.current = notasVersion
+    clearScreenCache('reporte')
+    setRefreshNonce((n) => n + 1)
+  }, [notasVersion, clearScreenCache])
 
   useEffect(() => {
     load()
-  }, [load])
+  }, [load, refreshNonce])
 
   useEffect(() => {
     if (!debugMode || loading) return
@@ -648,6 +729,7 @@ export default function ReportePage() {
           subVista,
           resumenSortKey,
           resumenSortDir,
+          umbralAtrasoPct,
         }),
       )
     } catch {
@@ -667,15 +749,26 @@ export default function ReportePage() {
     subVista,
     resumenSortKey,
     resumenSortDir,
+    umbralAtrasoPct,
   ])
 
-  const kpis = payload?.kpis
+  const kpisBase = payload?.kpis
+  const kpis = useMemo(() => {
+    if (!kpisBase || !atrasoEstructural) return kpisBase
+    return {
+      ...kpisBase,
+      atraso_estructural_clientes: atrasoEstructural.clientes_atraso,
+      atraso_estructural_clientes_pct: atrasoEstructural.clientes_atraso_pct,
+      atraso_estructural_saldo: atrasoEstructural.saldo_atraso_total,
+      atraso_estructural_rutas: atrasoEstructural.rutas_atraso,
+      atraso_estructural_rutas_pct: atrasoEstructural.rutas_atraso_pct,
+    }
+  }, [kpisBase, atrasoEstructural])
   const items = payload?.items ?? []
   const porRuta = payload?.porRuta ?? []
   const porAntiguedad = payload?.porAntiguedad ?? []
   const porCliente = payload?.porCliente ?? []
   const porSituacion = payload?.porSituacion ?? []
-  const atrasoEstructural = payload?.atrasoEstructural
   const clientesAtrasoEstructural = (atrasoEstructural?.items ?? []).filter((r) => r.atraso_estructural)
   const atrasoPorRuta = atrasoEstructural?.porRuta ?? []
   const resumenPivot = payload?.resumenPivot ?? []
@@ -1018,7 +1111,9 @@ export default function ReportePage() {
                 type="button"
                 className="btn btn-primary d-inline-flex align-items-center justify-content-center gap-2"
                 disabled={loading}
-                onClick={() => load({ q: q.trim(), rutas: rutasStr.replace(/\s+/g, '') })}
+                onClick={() =>
+                  load({ force: true, q: q.trim(), rutas: rutasStr.replace(/\s+/g, '') })
+                }
               >
                 <FaArrowRotateRight aria-hidden size={14} />
                 {loading ? 'Cargando…' : 'Actualizar'}
@@ -1292,9 +1387,64 @@ export default function ReportePage() {
           <div className="row g-2 mb-3">
             <div className="col-12">
               <ReporteAtrasoEstructuralExplicacion
-                umbralPct={atrasoEstructural?.umbral_pct ?? 50}
+                umbralPct={umbralAtrasoPct}
                 diasCorte={atrasoEstructural?.dias_corte ?? 30}
               />
+            </div>
+            <div className="col-12">
+              <div className="card border">
+                <div className="card-body py-3">
+                  <div className="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+                    <div>
+                      <div className="fw-semibold">Umbral de atraso estructural</div>
+                      <div className="small text-body-secondary">
+                        Escenario local: recalcula rutas/clientes al instante. No modifica el parámetro global
+                        {umbralServidor !== umbralAtrasoPct
+                          ? ` (predeterminado del sistema: ${umbralServidor}%).`
+                          : ' (valor actual = predeterminado del sistema).'}
+                      </div>
+                    </div>
+                    {umbralServidor !== umbralAtrasoPct ? (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-secondary"
+                        onClick={() => setUmbralAtrasoPct(umbralServidor)}
+                      >
+                        Restablecer {umbralServidor}%
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="row g-2 align-items-center">
+                    <div className="col-12 col-md">
+                      <input
+                        type="range"
+                        className="form-range"
+                        min={1}
+                        max={100}
+                        step={1}
+                        value={umbralAtrasoPct}
+                        onChange={(e) => clampUmbralAtraso(e.target.value)}
+                        aria-label="Umbral porcentaje atraso estructural"
+                      />
+                    </div>
+                    <div className="col-auto">
+                      <div className="input-group input-group-sm" style={{ width: '7.5rem' }}>
+                        <input
+                          type="number"
+                          className="form-control"
+                          min={1}
+                          max={100}
+                          step={1}
+                          value={umbralAtrasoPct}
+                          onChange={(e) => clampUmbralAtraso(e.target.value)}
+                          aria-label="Umbral porcentaje numérico"
+                        />
+                        <span className="input-group-text">%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
             <div className="col-6 col-md-3">
               <div className="card h-100 border-0 shadow-sm border-danger-subtle">

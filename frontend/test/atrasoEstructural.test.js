@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest'
 import {
   ATRASO_ESTRUCTURAL_UMBRAL_DEFAULT,
   buildAtrasoEstructuralPorCliente,
+  buildAtrasoEstructuralPayload,
   evalAtrasoEstructural,
   isSaldoCarteraReciente,
   parseUmbralAtrasoPct,
+  reapplyUmbralAtrasoEstructural,
 } from '../src/utils/atrasoEstructural.js'
 
 describe('parseUmbralAtrasoPct', () => {
@@ -58,5 +60,25 @@ describe('buildAtrasoEstructuralPorCliente', () => {
     expect(items[0].atraso_estructural).toBe(true)
     expect(items[0].saldo_0_30).toBe(100)
     expect(items[0].saldo_mas_30).toBe(300)
+  })
+})
+
+describe('reapplyUmbralAtrasoEstructural', () => {
+  it('recalcula flags al cambiar el umbral sin tocar saldos', () => {
+    const base = buildAtrasoEstructuralPayload(
+      [
+        { cliente: 'A', ruta_codigo: 'R1', saldo: 60, dias: 10 },
+        { cliente: 'A', ruta_codigo: 'R1', saldo: 40, dias: 90 },
+      ],
+      30,
+    )
+    expect(base.items[0].atraso_estructural).toBe(true)
+
+    const suave = reapplyUmbralAtrasoEstructural(base, 50)
+    expect(suave.items[0].atraso_estructural).toBe(false)
+    expect(suave.items[0].saldo_0_30).toBe(60)
+    expect(suave.items[0].saldo_mas_30).toBe(40)
+    expect(suave.umbral_pct).toBe(50)
+    expect(suave.clientes_atraso).toBe(0)
   })
 })

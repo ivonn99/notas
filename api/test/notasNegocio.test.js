@@ -4,9 +4,23 @@ import assert from 'node:assert/strict'
 import {
   canManageNotaEstado,
   canManageNotaRuta,
+  notaRequiereAtencion,
   requiereAtencionAfterEstadoChange,
+  requiereAtencionFromComentariosRestantes,
   shouldSetRequiereAtencionOnComment,
 } from '../../shared/notasNegocio.js'
+
+test('notaRequiereAtencion = PENDIENTE + comentarios', () => {
+  assert.equal(notaRequiereAtencion({ estado: 'PENDIENTE', tiene_comentarios: true }), true)
+  assert.equal(notaRequiereAtencion({ estado: 'PENDIENTE', tiene_comentarios: false }), false)
+  assert.equal(notaRequiereAtencion({ estado: 'RESUELTA', tiene_comentarios: true }), false)
+})
+
+test('requiereAtencionFromComentariosRestantes', () => {
+  assert.equal(requiereAtencionFromComentariosRestantes('PENDIENTE', 1), true)
+  assert.equal(requiereAtencionFromComentariosRestantes('PENDIENTE', 0), false)
+  assert.equal(requiereAtencionFromComentariosRestantes('CANCELADA', 3), false)
+})
 
 test('shouldSetRequiereAtencionOnComment solo en PENDIENTE', () => {
   assert.equal(shouldSetRequiereAtencionOnComment('PENDIENTE'), true)

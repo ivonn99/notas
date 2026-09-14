@@ -135,6 +135,7 @@ router.get('/', requireAuth, async (req, res, next) => {
 
     const atencion = String(req.query.atencion ?? '').trim().toLowerCase()
     if (['si', 'sí', 'true', '1'].includes(atencion)) {
+      // No forzar estado=PENDIENTE aquí: el filtro Estado ya aplica y se contraponía.
       where.push('n.requiere_atencion = true')
     } else if (['no', 'false', '0'].includes(atencion)) {
       where.push('n.requiere_atencion = false')

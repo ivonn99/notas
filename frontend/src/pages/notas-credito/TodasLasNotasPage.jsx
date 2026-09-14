@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { FaComment, FaEye } from 'react-icons/fa6'
 import { ROUTES } from '../../constants/routes.js'
@@ -8,6 +8,11 @@ import { useListCacheStore } from '../../stores/listCacheStore.js'
 import { useListFiltersStore } from '../../stores/listFiltersStore.js'
 import { estadoBadgeClass, notaMuestraAtencion } from '../../utils/estadoBadge.js'
 import { formatDiasNotaCorriente } from '../../utils/diasCorriente.js'
+import {
+  DIAS_BUCKETS_FILTER,
+  formatDiasBucketsList,
+  parseDiasBucketsList,
+} from '../../utils/diasBuckets.js'
 import ComentarioNotaRapidoModal from '../../components/ComentarioNotaRapidoModal.jsx'
 
 const PAGE_SIZE = 20
@@ -70,6 +75,25 @@ function mergeCachedPages(entry, upToPage) {
     }
   }
   return merged
+}
+
+function appendUniqueItems(prevItems, nextItems) {
+  const ids = new Set((prevItems || []).map((r) => r.id))
+  const out = [...(prevItems || [])]
+  for (const row of nextItems || []) {
+    if (ids.has(row.id)) continue
+    ids.add(row.id)
+    out.push(row)
+  }
+  return out
+}
+
+function cacheHasPages(entry, upToPage) {
+  if (!entry?.pages) return false
+  for (let p = 1; p <= upToPage; p += 1) {
+    if (!entry.pages[p]) return false
+  }
+  return true
 }
 
 async function copyText(text) {
@@ -208,6 +232,7 @@ export default function TodasLasNotasPage() {
   const setNotasFilters = useListFiltersStore((s) => s.setNotasFilters)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState('')
   const [items, setItems] = useState([])
   const [total, setTotal] = useState(0)
@@ -223,6 +248,21 @@ export default function TodasLasNotasPage() {
   const clearScreenCache = useListCacheStore((s) => s.clearScreen)
   const notasVersion = useDomainSyncStore((s) => s.notasVersion)
 
+  const requestSeqRef = useRef(0)
+  const listEpochRef = useRef(0)
+  const activeCacheKeyRef = useRef('')
+  const loadMoreRef = useRef(null)
+  const maxLoadedPageRef = useRef(0)
+  const pagesInFlightRef = useRef(new Set())
+  const loadMoreStateRef = useRef({
+    loading: true,
+    loadingMore: false,
+    error: '',
+    totalPages: 1,
+    cacheKey: '',
+    cargarPagina: null,
+  })
+
   const baseParams = useMemo(
     () => ({
       pageSize: PAGE_SIZE,
@@ -231,7 +271,7 @@ export default function TodasLasNotasPage() {
       ruta: notasFilters.ruta,
       q: notasFilters.q,
       sort: notasFilters.sort,
-      ...(notasFilters.dias ? { dias: notasFilters.dias } : {}),
+      ...(notasFilters.dias_bucket ? { dias_bucket: notasFilters.dias_bucket } : {}),
     }),
     [
       notasFilters.empresaActiva,
@@ -239,53 +279,135 @@ export default function TodasLasNotasPage() {
       notasFilters.ruta,
       notasFilters.q,
       notasFilters.sort,
-      notasFilters.dias,
+      notasFilters.dias_bucket,
     ],
   )
   const cacheKey = useMemo(() => JSON.stringify(baseParams), [baseParams])
 
+  const tramosSeleccionados = useMemo(
+    () => parseDiasBucketsList(notasFilters.dias_bucket),
+    [notasFilters.dias_bucket],
+  )
+
+  const totalRef = useRef(0)
+  totalRef.current = total
+
+  const cargarPagina = useCallback(
+    async (targetPage, append = false) => {
+      const requestSeq = ++requestSeqRef.current
+      const epoch = listEpochRef.current
+      const requestCacheKey = cacheKey
+
+      if (pagesInFlightRef.current.has(targetPage)) return
+      pagesInFlightRef.current.add(targetPage)
+
+      try {
+        if (!append && targetPage === 1) {
+          clearCacheEntry('notas', requestCacheKey)
+        } else {
+          const cached = getCacheEntry('notas', requestCacheKey)
+          if (cacheHasPages(cached, targetPage)) {
+            const merged = mergeCachedPages(cached, targetPage)
+            if (
+              requestSeq !== requestSeqRef.current ||
+              epoch !== listEpochRef.current ||
+              requestCacheKey !== cacheKey
+            ) {
+              return
+            }
+            setTotal(cached.total ?? 0)
+            setTotalPages(cached.totalPages ?? 1)
+            setItems(merged)
+            setPage(targetPage)
+            maxLoadedPageRef.current = Math.max(maxLoadedPageRef.current, targetPage)
+            activeCacheKeyRef.current = requestCacheKey
+            setLoading(false)
+            setLoadingMore(false)
+            setError('')
+            return
+          }
+        }
+
+        if (append) {
+          setLoadingMore(true)
+        } else {
+          setLoading(true)
+          setError('')
+        }
+
+        const data = await fetchNotasCredito({
+          ...baseParams,
+          page: targetPage,
+          ...(append
+            ? { skipCount: true, knownTotal: totalRef.current }
+            : {}),
+        })
+        if (
+          requestSeq !== requestSeqRef.current ||
+          epoch !== listEpochRef.current ||
+          requestCacheKey !== cacheKey
+        ) {
+          return
+        }
+
+        setCachePage('notas', requestCacheKey, targetPage, data)
+        setTotal(data.total ?? 0)
+        setTotalPages(data.totalPages ?? 1)
+        setItems((prev) =>
+          append ? appendUniqueItems(prev, data.items || []) : data.items || [],
+        )
+        const loadedPage = typeof data.page === 'number' ? data.page : targetPage
+        setPage(loadedPage)
+        maxLoadedPageRef.current = Math.max(maxLoadedPageRef.current, loadedPage)
+        activeCacheKeyRef.current = requestCacheKey
+      } catch (e) {
+        if (
+          requestSeq !== requestSeqRef.current ||
+          epoch !== listEpochRef.current ||
+          requestCacheKey !== cacheKey
+        ) {
+          return
+        }
+        setError(e?.message || 'No se pudo cargar notas')
+      } finally {
+        pagesInFlightRef.current.delete(targetPage)
+        if (requestSeq === requestSeqRef.current && epoch === listEpochRef.current) {
+          setLoading(false)
+          setLoadingMore(false)
+        }
+      }
+    },
+    [baseParams, cacheKey, clearCacheEntry, getCacheEntry, setCachePage],
+  )
+
+  loadMoreStateRef.current = {
+    loading,
+    loadingMore,
+    error,
+    totalPages,
+    cacheKey,
+    cargarPagina,
+  }
+
   useEffect(() => {
     clearScreenCache('notas')
-    setItems([])
-    setPage(1)
     setRefreshNonce((n) => n + 1)
   }, [notasVersion, clearScreenCache])
 
   useEffect(() => {
-    let cancel = false
-    ;(async () => {
-      const cached = getCacheEntry('notas', cacheKey)
-      if (cached?.pages?.[page]) {
-        if (cancel) return
-        setTotal(cached.total ?? 0)
-        setTotalPages(cached.totalPages ?? 1)
-        setItems(mergeCachedPages(cached, page))
-        setLoading(false)
-        setError('')
-        return
-      }
-
-      setLoading(true)
-      setError('')
-      try {
-        const data = await fetchNotasCredito({ ...baseParams, page })
-        if (cancel) return
-        setCachePage('notas', cacheKey, page, data)
-        const nextCached = getCacheEntry('notas', cacheKey)
-        const merged = nextCached ? mergeCachedPages(nextCached, page) : data.items || []
-        setTotal(data.total ?? 0)
-        setTotalPages(data.totalPages ?? 1)
-        setItems(merged)
-      } catch (e) {
-        if (!cancel) setError(e?.message || 'No se pudo cargar notas')
-      } finally {
-        if (!cancel) setLoading(false)
-      }
-    })()
-    return () => {
-      cancel = true
-    }
-  }, [baseParams, page, refreshNonce, getCacheEntry, cacheKey, setCachePage])
+    listEpochRef.current += 1
+    activeCacheKeyRef.current = ''
+    maxLoadedPageRef.current = 0
+    pagesInFlightRef.current = new Set()
+    setItems([])
+    setPage(1)
+    setTotal(0)
+    setTotalPages(1)
+    setLoading(true)
+    setLoadingMore(false)
+    setError('')
+    void cargarPagina(1, false)
+  }, [cacheKey, refreshNonce, cargarPagina])
 
   useEffect(() => {
     setRutaInput(notasFilters.ruta || '')
@@ -299,7 +421,6 @@ export default function TodasLasNotasPage() {
     const next = String(rutaInput || '').trim()
     if (next === String(notasFilters.ruta || '').trim()) return
     const t = setTimeout(() => {
-      setPage(1)
       setNotasFilters({ ruta: next })
     }, 400)
     return () => clearTimeout(t)
@@ -309,25 +430,56 @@ export default function TodasLasNotasPage() {
     const next = String(qInput || '').trim()
     if (next === String(notasFilters.q || '').trim()) return
     const t = setTimeout(() => {
-      setPage(1)
       setNotasFilters({ q: next })
     }, 400)
     return () => clearTimeout(t)
   }, [qInput, notasFilters.q, setNotasFilters])
 
+  useEffect(() => {
+    const node = loadMoreRef.current
+    if (!node) return undefined
+    const obs = new IntersectionObserver(
+      (entries) => {
+        const first = entries[0]
+        if (!first?.isIntersecting) return
+        const s = loadMoreStateRef.current
+        if (s.loading || s.loadingMore || s.error) return
+        if (activeCacheKeyRef.current !== s.cacheKey) return
+        const nextPage = maxLoadedPageRef.current + 1
+        if (nextPage > s.totalPages) return
+        if (pagesInFlightRef.current.has(nextPage)) return
+        void s.cargarPagina?.(nextPage, true)
+      },
+      { root: null, rootMargin: '240px 0px', threshold: 0.1 },
+    )
+    obs.observe(node)
+    return () => obs.disconnect()
+  }, [page, items.length, cacheKey])
+
   function updateFiltro(name, value) {
-    setPage(1)
     setNotasFilters({ [name]: value })
   }
 
-  function updateDias(value) {
-    setPage(1)
-    setNotasFilters({ dias: value })
+  function updateSort(value) {
+    setNotasFilters({ sort: value })
   }
 
-  function updateSort(value) {
-    setPage(1)
-    setNotasFilters({ sort: value })
+  function handleTodasTramos() {
+    setNotasFilters({ dias_bucket: '' })
+  }
+
+  function toggleTramo(bucketId) {
+    const id = String(bucketId || '').trim().toLowerCase()
+    if (!id) return
+    const selected = parseDiasBucketsList(notasFilters.dias_bucket)
+    if (selected.length === 0) {
+      setNotasFilters({ dias_bucket: id })
+      return
+    }
+    const set = new Set(selected)
+    if (set.has(id)) set.delete(id)
+    else set.add(id)
+    setNotasFilters({ dias_bucket: formatDiasBucketsList([...set]) })
   }
 
   async function handleCopySerieFolio(value) {
@@ -345,7 +497,7 @@ export default function TodasLasNotasPage() {
     return () => clearTimeout(t)
   }, [copyToast])
 
-  const canLoadMore = !loading && page < totalPages
+  const hasMore = page < totalPages
   const shown = items.length
 
   return (
@@ -358,7 +510,6 @@ export default function TodasLasNotasPage() {
             className={`nav-link${notasFilters.empresaActiva === 'DISTRIBUIDORA' ? ' active' : ''}`}
             onClick={() => {
               setNotasFilters({ empresaActiva: 'DISTRIBUIDORA' })
-              setPage(1)
             }}
           >
             Distribuidora
@@ -370,7 +521,6 @@ export default function TodasLasNotasPage() {
             className={`nav-link${notasFilters.empresaActiva === 'RODRIGO' ? ' active' : ''}`}
             onClick={() => {
               setNotasFilters({ empresaActiva: 'RODRIGO' })
-              setPage(1)
             }}
           >
             Rodrigo
@@ -380,22 +530,32 @@ export default function TodasLasNotasPage() {
 
       <div className="card mb-3">
         <div className="card-body">
+          <div className="mb-2 small text-body-secondary">Antigüedad (días desde fecha de nota)</div>
+          <div className="d-flex flex-wrap gap-1 mb-3">
+            <button
+              type="button"
+              className={`btn btn-sm ${tramosSeleccionados.length === 0 ? 'btn-primary' : 'btn-outline-secondary'}`}
+              onClick={handleTodasTramos}
+            >
+              Todos
+            </button>
+            {DIAS_BUCKETS_FILTER.map((b) => {
+              const isTodas = tramosSeleccionados.length === 0
+              const isSelected = tramosSeleccionados.includes(b.id)
+              return (
+                <button
+                  key={b.id}
+                  type="button"
+                  className={`btn btn-sm ${isTodas ? 'btn-outline-secondary' : isSelected ? 'btn-primary' : 'btn-outline-secondary'}`}
+                  onClick={() => toggleTramo(b.id)}
+                >
+                  {b.label}
+                </button>
+              )
+            })}
+          </div>
+
           <div className="row g-2">
-            <div className="col-12 col-md-3 col-lg-2">
-              <label className="form-label mb-1">Últimos días</label>
-              <select
-                className="form-select"
-                title="Filtra por fecha de la nota (desde hoy hacia atrás)"
-                value={notasFilters.dias}
-                onChange={(e) => updateDias(e.target.value)}
-              >
-                <option value="">Sin límite</option>
-                <option value="7">7 días</option>
-                <option value="30">30 días</option>
-                <option value="90">90 días</option>
-                <option value="365">365 días</option>
-              </select>
-            </div>
             <div className="col-12 col-md-3 col-lg-2">
               <label className="form-label mb-1">Orden</label>
               <select
@@ -458,10 +618,9 @@ export default function TodasLasNotasPage() {
               <button
                 type="button"
                 className="btn btn-success btn-nc-export-excel w-100"
-                disabled={loading}
+                disabled={loading || loadingMore}
                 title="Recargar datos desde el servidor"
                 onClick={() => {
-                  setPage(1)
                   clearCacheEntry('notas', cacheKey)
                   setRefreshNonce((n) => n + 1)
                 }}
@@ -640,22 +799,24 @@ export default function TodasLasNotasPage() {
             <p className="text-center text-body-secondary py-4 mb-0">Sin resultados</p>
           )}
         </div>
-        <div className="card-footer d-flex flex-column flex-md-row gap-2 justify-content-between align-items-stretch align-items-md-center">
+        <div className="card-footer d-flex justify-content-between align-items-center">
           <span className="small text-body-secondary">
-            Mostrando {shown} de {total} · Página {page} / {totalPages || 1}
-            {loading && shown > 0 ? ' · cargando…' : null}
+            Mostrando {shown.toLocaleString('es-MX')}
+            {total ? ` de ${total.toLocaleString('es-MX')}` : ''}
           </span>
-          <div className="d-flex flex-wrap gap-2 justify-content-md-end">
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              disabled={!canLoadMore}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              Cargar más
-            </button>
-          </div>
+          <span className="small text-body-secondary">
+            {loading && shown === 0
+              ? 'Cargando…'
+              : loadingMore
+                ? 'Cargando más…'
+                : hasMore
+                  ? `Página ${page} / ${totalPages || 1}`
+                  : 'Fin de resultados'}
+          </span>
         </div>
+      </div>
+      <div ref={loadMoreRef} className="py-3 text-center small text-body-secondary">
+        {loadingMore ? 'Cargando más…' : hasMore ? 'Desplázate para cargar más' : shown > 0 ? 'Fin de resultados' : null}
       </div>
       {copyToast ? (
         <div className="toast-container position-fixed top-0 end-0 p-3" style={{ zIndex: 1080 }}>

@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabaseClient.js'
+import { notaRequiereAtencion } from '../../../shared/notasNegocio.js'
 import {
   PARAM_UMBRAL_ATRASO_CLAVE,
   buildAtrasoEstructuralPayload,
@@ -129,7 +130,7 @@ function buildPorSituacion(filtered) {
   const defs = [
     {
       situacion_id: 'requiere_atencion',
-      match: (r) => Boolean(r.requiere_atencion),
+      match: (r) => notaRequiereAtencion(r),
     },
     {
       situacion_id: 'sin_comentarios',
@@ -341,7 +342,7 @@ async function fetchCarteraReporteSupabase(params = {}) {
     saldoTotal += Number(r.saldo || 0)
     abonosTotal += Number(r.abono || 0)
     montoTotal += Number(r.monto || 0)
-    if (r.requiere_atencion) requiereAtencion += 1
+    if (notaRequiereAtencion(r)) requiereAtencion += 1
     if (Number.isFinite(r.dias)) {
       diasSum += r.dias
       diasCount += 1

@@ -773,7 +773,19 @@ export default function SeguimientoPage() {
               <select
                 className="form-select"
                 value={seguimientoFilters.atencion}
-                onChange={(e) => updateSeguimientoFilters({ atencion: e.target.value })}
+                onChange={(e) => {
+                  const next = e.target.value
+                  const estadoActual = String(seguimientoFilters.estado || '').toUpperCase()
+                  // Atención solo aplica a PENDIENTE; evita filtros que se anulan entre sí.
+                  if (
+                    next === 'si' &&
+                    (estadoActual === 'RESUELTA' || estadoActual === 'CANCELADA')
+                  ) {
+                    updateSeguimientoFilters({ atencion: next, estado: 'PENDIENTE' })
+                    return
+                  }
+                  updateSeguimientoFilters({ atencion: next })
+                }}
               >
                 <option value="">Todos</option>
                 <option value="si">Sí</option>

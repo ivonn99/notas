@@ -4,12 +4,20 @@ const CACHE_TTL_MS = 5 * 60 * 1000
 
 function ensureBucket(state, screen) {
   if (screen === 'seguimiento') return state.seguimiento
+  if (screen === 'reporte') return state.reporte
   return state.notas
+}
+
+function withBucket(state, screen, nextBucket) {
+  if (screen === 'seguimiento') return { ...state, seguimiento: nextBucket }
+  if (screen === 'reporte') return { ...state, reporte: nextBucket }
+  return { ...state, notas: nextBucket }
 }
 
 export const useListCacheStore = create((set, get) => ({
   notas: {},
   seguimiento: {},
+  reporte: {},
 
   getEntry: (screen, key) => {
     const bucket = ensureBucket(get(), screen)
@@ -39,31 +47,31 @@ export const useListCacheStore = create((set, get) => ({
         totalPages: Number(payload?.totalPages || prev.totalPages || 1),
         updatedAt: Date.now(),
       }
-      if (screen === 'seguimiento') {
-        return { ...state, seguimiento: { ...state.seguimiento, [key]: nextEntry } }
+      return withBucket(state, screen, { ...bucket, [key]: nextEntry })
+    })
+  },
+
+  /** Guarda un payload completo (p. ej. reporte de cartera) bajo una cacheKey. */
+  setPayload: (screen, key, payload) => {
+    set((state) => {
+      const bucket = ensureBucket(state, screen)
+      const nextEntry = {
+        payload,
+        updatedAt: Date.now(),
       }
-      return { ...state, notas: { ...state.notas, [key]: nextEntry } }
+      return withBucket(state, screen, { ...bucket, [key]: nextEntry })
     })
   },
 
   clearEntry: (screen, key) => {
     set((state) => {
-      if (screen === 'seguimiento') {
-        const next = { ...state.seguimiento }
-        delete next[key]
-        return { ...state, seguimiento: next }
-      }
-      const next = { ...state.notas }
+      const next = { ...ensureBucket(state, screen) }
       delete next[key]
-      return { ...state, notas: next }
+      return withBucket(state, screen, next)
     })
   },
 
   clearScreen: (screen) => {
-    set((state) => {
-      if (screen === 'seguimiento') return { ...state, seguimiento: {} }
-      return { ...state, notas: {} }
-    })
+    set((state) => withBucket(state, screen, {}))
   },
 }))
-

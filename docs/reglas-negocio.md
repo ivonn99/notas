@@ -17,38 +17,39 @@ Para arquitectura legacy Django y esquema general de BD, ver también [`guia.txt
 
 ---
 
-## 2. Dos conceptos distintos: comentarios vs requiere atención
+## 2. Comentarios y requiere atención
 
 | Concepto | Dónde vive | Qué significa |
 |----------|------------|---------------|
-| **Tiene comentarios** | Tabla `aclaraciones` (filas por nota) | Historial de comentarios / aclaraciones / seguimiento. Es independiente de la bandera operativa. |
-| **Requiere atención** | Columna `notas_credito.requiere_atencion` (boolean) | Bandera operativa: “esta nota pendiente debe ser revisada por crédito/cobranza”. |
+| **Tiene comentarios** | Tabla `aclaraciones` | Historial de comentarios / aclaraciones / seguimiento. |
+| **Requiere atención** | Derivado (+ bandera `notas_credito.requiere_atencion` como caché) | Nota **PENDIENTE** que **tiene al menos un comentario**. |
 
-### Reglas clave
+### Regla clave
 
-- Una nota **RESUELTA** puede seguir teniendo comentarios visibles (“Ver comentarios”), pero **no** cuenta como que requiere atención.
-- En la UI (badge, columna, Excel, detalle), “requiere atención” = `requiere_atencion === true`, **no** “tiene filas en aclaraciones”.
-- `requiere_atencion` solo tiene sentido operativo en notas **PENDIENTE**. En RESUELTA/CANCELADA debe estar en `false` (validado también en importación).
+```
+requiere_atención ⇔ estado = PENDIENTE AND EXISTS (comentario en aclaraciones)
+```
+
+- Una nota **RESUELTA** o **CANCELADA** **no** requiere atención, aunque tenga historial de comentarios.
+- Una **PENDIENTE** sin comentarios **no** requiere atención.
+- En la UI (badge, columna, Excel, detalle), se usa esa regla (`notaMuestraAtencion` / `notaRequiereAtencion`).
+- La columna `requiere_atencion` se mantiene alineada al comentar, al borrar el último comentario y al resolver/cancelar (y con el script de sync en migraciones).
 
 ---
 
-## 3. Cuándo cambia `requiere_atencion`
+## 3. Cuándo cambia `requiere_atencion` (bandera en BD)
 
 ### Se activa (`true`)
 
-- Al **agregar un comentario** en una nota en estado **PENDIENTE** (cualquier tipo: COMENTARIO, ACLARACION, SEGUIMIENTO).
-- Comentar en una nota **RESUELTA** o **CANCELADA** **no** la reabre ni activa la bandera.
-- En **importación masiva**, si el archivo trae `requiere_atencion = true` y la nota queda PENDIENTE (según validaciones del importador).
+- Al **agregar un comentario** en una nota **PENDIENTE**.
+- Comentar en **RESUELTA** / **CANCELADA** no reabre ni activa la bandera.
+- Sync masivo: PENDIENTE con filas en `aclaraciones`.
 
 ### Se apaga (`false`)
 
-- Al **resolver manualmente** la nota (cambio de estado a RESUELTA o CANCELADA).
-- En **importación masiva** cuando el proceso marca notas como resueltas automáticamente.
-- Si el archivo de importación trae `requiere_atencion = false` en una fila válida.
-
-### No se apaga
-
-- Al **eliminar comentarios**. Borrar aclaraciones no modifica `requiere_atencion`; la nota sigue marcada hasta que alguien la resuelva (manual o importación).
+- Al **resolver o cancelar** la nota.
+- Al **eliminar el último comentario** de una PENDIENTE (si ya no quedan aclaraciones).
+- En importación cuando la nota deja de estar PENDIENTE o el archivo trae la bandera en false (sigue aplicando la validación: no `true` si RESUELTA/CANCELADA).
 
 ---
 
@@ -60,16 +61,16 @@ Los filtros de Seguimiento se persisten en el store compartido (`listFiltersStor
 |--------|----------------|
 | **Empresa** | DISTRIBUIDORA / RODRIGO. |
 | **Estado** | PENDIENTE, RESUELTA, CANCELADA o vacío (todos). Valor inicial habitual: PENDIENTE. |
-| **Atención** | Sí → `requiere_atencion = true`. No → `requiere_atencion = false`. Vacío → sin filtrar por bandera. |
+| **Atención** | Sí → `requiere_atencion = true` (bandera = PENDIENTE con comentarios). No → `requiere_atencion = false`. Vacío → sin filtrar por atención. **No** vuelve a forzar el filtro Estado (evita contradicción con RESUELTA/CANCELADA). |
 | **Rutas** | Lista separada por comas (multiruta). Lookup **case-insensitive** por código de ruta. Solo aplica por este campo. |
 | **Buscar (`q`)** | Texto libre (cliente, folio, etc.). **No** filtra por ruta; la ruta va solo en el campo Rutas. |
 | **Antigüedad (`dias_bucket`)** | Tramos combinables (varios chips a la vez). Ver sección 5. |
-| **Mostrar comentarios** | Preferencia de UI para expandir comentarios en el listado; no altera la lógica de `requiere_atencion`. |
+| **Mostrar comentarios** | Preferencia de UI para expandir comentarios en el listado; no altera la regla de atención. |
 
 ### Resumen en pantalla
 
 - **Total filtrado:** cantidad de notas que cumplen todos los filtros activos.
-- **Requieren atención:** cantidad con `requiere_atencion = true` **dentro del mismo conjunto filtrado** (no es el total global del sistema).
+- **Requieren atención:** cantidad con atención activa **dentro del mismo conjunto filtrado** (PENDIENTE con comentarios).
 
 ### Visibilidad por rol
 
