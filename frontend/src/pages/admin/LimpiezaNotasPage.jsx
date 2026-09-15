@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import Swal from 'sweetalert2'
 import {
   previewLimpiezaNotas,
   purgeLimpiezaNotasTodo,
@@ -67,18 +68,38 @@ export default function LimpiezaNotasPage() {
 
   const ejecutarPurge = useCallback(async () => {
     if (String(confirmText).trim().toUpperCase() !== 'ELIMINAR') {
+      await Swal.fire({
+        icon: 'warning',
+        title: 'Confirmación incompleta',
+        text: 'Escribe ELIMINAR para habilitar el borrado.',
+        confirmButtonText: 'Entendido',
+      })
       setError('Escribe ELIMINAR para confirmar')
       return
     }
     if (!preview?.candidatos) {
+      await Swal.fire({
+        icon: 'info',
+        title: 'Sin candidatos',
+        text: 'Primero calcula el preview; no hay notas para eliminar.',
+        confirmButtonText: 'Entendido',
+      })
       setError('Primero calcula el preview; no hay candidatos')
       return
     }
-    const ok = window.confirm(
-      `Se eliminarán de forma permanente hasta ${formatNum(preview.candidatos)} notas RESUELTA/CANCELADA ` +
-        `con antigüedad ≥ ${diasMinimos} días.\n\nEsta acción no se puede deshacer. ¿Continuar?`,
-    )
-    if (!ok) {
+    const conf = await Swal.fire({
+      title: '¿Eliminar notas de forma permanente?',
+      html: `<p>Se eliminarán hasta <strong>${formatNum(preview.candidatos)}</strong> notas
+        <strong>RESUELTA/CANCELADA</strong> con antigüedad ≥ <strong>${formatNum(diasMinimos)}</strong> días.</p>
+        <p class="mb-0 small text-body-secondary">Esta acción no se puede deshacer.</p>`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, eliminar',
+      cancelButtonText: 'Cancelar',
+      reverseButtons: true,
+      confirmButtonColor: '#dc3545',
+    })
+    if (!conf.isConfirmed) {
       if (import.meta.env.DEV || localStorage.getItem('DEBUG_LIMPIEZA') === '1') {
         console.log('[limpieza-notas] ui:purge-cancelled')
       }
@@ -113,12 +134,28 @@ export default function LimpiezaNotasPage() {
       setConfirmText('')
       const refreshed = await previewLimpiezaNotas({ diasMinimos, empresa })
       setPreview(refreshed)
+      await Swal.fire({
+        icon: 'success',
+        title: 'Limpieza completada',
+        html: `<p>Eliminadas <strong>${formatNum(r.totalEliminadas)}</strong> notas en
+          ${formatNum(r.lotes)} lote(s).</p>
+          <p class="mb-0 small text-body-secondary">Restantes con el mismo criterio:
+          ${formatNum(r.restantes)}.</p>`,
+        confirmButtonText: 'Cerrar',
+      })
     } catch (e) {
       console.error('[limpieza-notas] ui:purge-error', {
         ms: Math.round(performance.now() - t0),
         message: e?.message,
       })
-      setError(e?.message || 'Falló la eliminación')
+      const msg = e?.message || 'Falló la eliminación'
+      setError(msg)
+      await Swal.fire({
+        icon: 'error',
+        title: 'Error al eliminar',
+        text: msg,
+        confirmButtonText: 'Cerrar',
+      })
     } finally {
       setPurging(false)
     }

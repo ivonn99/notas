@@ -497,7 +497,8 @@ export async function ejecutarImportacionSupabase({
         ruta_id: rutaId,
         usuario_id: usuarioIdResolved,
         usuario_vendedor_pv: row.usuarioVendedorPv,
-        requiere_atencion: row.requiereAtencion,
+        // No persistir CSV: la bandera se recalcula en BD (PENDIENTE + comentarios).
+        // Si se manda false en cada import, se apaga aunque haya aclaraciones.
         resuelta_automaticamente: false,
       })
       empresasImportadas.add(row.empresa)

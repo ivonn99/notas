@@ -177,11 +177,16 @@ UPDATE public.notas_credito
 SET saldo = monto - abono
 WHERE saldo IS DISTINCT FROM (monto - abono);
 
--- B.0b Apagar requiere_atencion en notas no PENDIENTE
-UPDATE public.notas_credito
-SET requiere_atencion = false
-WHERE requiere_atencion = true
-  AND estado <> 'PENDIENTE';
+-- B.0b Apagar requiere_atencion en notas no PENDIENTE / sync con comentarios
+UPDATE public.notas_credito n
+SET requiere_atencion = (
+  n.estado = 'PENDIENTE'
+  AND EXISTS (SELECT 1 FROM public.aclaraciones a WHERE a.nota_id = n.id)
+)
+WHERE n.requiere_atencion IS DISTINCT FROM (
+  n.estado = 'PENDIENTE'
+  AND EXISTS (SELECT 1 FROM public.aclaraciones a WHERE a.nota_id = n.id)
+);
 
 -- B.0c Sincronizar activo e is_active (preferencia: desactivado gana)
 UPDATE public.usuarios
