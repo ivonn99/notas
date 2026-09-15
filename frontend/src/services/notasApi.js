@@ -5,6 +5,7 @@ import {
   formatDiasBucketsList,
   parseDiasBucketsList,
 } from '../utils/diasBuckets.js'
+import { buildNotasSearchOrClause } from '../utils/notasSearchFilter.js'
 
 export async function fetchNotasCredito(params = {}) {
   return fetchNotasCreditoSupabase(params)
@@ -76,10 +77,9 @@ function applyNotasListFilters(query, { estado, empresa, q, allowedRutaIds, dias
   if (Array.isArray(allowedRutaIds)) qy = qy.in('ruta_id', allowedRutaIds)
 
   const orGroups = []
-  if (q) {
-    orGroups.push(
-      `or(serie_folio.ilike.%${q}%,cliente.ilike.%${q}%,usuario_vendedor_pv.ilike.%${q}%)`,
-    )
+  const searchOr = buildNotasSearchOrClause(q)
+  if (searchOr) {
+    orGroups.push(`or(${searchOr})`)
   }
   if (diasBucketOr) {
     orGroups.push(`or(${diasBucketOr})`)

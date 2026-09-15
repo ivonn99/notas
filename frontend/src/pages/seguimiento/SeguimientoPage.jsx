@@ -376,6 +376,7 @@ export default function SeguimientoPage() {
     pagesInFlightRef.current.add(targetPage)
 
     try {
+      const tUi = performance.now()
       if (!append && targetPage === 1) {
         clearCacheEntry('seguimiento', requestCacheKey)
       } else {
@@ -414,16 +415,46 @@ export default function SeguimientoPage() {
         setError('')
       }
 
+      const q = String(filtros.q || '').trim()
+      if (q || includeAggregates) {
+        if (import.meta.env.DEV || localStorage.getItem('DEBUG_SEGUIMIENTO') === '1') {
+          console.log('[seguimiento:search] ui:fetch-start', {
+            page: targetPage,
+            append,
+            includeAggregates,
+            q: q || null,
+            filtros,
+          })
+        }
+      }
+
       const r = await fetchSeguimientoList({
         ...filtros,
         page: targetPage,
         includeAggregates: includeAggregates ? 'true' : 'false',
       })
+      if (q || includeAggregates) {
+        if (import.meta.env.DEV || localStorage.getItem('DEBUG_SEGUIMIENTO') === '1') {
+          console.log('[seguimiento:search] ui:fetch-ok', {
+            ms: Math.round(performance.now() - tUi),
+            page: r.page,
+            total: r.total,
+            items: r.items?.length ?? 0,
+            q: q || null,
+          })
+        }
+      }
       if (
         requestSeq !== requestSeqRef.current ||
         epoch !== listEpochRef.current ||
         requestCacheKey !== cacheKey
       ) {
+        if (import.meta.env.DEV || localStorage.getItem('DEBUG_SEGUIMIENTO') === '1') {
+          console.warn('[seguimiento:search] ui:fetch-stale-discarded', {
+            q: q || null,
+            targetPage,
+          })
+        }
         return
       }
       setCachePage('seguimiento', requestCacheKey, targetPage, r)
@@ -445,6 +476,11 @@ export default function SeguimientoPage() {
         activeCacheKeyRef.current = requestCacheKey
       }
     } catch (e) {
+      console.error('[seguimiento:search] ui:fetch-error', {
+        message: e?.message,
+        page: targetPage,
+        q: String(filtros.q || '').trim() || null,
+      })
       if (
         requestSeq !== requestSeqRef.current ||
         epoch !== listEpochRef.current ||
@@ -525,7 +561,15 @@ export default function SeguimientoPage() {
   useEffect(() => {
     const next = String(qInput || '').trim()
     if (next === String(seguimientoFilters.q || '').trim()) return
-    const t = setTimeout(() => updateSeguimientoFilters({ q: next }), 400)
+    const t = setTimeout(() => {
+      if (import.meta.env.DEV || localStorage.getItem('DEBUG_SEGUIMIENTO') === '1') {
+        console.log('[seguimiento:search] ui:debounce-apply', {
+          q: next || '(vacío)',
+          prev: seguimientoFilters.q || '(vacío)',
+        })
+      }
+      updateSeguimientoFilters({ q: next })
+    }, 400)
     return () => clearTimeout(t)
   }, [qInput, seguimientoFilters.q, updateSeguimientoFilters])
 

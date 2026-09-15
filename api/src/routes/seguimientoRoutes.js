@@ -143,10 +143,19 @@ router.get('/', requireAuth, async (req, res, next) => {
 
     const q = String(req.query.q ?? '').trim()
     if (q) {
-      params.push(`%${q}%`)
-      where.push(
-        `(n.serie_folio ILIKE $${params.length} OR n.cliente ILIKE $${params.length} OR n.usuario_vendedor_pv ILIKE $${params.length})`,
-      )
+      const folioLike = !/\s/.test(q) && /^[A-Za-z0-9]/.test(q)
+      if (folioLike) {
+        params.push(q)
+        params.push(`${q}%`)
+        where.push(
+          `(n.serie_folio ILIKE $${params.length - 1} OR n.serie_folio ILIKE $${params.length})`,
+        )
+      } else {
+        params.push(`%${q}%`)
+        where.push(
+          `(n.serie_folio ILIKE $${params.length} OR n.cliente ILIKE $${params.length} OR n.usuario_vendedor_pv ILIKE $${params.length})`,
+        )
+      }
     }
 
     const diasBucketsList = parseDiasBucketsList(req.query.dias_bucket)

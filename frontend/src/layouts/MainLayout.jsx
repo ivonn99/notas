@@ -17,6 +17,7 @@ import {
   FaRoute,
   FaSliders,
   FaSun,
+  FaTrashCan,
   FaTriangleExclamation,
   FaUser,
   FaUsers,
@@ -66,7 +67,7 @@ export default function MainLayout() {
       window.matchMedia('(min-width: 992px)').matches,
   )
 
-  const { canCredito, canSeguimiento, canAccessAdminPanel } = getNavFlags(user)
+  const { isAdmin, canCredito, canSeguimiento, canAccessAdminPanel } = getNavFlags(user)
 
   async function handleLogout() {
     await logout()
@@ -344,6 +345,18 @@ export default function MainLayout() {
                 </NavIcon>
                 <span className="sidebar-nav-label">Logs</span>
               </NavLink>
+              {isAdmin ? (
+                <NavLink
+                  to={ROUTES.limpiezaNotas}
+                  className={navLinkClass}
+                  title="Limpieza de notas"
+                >
+                  <NavIcon>
+                    <FaTrashCan size={18} />
+                  </NavIcon>
+                  <span className="sidebar-nav-label">Limpieza de notas</span>
+                </NavLink>
+              ) : null}
               <NavLink
                 to={ROUTES.whatsappCobranza}
                 className={navLinkClass}

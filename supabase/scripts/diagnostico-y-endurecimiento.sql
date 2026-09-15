@@ -230,6 +230,21 @@ CREATE INDEX IF NOT EXISTS idx_aclaraciones_nota_id
 CREATE INDEX IF NOT EXISTS idx_aclaraciones_nota_created
   ON public.aclaraciones (nota_id, created_at DESC);
 
+-- B.4b Búsqueda textual (folio / cliente / vendedor PV)
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+CREATE INDEX IF NOT EXISTS idx_notas_serie_folio_lower_pattern
+  ON public.notas_credito (lower(serie_folio) text_pattern_ops);
+
+CREATE INDEX IF NOT EXISTS idx_notas_serie_folio_trgm
+  ON public.notas_credito USING gin (serie_folio gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_notas_cliente_trgm
+  ON public.notas_credito USING gin (cliente gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_notas_usuario_vendedor_pv_trgm
+  ON public.notas_credito USING gin (usuario_vendedor_pv gin_trgm_ops);
+
 CREATE INDEX IF NOT EXISTS idx_historial_notas_nota_id
   ON public.historial_notas (nota_id);
 
@@ -356,7 +371,10 @@ WHERE schemaname = 'public'
     'usuario_rutas_usuario_ruta_uidx',
     'idx_notas_empresa_estado_atencion',
     'idx_notas_empresa_fecha_nota',
-    'idx_notas_ruta_id'
+    'idx_notas_ruta_id',
+    'idx_notas_serie_folio_trgm',
+    'idx_notas_cliente_trgm',
+    'idx_notas_usuario_vendedor_pv_trgm'
   )
 ORDER BY indexname;
 

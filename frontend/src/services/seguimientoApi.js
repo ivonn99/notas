@@ -7,11 +7,42 @@ import {
   formatDiasBucketsList,
   parseDiasBucketsList,
 } from '../utils/diasBuckets.js'
+import { buildNotasSearchOrClause, looksLikeFolioToken } from '../utils/notasSearchFilter.js'
 import { fetchRutaIdsByCodigos, formatRutasList, parseRutasList } from '../utils/seguimientoRutas.js'
 
 const ROLES_CAMBIO_ESTADO = new Set(['ADMIN', 'CREDITO'])
 const ROLES_CAMBIO_RUTA = new Set(['ADMIN'])
 const ESTADOS_VALIDOS = new Set(['PENDIENTE', 'RESUELTA', 'CANCELADA'])
+
+function seguimientoSearchDebugEnabled() {
+  if (import.meta.env.DEV) return true
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem('DEBUG_SEGUIMIENTO') === '1'
+  } catch {
+    return false
+  }
+}
+
+function logSeguimientoSearch(level, step, payload = {}) {
+  if (!seguimientoSearchDebugEnabled() && level === 'debug') return
+  const fn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log
+  fn(`[seguimiento:search] ${step}`, payload)
+}
+
+function msSince(t0) {
+  return Math.round(performance.now() - t0)
+}
+
+function isMissingRpcError(error) {
+  const code = String(error?.code || '')
+  const message = String(error?.message || '').toLowerCase()
+  return (
+    code === 'PGRST202' ||
+    code === '42883' ||
+    message.includes('could not find the function') ||
+    message.includes('does not exist')
+  )
+}
 
 async function getCurrentAuthMeta() {
   const m = await getSupabaseAuthMeta()
@@ -145,10 +176,9 @@ function applySeguimientoListFilters(
   }
 
   const orGroups = []
-  if (q) {
-    orGroups.push(
-      `or(serie_folio.ilike.%${q}%,cliente.ilike.%${q}%,usuario_vendedor_pv.ilike.%${q}%)`,
-    )
+  const searchOr = buildNotasSearchOrClause(q)
+  if (searchOr) {
+    orGroups.push(`or(${searchOr})`)
   }
   if (diasBucketOr) {
     orGroups.push(`or(${diasBucketOr})`)
@@ -459,52 +489,189 @@ async function fetchSeguimientoListSupabase(params = {}) {
   }
 
   const atencionNorm = String(atencion ?? '').trim().toLowerCase()
-  const estadoNorm = String(estado ?? '').trim().toUpperCase()
+  const searchOr = buildNotasSearchOrClause(q)
+  const t0 = performance.now()
+  const timings = {}
+  const logSearch = Boolean(q) || includeAggregates
 
-  const { count: totalCount, error: countError } = await applySeguimientoListFilters(
-    supabase.from('notas_credito').select('id', { count: 'exact', head: true }),
-    filterArgs,
-  )
-  if (countError) throw new Error(countError.message || 'No se pudo cargar seguimiento')
+  if (logSearch) {
+    logSeguimientoSearch('debug', 'start', {
+      q: q || null,
+      folioLike: q ? looksLikeFolioToken(q) : false,
+      searchOr,
+      page,
+      pageSize,
+      includeAggregates,
+      empresa: empresa || null,
+      estado: estado || null,
+      atencion: atencion || null,
+      rutas: rutas || null,
+      dias_bucket: hasBucket ? diasBucket : null,
+      rutaIdsCount: Array.isArray(allowedFinal) ? allowedFinal.length : null,
+      rol: meta.rol,
+    })
+  }
 
+  let total = 0
   let requiereAtencionTotal = 0
+  let porRuta = []
+  let porAntiguedad = []
+  let montoTotal = 0
+  let abonoTotal = 0
+  let saldoTotal = 0
+  let aggregatesFromRpc = false
+  let aggregatesMode = 'none'
+
   if (includeAggregates) {
-    if (
-      !['no', 'false', '0'].includes(atencionNorm) &&
-      estadoNorm !== 'RESUELTA' &&
-      estadoNorm !== 'CANCELADA'
-    ) {
-      const { count: raCount, error: raErr } = await applySeguimientoListFilters(
-        supabase.from('notas_credito').select('id', { count: 'exact', head: true }),
-        { ...filterArgs, atencion: '', soloRequiereAtencion: true },
-      )
-      if (raErr) throw new Error(raErr.message || 'No se pudo calcular notas que requieren atención')
-      requiereAtencionTotal = raCount ?? 0
+    const rpcArgs = {
+      p_empresa: empresa || null,
+      p_estado: estado || null,
+      p_atencion: atencion || null,
+      p_q: q || null,
+      p_ruta_ids: Array.isArray(allowedFinal) ? allowedFinal : null,
+      // 1 tramo: mismas fechas que el listado; varios: buckets en SQL
+      p_fecha_nota_desde: diasBucketsList.length > 1 ? null : fechaNotaDesde,
+      p_fecha_nota_hasta: diasBucketsList.length > 1 ? null : fechaNotaHasta,
+      p_dias_buckets: diasBucketsList.length > 1 ? diasBucketsList : null,
+    }
+    const tRpc = performance.now()
+    const { data: aggPayload, error: aggRpcError } = await supabase.rpc(
+      'seguimiento_list_aggregates',
+      rpcArgs,
+    )
+    timings.rpcMs = msSince(tRpc)
+    if (!aggRpcError && aggPayload) {
+      aggregatesFromRpc = true
+      aggregatesMode = 'rpc'
+      const resumenRpc = aggPayload.resumen || {}
+      total = Number(resumenRpc.total_filtrado || 0)
+      requiereAtencionTotal = Number(resumenRpc.requiere_atencion || 0)
+      montoTotal = Number(resumenRpc.monto_total || 0)
+      abonoTotal = Number(resumenRpc.abono_total || 0)
+      saldoTotal = Number(resumenRpc.saldo_total || 0)
+      porRuta = Array.isArray(aggPayload.porRuta) ? aggPayload.porRuta : []
+      porAntiguedad = Array.isArray(aggPayload.porAntiguedad) ? aggPayload.porAntiguedad : []
+      if (logSearch) {
+        logSeguimientoSearch('debug', 'rpc:ok', {
+          ms: timings.rpcMs,
+          total,
+          requiereAtencion: requiereAtencionTotal,
+          porRuta: porRuta.length,
+          porAntiguedad: porAntiguedad.length,
+        })
+      }
+    } else if (aggRpcError && !isMissingRpcError(aggRpcError)) {
+      logSeguimientoSearch('error', 'rpc:fail', {
+        ms: timings.rpcMs,
+        code: aggRpcError.code,
+        message: aggRpcError.message,
+        details: aggRpcError.details,
+        hint: aggRpcError.hint,
+        rpcArgs,
+      })
+      throw new Error(aggRpcError.message || 'No se pudieron cargar resúmenes')
+    } else if (aggRpcError) {
+      logSeguimientoSearch('warn', 'rpc:missing-fallback', {
+        ms: timings.rpcMs,
+        code: aggRpcError.code,
+        message: aggRpcError.message,
+      })
     }
   }
 
-  const total = totalCount ?? 0
+  if (!aggregatesFromRpc) {
+    const tCount = performance.now()
+    const { count: totalCount, error: countError } = await applySeguimientoListFilters(
+      supabase.from('notas_credito').select('id', { count: 'exact', head: true }),
+      filterArgs,
+    )
+    timings.countMs = msSince(tCount)
+    if (countError) {
+      logSeguimientoSearch('error', 'count:fail', {
+        ms: timings.countMs,
+        code: countError.code,
+        message: countError.message,
+        details: countError.details,
+        hint: countError.hint,
+        q: q || null,
+        searchOr,
+      })
+      throw new Error(countError.message || 'No se pudo cargar seguimiento')
+    }
+    total = totalCount ?? 0
+    if (logSearch) {
+      logSeguimientoSearch('debug', 'count:ok', { ms: timings.countMs, total })
+    }
+
+    if (includeAggregates) {
+      const estadoNorm = String(estado ?? '').trim().toUpperCase()
+      if (
+        !['no', 'false', '0'].includes(atencionNorm) &&
+        estadoNorm !== 'RESUELTA' &&
+        estadoNorm !== 'CANCELADA'
+      ) {
+        const tRa = performance.now()
+        const { count: raCount, error: raErr } = await applySeguimientoListFilters(
+          supabase.from('notas_credito').select('id', { count: 'exact', head: true }),
+          { ...filterArgs, atencion: '', soloRequiereAtencion: true },
+        )
+        timings.requiereAtencionMs = msSince(tRa)
+        if (raErr) {
+          logSeguimientoSearch('error', 'requiere-atencion:fail', {
+            ms: timings.requiereAtencionMs,
+            message: raErr.message,
+            code: raErr.code,
+          })
+          throw new Error(raErr.message || 'No se pudo calcular notas que requieren atención')
+        }
+        requiereAtencionTotal = raCount ?? 0
+        if (logSearch) {
+          logSeguimientoSearch('debug', 'requiere-atencion:ok', {
+            ms: timings.requiereAtencionMs,
+            requiereAtencionTotal,
+          })
+        }
+      }
+    }
+  }
+
   const totalPages = total > 0 ? Math.ceil(total / pageSize) : 1
   const safePage = total === 0 ? 1 : Math.min(page, totalPages)
   const fromSafe = (safePage - 1) * pageSize
   const toSafe = fromSafe + pageSize - 1
 
-  let baseQuery = supabase
-    .from('notas_credito')
-    .select(
-      `
+  let baseQuery = supabase.from('notas_credito').select(`
       id, serie_folio, fecha_nota, cliente, estado, requiere_atencion, resuelta_automaticamente,
       fecha_corriente, fecha_ultima_actualizacion, monto, abono, saldo, empresa, usuario_vendedor_pv, ruta_id,
       rutas:ruta_id(codigo),
       vendedor:usuario_id(username)
-    `,
-      { count: 'exact' },
-    )
+    `)
   baseQuery = applySeguimientoListFilters(baseQuery, filterArgs)
 
+  const tList = performance.now()
   let listQuery = applySort(baseQuery, sort).range(fromSafe, toSafe)
   const { data: rows, error } = await listQuery
-  if (error) throw new Error(error.message || 'No se pudo cargar seguimiento')
+  timings.listMs = msSince(tList)
+  if (error) {
+    logSeguimientoSearch('error', 'list:fail', {
+      ms: timings.listMs,
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      q: q || null,
+      searchOr,
+      range: [fromSafe, toSafe],
+    })
+    throw new Error(error.message || 'No se pudo cargar seguimiento')
+  }
+  if (logSearch) {
+    logSeguimientoSearch('debug', 'list:ok', {
+      ms: timings.listMs,
+      rows: (rows || []).length,
+      range: [fromSafe, toSafe],
+    })
+  }
 
   let items = (rows || []).map((n) => ({
     ...n,
@@ -513,20 +680,39 @@ async function fetchSeguimientoListSupabase(params = {}) {
     aclaraciones: [],
     tiene_comentarios: false,
   }))
+  const tAcl = performance.now()
   items = await attachAclaracionesToNotas(items)
+  timings.aclaracionesMs = msSince(tAcl)
 
-  let porRuta = []
-  let porAntiguedad = []
-  let montoTotal = 0
-  let abonoTotal = 0
-  let saldoTotal = 0
-  if (includeAggregates) {
+  if (includeAggregates && !aggregatesFromRpc) {
+    aggregatesMode = 'client-full-download'
+    logSeguimientoSearch('warn', 'aggregates:fallback-client', {
+      q: q || null,
+      searchOr,
+    })
+    const tAgg = performance.now()
     let aggQuery = supabase
       .from('notas_credito')
       .select('fecha_nota, monto, abono, saldo, rutas:ruta_id(codigo)')
     aggQuery = applySeguimientoListFilters(aggQuery, filterArgs)
     const { data: aggRows, error: aggError } = await aggQuery
-    if (aggError) throw new Error(aggError.message || 'No se pudieron cargar resúmenes')
+    timings.aggClientMs = msSince(tAgg)
+    if (aggError) {
+      logSeguimientoSearch('error', 'aggregates-client:fail', {
+        ms: timings.aggClientMs,
+        code: aggError.code,
+        message: aggError.message,
+        details: aggError.details,
+        hint: aggError.hint,
+      })
+      throw new Error(aggError.message || 'No se pudieron cargar resúmenes')
+    }
+    if (logSearch) {
+      logSeguimientoSearch('debug', 'aggregates-client:ok', {
+        ms: timings.aggClientMs,
+        rowsDownloaded: (aggRows || []).length,
+      })
+    }
 
     const porRutaMap = new Map()
     const bucketOrder = ['negativo', 'd0_30', 'd31_45', 'd46_60', 'd61_90', 'd91_180', 'd181_365', 'd366_plus']
@@ -565,6 +751,18 @@ async function fetchSeguimientoListSupabase(params = {}) {
     porAntiguedad = bucketOrder
       .map((bucket_id) => ({ bucket_id, ...bucketMap.get(bucket_id) }))
       .filter((r) => r.registros > 0)
+  }
+
+  timings.totalMs = msSince(t0)
+  if (logSearch) {
+    logSeguimientoSearch('debug', 'done', {
+      totalMs: timings.totalMs,
+      timings,
+      aggregatesMode,
+      total,
+      items: items.length,
+      q: q || null,
+    })
   }
 
   return {

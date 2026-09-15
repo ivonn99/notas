@@ -24,6 +24,7 @@ export const ROUTES = {
   parametros: '/parametros',
   editarParametro: (id = ':id') => `/parametros/editar/${id}`,
   logsSistema: '/logs-sistema',
+  limpiezaNotas: '/limpieza-notas',
   whatsappCobranza: '/whatsapp-cobranza',
   perfil: '/perfil',
   notificaciones: '/notificaciones',

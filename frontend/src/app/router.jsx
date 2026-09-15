@@ -25,6 +25,7 @@ import AsignarUsuariosRutaPage from '../pages/admin/rutas/AsignarUsuariosRutaPag
 import ParametrosPage from '../pages/admin/parametros/ParametrosPage.jsx'
 import EditarParametroPage from '../pages/admin/parametros/EditarParametroPage.jsx'
 import LogsSistemaPage from '../pages/admin/LogsSistemaPage.jsx'
+import LimpiezaNotasPage from '../pages/admin/LimpiezaNotasPage.jsx'
 import WhatsappCobranzaPage from '../pages/admin/WhatsappCobranzaPage.jsx'
 import PerfilPage from '../pages/cuenta/PerfilPage.jsx'
 import NotificacionesPage from '../pages/cuenta/NotificacionesPage.jsx'
@@ -157,6 +158,14 @@ export const router = createBrowserRouter([
         element: (
           <RequireRole roles={['ADMIN', 'CREDITO']}>
             <LogsSistemaPage />
+          </RequireRole>
+        ),
+      },
+      {
+        path: 'limpieza-notas',
+        element: (
+          <RequireRole roles={['ADMIN']}>
+            <LimpiezaNotasPage />
           </RequireRole>
         ),
       },
