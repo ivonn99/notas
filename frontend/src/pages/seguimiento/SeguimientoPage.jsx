@@ -767,7 +767,7 @@ export default function SeguimientoPage({ section = 'seguimiento' } = {}) {
     return () => obs.disconnect()
   }, [page, data.items.length, cacheKey, infiniteScrollRootMargin])
 
-  /** Conciliación: tras la 1.ª página, precarga la 2.ª en segundo plano. */
+  /** Tras la 1.ª página, precarga la 2.ª en segundo plano (scroll fluido). */
   useEffect(() => {
     if (!prefetchNextPage) return
     if (loading || loadingMore || error) return

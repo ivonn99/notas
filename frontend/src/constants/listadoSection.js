@@ -21,9 +21,11 @@ export const LISTADO_SECTIONS = {
     antiguedadMode: 'chips',
     tableTitle: 'Listado de seguimiento',
     tableLayout: 'flat',
-    pageSize: 20,
+    pageSize: 80,
     /** Precarga cuando el sentinel está a esta distancia del viewport. */
-    infiniteScrollRootMargin: '200px 0px',
+    infiniteScrollRootMargin: '800px 0px',
+    /** Tras la 1.ª página, pide la siguiente en segundo plano. */
+    prefetchNextPage: true,
     exportTitle: 'Seguimiento — Listado de notas',
     exportFilePrefix: 'seguimiento',
     exportSheetName: 'Seguimiento',
