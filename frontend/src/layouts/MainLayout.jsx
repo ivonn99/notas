@@ -15,6 +15,7 @@ import {
   FaRoad,
   FaRightFromBracket,
   FaRoute,
+  FaScaleBalanced,
   FaSliders,
   FaSun,
   FaTrashCan,
@@ -67,7 +68,8 @@ export default function MainLayout() {
       window.matchMedia('(min-width: 992px)').matches,
   )
 
-  const { isAdmin, canCredito, canSeguimiento, canAccessAdminPanel } = getNavFlags(user)
+  const { isAdmin, canCredito, canSeguimiento, canConciliacion, canAccessAdminPanel } =
+    getNavFlags(user)
 
   async function handleLogout() {
     await logout()
@@ -355,6 +357,30 @@ export default function MainLayout() {
                     <FaTrashCan size={18} />
                   </NavIcon>
                   <span className="sidebar-nav-label">Limpieza de notas</span>
+                </NavLink>
+              ) : null}
+              {canConciliacion ? (
+                <NavLink
+                  to={ROUTES.conciliacion}
+                  className={navLinkClass}
+                  title="Conciliación"
+                >
+                  <NavIcon>
+                    <FaScaleBalanced size={18} />
+                  </NavIcon>
+                  <span className="sidebar-nav-label">Conciliación</span>
+                </NavLink>
+              ) : null}
+              {canConciliacion ? (
+                <NavLink
+                  to={ROUTES.historialEstadosConciliacion}
+                  className={navLinkClass}
+                  title="Historial de estados (conciliación)"
+                >
+                  <NavIcon>
+                    <FaClockRotateLeft size={18} />
+                  </NavIcon>
+                  <span className="sidebar-nav-label">Historial conciliación</span>
                 </NavLink>
               ) : null}
               <NavLink

@@ -11,6 +11,7 @@ import {
   FaImage,
   FaRoad,
   FaRoute,
+  FaScaleBalanced,
   FaSliders,
   FaTriangleExclamation,
   FaUser,
@@ -67,6 +68,14 @@ const SHORTCUT_DEFS = [
     description: 'Seguimiento de notas y estados.',
     icon: FaRoute,
     show: (f) => f.canSeguimiento,
+  },
+  {
+    id: 'conciliacion',
+    to: ROUTES.conciliacion,
+    title: 'Conciliación',
+    description: 'Conciliación de notas (administrador).',
+    icon: FaScaleBalanced,
+    show: (f) => f.canConciliacion,
   },
   {
     id: 'reporte',
@@ -208,13 +217,13 @@ export default function PaginaPrincipalPage() {
     user?.username ||
     'Usuario'
 
-  const { canCredito, canSeguimiento, canAccessAdminPanel } = getNavFlags(user)
+  const { canCredito, canSeguimiento, canConciliacion, canAccessAdminPanel } = getNavFlags(user)
   const shortcuts = useMemo(
     () =>
       SHORTCUT_DEFS.filter((s) =>
-        s.show({ canCredito, canSeguimiento, canAccessAdminPanel }),
+        s.show({ canCredito, canSeguimiento, canConciliacion, canAccessAdminPanel }),
       ),
-    [canCredito, canSeguimiento, canAccessAdminPanel],
+    [canCredito, canSeguimiento, canConciliacion, canAccessAdminPanel],
   )
 
   return (

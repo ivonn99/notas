@@ -23,6 +23,15 @@ const initialSeguimiento = {
   mostrarComentarios: false,
 }
 
+const initialConciliacion = {
+  ...initialSeguimiento,
+  dias_bucket: '',
+  /** Antigüedad > N días. */
+  dias_min: 60,
+  /** Antigüedad < N días; vacío/null = sin tope. */
+  dias_max: '',
+}
+
 function normalizeNotasSort(sort) {
   const raw = String(sort || '').trim()
   if (raw === 'fecha_corriente_desc') return 'fecha_nota_desc'
@@ -68,11 +77,56 @@ function legacyDiasToBuckets(diasRaw) {
   return ''
 }
 
+function normalizeListadoLike(source, initial) {
+  const data = source && typeof source === 'object' ? source : {}
+  const rutasLegacy =
+    data.rutas != null
+      ? String(data.rutas)
+      : data.ruta != null
+        ? String(data.ruta)
+        : initial.rutas
+
+  let diasBucket =
+    data.dias_bucket != null ? String(data.dias_bucket) : initial.dias_bucket
+  if (!diasBucket) {
+    const legacyDias = Number.parseInt(String(data.dias ?? ''), 10)
+    if (Number.isFinite(legacyDias) && legacyDias > 0 && legacyDias <= 30) {
+      diasBucket = 'r1'
+    }
+  }
+
+  const normalized = {
+    ...initial,
+    ...data,
+    rutas: rutasLegacy,
+    dias_bucket: diasBucket,
+    orden: normalizeSeguimientoOrden(data.orden),
+  }
+  if (Object.prototype.hasOwnProperty.call(initial, 'dias_min')) {
+    const rawMin = data.dias_min != null ? data.dias_min : initial.dias_min
+    const n = Number.parseInt(String(rawMin ?? ''), 10)
+    normalized.dias_min = Number.isFinite(n) && n > 0 ? n : initial.dias_min
+    const rawMax = data.dias_max != null ? data.dias_max : initial.dias_max
+    if (rawMax === '' || rawMax == null) {
+      normalized.dias_max = ''
+    } else {
+      const m = Number.parseInt(String(rawMax), 10)
+      normalized.dias_max = Number.isFinite(m) && m > 0 ? m : ''
+    }
+    // Conciliación usa input, no chips.
+    normalized.dias_bucket = ''
+  }
+  delete normalized.ruta
+  delete normalized.dias
+  return normalized
+}
+
 export const useListFiltersStore = create(
   persist(
     (set) => ({
       notas: initialNotas,
       seguimiento: initialSeguimiento,
+      conciliacion: initialConciliacion,
 
       setNotasFilters: (partial) =>
         set((state) => ({
@@ -85,34 +139,20 @@ export const useListFiltersStore = create(
           seguimiento: { ...state.seguimiento, ...partial },
         })),
       resetSeguimientoFilters: () => set({ seguimiento: initialSeguimiento }),
+
+      setConciliacionFilters: (partial) =>
+        set((state) => ({
+          conciliacion: { ...state.conciliacion, ...partial },
+        })),
+      resetConciliacionFilters: () => set({ conciliacion: initialConciliacion }),
     }),
     {
       name: 'nc_list_filters_v1',
-      version: 9,
+      version: 12,
       migrate: (persisted) => {
         if (!persisted || typeof persisted !== 'object') return persisted
         const state = persisted
         const notas = state.notas && typeof state.notas === 'object' ? state.notas : {}
-        const seguimiento =
-          state.seguimiento && typeof state.seguimiento === 'object'
-            ? state.seguimiento
-            : {}
-
-        const rutasLegacy =
-          seguimiento.rutas != null
-            ? String(seguimiento.rutas)
-            : seguimiento.ruta != null
-              ? String(seguimiento.ruta)
-              : initialSeguimiento.rutas
-
-        let diasBucketSeg =
-          seguimiento.dias_bucket != null ? String(seguimiento.dias_bucket) : initialSeguimiento.dias_bucket
-        if (!diasBucketSeg) {
-          const legacyDias = Number.parseInt(String(seguimiento.dias ?? ''), 10)
-          if (Number.isFinite(legacyDias) && legacyDias > 0 && legacyDias <= 30) {
-            diasBucketSeg = 'r1'
-          }
-        }
 
         let diasBucketNotas =
           notas.dias_bucket != null && String(notas.dias_bucket).trim()
@@ -138,16 +178,9 @@ export const useListFiltersStore = create(
             dias_bucket: diasBucketNotas,
             sort: normalizeNotasSort(notas.sort),
           },
-          seguimiento: {
-            ...initialSeguimiento,
-            ...seguimiento,
-            rutas: rutasLegacy,
-            dias_bucket: diasBucketSeg,
-            orden: normalizeSeguimientoOrden(seguimiento.orden),
-          },
+          seguimiento: normalizeListadoLike(state.seguimiento, initialSeguimiento),
+          conciliacion: normalizeListadoLike(state.conciliacion, initialConciliacion),
         }
-        delete migrated.seguimiento.ruta
-        delete migrated.seguimiento.dias
         delete migrated.notas.dias
 
         return migrated
@@ -155,6 +188,7 @@ export const useListFiltersStore = create(
       partialize: (state) => ({
         notas: state.notas,
         seguimiento: state.seguimiento,
+        conciliacion: state.conciliacion,
       }),
     },
   ),

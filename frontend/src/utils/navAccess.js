@@ -8,6 +8,7 @@ export function getNavFlags(user) {
       isAdmin: false,
       canCredito: false,
       canSeguimiento: false,
+      canConciliacion: false,
       canAccessAdminPanel: false,
     }
   }
@@ -17,7 +18,9 @@ export function getNavFlags(user) {
   const canSeguimiento =
     Boolean(user.isSuperuser) ||
     ['ADMIN', 'CREDITO', 'VENDEDOR'].includes(user.rol)
+  /** Réplica de seguimiento exclusiva para administrador. */
+  const canConciliacion = isAdmin
   /** Importar, usuarios, rutas, parámetros, logs, WhatsApp, healthz (mismo alcance que CREDITO en backend). */
   const canAccessAdminPanel = canCredito
-  return { isAdmin, canCredito, canSeguimiento, canAccessAdminPanel }
+  return { isAdmin, canCredito, canSeguimiento, canConciliacion, canAccessAdminPanel }
 }

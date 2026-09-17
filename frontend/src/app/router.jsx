@@ -12,6 +12,9 @@ import TodasLasNotasPage from '../pages/notas-credito/TodasLasNotasPage.jsx'
 import SeguimientoPage from '../pages/seguimiento/SeguimientoPage.jsx'
 import DetalleNotaPage from '../pages/seguimiento/DetalleNotaPage.jsx'
 import HistorialEstadosNotasPage from '../pages/seguimiento/HistorialEstadosNotasPage.jsx'
+import ConciliacionPage from '../pages/conciliacion/ConciliacionPage.jsx'
+import DetalleNotaConciliacionPage from '../pages/conciliacion/DetalleNotaConciliacionPage.jsx'
+import HistorialEstadosConciliacionPage from '../pages/conciliacion/HistorialEstadosConciliacionPage.jsx'
 import ReportePage from '../pages/reporte/ReportePage.jsx'
 import ImportarReportePage from '../pages/admin/ImportarReportePage.jsx'
 import HistorialImportacionesPage from '../pages/admin/HistorialImportacionesPage.jsx'
@@ -57,6 +60,30 @@ export const router = createBrowserRouter([
       { path: 'seguimiento', element: <SeguimientoPage /> },
       { path: 'seguimiento/historial-estados', element: <HistorialEstadosNotasPage /> },
       { path: 'seguimiento/nota/:id', element: <DetalleNotaPage /> },
+      {
+        path: 'conciliacion',
+        element: (
+          <RequireRole roles={['ADMIN']}>
+            <ConciliacionPage />
+          </RequireRole>
+        ),
+      },
+      {
+        path: 'conciliacion/historial-estados',
+        element: (
+          <RequireRole roles={['ADMIN']}>
+            <HistorialEstadosConciliacionPage />
+          </RequireRole>
+        ),
+      },
+      {
+        path: 'conciliacion/nota/:id',
+        element: (
+          <RequireRole roles={['ADMIN']}>
+            <DetalleNotaConciliacionPage />
+          </RequireRole>
+        ),
+      },
       {
         path: 'reporte',
         element: (

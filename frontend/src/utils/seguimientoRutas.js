@@ -1,8 +1,39 @@
+/** Sentinel: ninguna ruta seleccionada (distinto de vacío = Todas). */
+export const RUTAS_FILTRO_NINGUNA = '__NONE__'
+
+export function isRutasFiltroNinguna(raw) {
+  return String(raw ?? '').trim().toUpperCase() === RUTAS_FILTRO_NINGUNA
+}
+
+/** Etiqueta corta para exports / banners (evita listar decenas de códigos). */
+export function describeRutasFiltroExport(rutasRaw) {
+  if (isRutasFiltroNinguna(rutasRaw)) return 'Ninguna'
+  const s = String(rutasRaw ?? '').trim()
+  if (!s) return 'Todas'
+  const parts = s.split(',').map((p) => p.trim()).filter(Boolean)
+  if (parts.length > 6) return `${parts.length} rutas`
+  return s
+}
+
 /** Parsea códigos de ruta separados por coma (mayúsculas, sin duplicados). */
 export function parseRutasList(raw) {
+  if (isRutasFiltroNinguna(raw)) return []
   const s = String(raw ?? '').trim()
   if (!s) return []
   return [...new Set(s.split(',').map((part) => part.trim().toUpperCase()).filter(Boolean))]
+}
+
+/**
+ * Modo visual/lógico del filtro de rutas.
+ * - all: vacío → todas las rutas
+ * - none: sentinel → ninguna seleccionada
+ * - some: uno o más códigos
+ */
+export function getRutasFiltroMode(raw) {
+  if (isRutasFiltroNinguna(raw)) return 'none'
+  const codes = parseRutasList(raw)
+  if (codes.length === 0) return 'all'
+  return 'some'
 }
 
 /** Serializa lista de códigos para el store / query string. */

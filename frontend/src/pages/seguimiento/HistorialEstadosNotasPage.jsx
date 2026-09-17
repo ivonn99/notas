@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ROUTES } from '../../constants/routes.js'
+import { getListadoSection } from '../../constants/listadoSection.js'
 import { fetchHistorialEstadosNotas } from '../../services/seguimientoApi.js'
 
 function formatFechaHora(value) {
@@ -19,7 +19,8 @@ function formatFechaHora(value) {
   }).format(d)
 }
 
-export default function HistorialEstadosNotasPage() {
+export default function HistorialEstadosNotasPage({ section = 'seguimiento' } = {}) {
+  const sectionConfig = getListadoSection(section)
   const [modo, setModo] = useState('pendiente_resuelta')
   const [limit, setLimit] = useState(150)
   const [items, setItems] = useState([])
@@ -136,7 +137,7 @@ export default function HistorialEstadosNotasPage() {
                     <td className="text-end">
                       <Link
                         className="btn btn-sm btn-outline-primary"
-                        to={ROUTES.detalleNota(String(row.nota_id))}
+                        to={sectionConfig.detalleRoute(String(row.nota_id))}
                       >
                         Ver nota
                       </Link>

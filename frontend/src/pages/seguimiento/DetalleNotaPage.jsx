@@ -8,6 +8,7 @@ import {
   postSeguimientoEstado,
   postSeguimientoRuta,
 } from '../../services/seguimientoApi.js'
+import { getListadoSection } from '../../constants/listadoSection.js'
 import { getSupabaseAuthMeta } from '../../lib/supabaseAuth.js'
 import { useDomainSyncStore } from '../../stores/domainSyncStore.js'
 import { estadoBadgeClass, notaMuestraAtencion } from '../../utils/estadoBadge.js'
@@ -87,7 +88,8 @@ async function copyText(text) {
   document.body.removeChild(textarea)
 }
 
-export default function DetalleNotaPage() {
+export default function DetalleNotaPage({ section = 'seguimiento' } = {}) {
+  const sectionConfig = getListadoSection(section)
   const { id } = useParams()
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
@@ -386,7 +388,9 @@ export default function DetalleNotaPage() {
                 </div>
               </div>
               <div className="mt-2 pt-2 border-top">
-                <div className="small text-uppercase text-body-secondary fw-semibold mb-1">Seguimiento</div>
+                <div className="small text-uppercase text-body-secondary fw-semibold mb-1">
+                  {sectionConfig.title}
+                </div>
                 <div className="d-flex flex-wrap gap-1 align-items-center">
                   <span
                     className={`badge rounded-pill ${

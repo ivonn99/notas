@@ -1,11 +1,12 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { FaComment, FaEye, FaFilePdf } from 'react-icons/fa6'
+import { FaChevronDown, FaChevronRight, FaComment, FaEye, FaFilePdf } from 'react-icons/fa6'
+import { getListadoSection } from '../../constants/listadoSection.js'
 import { ROUTES } from '../../constants/routes.js'
 import { useAuth } from '../../contexts/AuthContext.jsx'
 import { useDomainSyncStore } from '../../stores/domainSyncStore.js'
 import { profileApi } from '../../services/profileApi.js'
-import { fetchSeguimientoList } from '../../services/seguimientoApi.js'
+import { fetchRutasCatalogo, fetchSeguimientoList } from '../../services/seguimientoApi.js'
 import { exportarSeguimientoExcelConFiltros } from '../../utils/exportSeguimientoExcel.js'
 import { exportarSeguimientoPdfConFiltros } from '../../utils/exportSeguimientoPdf.js'
 import { useListCacheStore } from '../../stores/listCacheStore.js'
@@ -18,7 +19,12 @@ import {
   formatDiasBucketsList,
   parseDiasBucketsList,
 } from '../../utils/diasBuckets.js'
-import { formatRutasList, parseRutasList } from '../../utils/seguimientoRutas.js'
+import {
+  RUTAS_FILTRO_NINGUNA,
+  formatRutasList,
+  getRutasFiltroMode,
+  parseRutasList,
+} from '../../utils/seguimientoRutas.js'
 import ComentarioNotaRapidoModal from '../../components/ComentarioNotaRapidoModal.jsx'
 
 const PAGE_SIZE = 20
@@ -119,7 +125,13 @@ async function copyText(text) {
   document.body.removeChild(textarea)
 }
 
-function NotaSeguimientoCardMovil({ n, onCopySerieFolio, onAbrirComentario, mostrarComentarios }) {
+function NotaSeguimientoCardMovil({
+  n,
+  detalleTo,
+  onCopySerieFolio,
+  onAbrirComentario,
+  mostrarComentarios,
+}) {
   return (
     <div className="card border shadow-sm">
       <div className="card-body py-3">
@@ -147,7 +159,7 @@ function NotaSeguimientoCardMovil({ n, onCopySerieFolio, onAbrirComentario, most
           <div className="d-flex flex-row flex-wrap gap-1 flex-shrink-0 align-items-center justify-content-end">
             <Link
               className="btn btn-sm btn-primary d-inline-flex align-items-center justify-content-center px-2"
-              to={ROUTES.detalleNota(String(n.id))}
+              to={detalleTo}
               title="Detalle"
               aria-label="Ver detalle de la nota"
             >
@@ -224,14 +236,32 @@ function NotaSeguimientoCardMovil({ n, onCopySerieFolio, onAbrirComentario, most
   )
 }
 
-export default function SeguimientoPage() {
+export default function SeguimientoPage({ section = 'seguimiento' } = {}) {
+  const sectionConfig = getListadoSection(section)
   const location = useLocation()
   const fromReport = location.state?.fromReport || false
   const { user } = useAuth()
-  const isVendedor = Boolean(user && !user.isSuperuser && user.rol === 'VENDEDOR')
+  const isVendedor = Boolean(
+    sectionConfig.scopeByUsuarioRutas &&
+      user &&
+      !user.isSuperuser &&
+      user.rol === 'VENDEDOR',
+  )
+  const showRutasFilter = Boolean(sectionConfig.showRutasFilter)
+  const antiguedadMode = sectionConfig.antiguedadMode === 'dias_min' ? 'dias_min' : 'chips'
+  const defaultDiasMin = Number(sectionConfig.defaultDiasMin) > 0 ? Number(sectionConfig.defaultDiasMin) : 60
+  const groupByRuta = sectionConfig.tableLayout === 'group_by_ruta'
+  const pageSize = Math.min(
+    100,
+    Math.max(1, Number(sectionConfig.pageSize) || PAGE_SIZE),
+  )
+  const infiniteScrollRootMargin =
+    String(sectionConfig.infiniteScrollRootMargin || '200px 0px').trim() ||
+    '200px 0px'
+  const prefetchNextPage = Boolean(sectionConfig.prefetchNextPage)
   const [refreshKey, setRefreshKey] = useState(0)
-  const seguimientoFilters = useListFiltersStore((s) => s.seguimiento)
-  const setSeguimientoFilters = useListFiltersStore((s) => s.setSeguimientoFilters)
+  const listFilters = useListFiltersStore((s) => s[sectionConfig.filtersKey])
+  const setListFilters = useListFiltersStore((s) => s[sectionConfig.setFiltersKey])
   const [page, setPage] = useState(1)
   const [data, setData] = useState({ items: [], total: 0, totalPages: 1 })
   const [loading, setLoading] = useState(true)
@@ -241,36 +271,32 @@ export default function SeguimientoPage() {
   const [exportandoPdf, setExportandoPdf] = useState(false)
   const [copyToast, setCopyToast] = useState('')
   const [comentarioNota, setComentarioNota] = useState(null)
-  const [rutasInput, setRutasInput] = useState(seguimientoFilters.rutas || '')
-  const [qInput, setQInput] = useState(seguimientoFilters.q || '')
-
-  const pendingRutasFromInput = useCallback(() => {
-    return formatRutasList(parseRutasList(rutasInput))
-  }, [rutasInput])
-
-  const updateSeguimientoFilters = useCallback(
-    (partial) => {
-      if (!isVendedor && !Object.prototype.hasOwnProperty.call(partial, 'rutas')) {
-        const pending = pendingRutasFromInput()
-        const current = formatRutasList(parseRutasList(seguimientoFilters.rutas))
-        if (pending !== current) {
-          setSeguimientoFilters({ ...partial, rutas: pending })
-          return
-        }
-      }
-      setSeguimientoFilters(partial)
-    },
-    [isVendedor, pendingRutasFromInput, seguimientoFilters.rutas, setSeguimientoFilters],
+  const [qInput, setQInput] = useState(listFilters.q || '')
+  const [diasMinInput, setDiasMinInput] = useState(() =>
+    String(
+      listFilters.dias_min != null && String(listFilters.dias_min).trim() !== ''
+        ? listFilters.dias_min
+        : defaultDiasMin,
+    ),
   )
+  const [diasMaxInput, setDiasMaxInput] = useState(() =>
+    listFilters.dias_max != null && String(listFilters.dias_max).trim() !== ''
+      ? String(listFilters.dias_max)
+      : '',
+  )
+  /** Rutas colapsadas (vacío = todas expandidas). */
+  const [rutasGrupoColapsadas, setRutasGrupoColapsadas] = useState(() => new Set())
 
-  const applyRutasInputNow = useCallback(() => {
-    if (isVendedor) return
-    const next = pendingRutasFromInput()
-    if (next === formatRutasList(parseRutasList(seguimientoFilters.rutas))) return
-    setSeguimientoFilters({ rutas: next })
-  }, [isVendedor, pendingRutasFromInput, seguimientoFilters.rutas, setSeguimientoFilters])
+  const updateListFilters = useCallback(
+    (partial) => {
+      setListFilters(partial)
+    },
+    [setListFilters],
+  )
   const [rutasAsignadas, setRutasAsignadas] = useState([])
   const [rutasAsignadasError, setRutasAsignadasError] = useState('')
+  const [rutasCatalogo, setRutasCatalogo] = useState([])
+  const [rutasCatalogoError, setRutasCatalogoError] = useState('')
   const requestSeqRef = useRef(0)
   const listEpochRef = useRef(0)
   const activeCacheKeyRef = useRef('')
@@ -293,29 +319,53 @@ export default function SeguimientoPage() {
   const rutasVersion = useDomainSyncStore((s) => s.rutasVersion)
 
   const rutasSeleccionadas = useMemo(
-    () => parseRutasList(seguimientoFilters.rutas),
-    [seguimientoFilters.rutas],
+    () => parseRutasList(listFilters.rutas),
+    [listFilters.rutas],
+  )
+  const rutasFiltroMode = useMemo(
+    () => getRutasFiltroMode(listFilters.rutas),
+    [listFilters.rutas],
   )
 
   const filtros = useMemo(
     () => ({
-      pageSize: PAGE_SIZE,
-      empresa: seguimientoFilters.empresaActiva,
-      estado: seguimientoFilters.estado,
-      atencion: seguimientoFilters.atencion,
-      rutas: seguimientoFilters.rutas,
-      q: seguimientoFilters.q,
-      sort: seguimientoFilters.orden,
-      ...(seguimientoFilters.dias_bucket ? { dias_bucket: seguimientoFilters.dias_bucket } : {}),
+      pageSize,
+      empresa: listFilters.empresaActiva,
+      estado: listFilters.estado,
+      atencion: listFilters.atencion,
+      ...(showRutasFilter ? { rutas: listFilters.rutas } : {}),
+      q: listFilters.q,
+      sort: listFilters.orden,
+      ...(antiguedadMode === 'dias_min'
+        ? {
+            dias_min:
+              Number.parseInt(String(listFilters.dias_min ?? ''), 10) > 0
+                ? Number.parseInt(String(listFilters.dias_min), 10)
+                : defaultDiasMin,
+            ...(Number.parseInt(String(listFilters.dias_max ?? ''), 10) > 0
+              ? { dias_max: Number.parseInt(String(listFilters.dias_max), 10) }
+              : {}),
+          }
+        : listFilters.dias_bucket
+          ? { dias_bucket: listFilters.dias_bucket }
+          : {}),
+      ...(!sectionConfig.scopeByUsuarioRutas ? { ignoreUsuarioRutasScope: true } : {}),
     }),
     [
-      seguimientoFilters.empresaActiva,
-      seguimientoFilters.estado,
-      seguimientoFilters.atencion,
-      seguimientoFilters.rutas,
-      seguimientoFilters.q,
-      seguimientoFilters.dias_bucket,
-      seguimientoFilters.orden,
+      listFilters.empresaActiva,
+      listFilters.estado,
+      listFilters.atencion,
+      listFilters.rutas,
+      listFilters.q,
+      listFilters.dias_bucket,
+      listFilters.dias_min,
+      listFilters.dias_max,
+      listFilters.orden,
+      showRutasFilter,
+      antiguedadMode,
+      defaultDiasMin,
+      pageSize,
+      sectionConfig.scopeByUsuarioRutas,
     ],
   )
 
@@ -324,32 +374,81 @@ export default function SeguimientoPage() {
       empresa: filtros.empresa,
       estado: filtros.estado,
       atencion: filtros.atencion,
-      rutas: filtros.rutas,
+      ...(showRutasFilter ? { rutas: filtros.rutas } : {}),
       q: filtros.q,
       sort: filtros.sort,
       ...(filtros.dias_bucket ? { dias_bucket: filtros.dias_bucket } : {}),
+      ...(filtros.dias_min != null ? { dias_min: filtros.dias_min } : {}),
+      ...(filtros.dias_max != null ? { dias_max: filtros.dias_max } : {}),
+      ...(!sectionConfig.scopeByUsuarioRutas ? { ignoreUsuarioRutasScope: true } : {}),
     }),
-    [filtros],
+    [filtros, showRutasFilter, sectionConfig.scopeByUsuarioRutas],
   )
 
+  const opcionesExportacion = useMemo(
+    () => ({
+      title: sectionConfig.exportTitle || sectionConfig.title,
+      filePrefix: sectionConfig.exportFilePrefix || sectionConfig.id || 'seguimiento',
+      sheetName: sectionConfig.exportSheetName || sectionConfig.title,
+      groupByRuta:
+        sectionConfig.exportGroupByRuta != null
+          ? Boolean(sectionConfig.exportGroupByRuta)
+          : groupByRuta,
+    }),
+    [sectionConfig, groupByRuta],
+  )
+
+  const rutasChipList = isVendedor ? rutasAsignadas : rutasCatalogo
+
   const rutasActivasLabel = useMemo(() => {
-    if (isVendedor) {
-      if (rutasSeleccionadas.length > 0) return rutasSeleccionadas.join(', ')
-      const codes = rutasAsignadas.map((r) => r.codigo).filter(Boolean)
-      return codes.length ? codes.join(', ') : '—'
+    if (rutasFiltroMode === 'none') return 'Ninguna'
+    if (rutasFiltroMode === 'all') return 'Todas'
+
+    const allCodes = rutasChipList
+      .map((r) => String(r.codigo || '').trim().toUpperCase())
+      .filter(Boolean)
+    const selected = rutasSeleccionadas
+
+    if (selected.length === 0) {
+      if (isVendedor) {
+        return allCodes.length ? allCodes.join(', ') : '—'
+      }
+      return 'Todas'
     }
-    return rutasSeleccionadas.length ? rutasSeleccionadas.join(', ') : 'Todas'
-  }, [isVendedor, rutasSeleccionadas, rutasAsignadas])
+
+    // Evitar listar decenas de códigos (empuja/mueve los chips).
+    if (allCodes.length > 0) {
+      const selectedSet = new Set(selected)
+      const excluded = allCodes.filter((c) => !selectedSet.has(c))
+      if (excluded.length > 0 && excluded.length <= 3 && selected.length >= allCodes.length - 3) {
+        return `Todas excepto ${excluded.join(', ')}`
+      }
+      if (selected.length > 4) {
+        return `${selected.length} de ${allCodes.length} rutas`
+      }
+    }
+
+    return selected.join(', ')
+  }, [isVendedor, rutasFiltroMode, rutasSeleccionadas, rutasChipList])
 
   const tramosSeleccionados = useMemo(
-    () => parseDiasBucketsList(seguimientoFilters.dias_bucket),
-    [seguimientoFilters.dias_bucket],
+    () => parseDiasBucketsList(listFilters.dias_bucket),
+    [listFilters.dias_bucket],
   )
 
   const tramoActivoLabel = useMemo(() => {
+    if (antiguedadMode === 'dias_min') {
+      const n = Number.parseInt(String(listFilters.dias_min ?? ''), 10)
+      const dias = Number.isFinite(n) && n > 0 ? n : defaultDiasMin
+      const m = Number.parseInt(String(listFilters.dias_max ?? ''), 10)
+      if (Number.isFinite(m) && m > 0) {
+        return `Mayores a ${dias} y menores a ${m} días`
+      }
+      return `Mayores a ${dias} días`
+    }
     if (tramosSeleccionados.length === 0) return 'Todos'
     return tramosSeleccionados.map((id) => BUCKET_LABELS[id] || id).join(', ')
-  }, [tramosSeleccionados])
+  }, [antiguedadMode, defaultDiasMin, listFilters.dias_min, listFilters.dias_max, tramosSeleccionados])
 
   const totalesAntiguedad = useMemo(() => {
     const rows = data?.porAntiguedad || []
@@ -362,6 +461,36 @@ export default function SeguimientoPage() {
     )
   }, [data?.porAntiguedad])
   const cacheKey = useMemo(() => JSON.stringify(filtros), [filtros])
+
+  const gruposPorRuta = useMemo(() => {
+    if (!groupByRuta) return []
+    const map = new Map()
+    for (const n of data.items || []) {
+      const key = String(n.ruta_codigo || '').trim() || '(sin ruta)'
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          items: [],
+          monto: 0,
+          abono: 0,
+          saldo: 0,
+        })
+      }
+      const g = map.get(key)
+      g.items.push(n)
+      g.monto += Number(n.monto) || 0
+      g.abono += Number(n.abono) || 0
+      g.saldo += Number(n.saldo) || 0
+    }
+    return [...map.values()].sort((a, b) =>
+      String(a.key).localeCompare(String(b.key), 'es', { numeric: true }),
+    )
+  }, [groupByRuta, data.items])
+
+  useEffect(() => {
+    if (!groupByRuta) return
+    setRutasGrupoColapsadas(new Set())
+  }, [groupByRuta, cacheKey])
 
   const totalPages = data.totalPages || 1
   const hasMore = page < totalPages
@@ -378,9 +507,9 @@ export default function SeguimientoPage() {
     try {
       const tUi = performance.now()
       if (!append && targetPage === 1) {
-        clearCacheEntry('seguimiento', requestCacheKey)
+        clearCacheEntry(sectionConfig.screen, requestCacheKey)
       } else {
-        const cached = getCacheEntry('seguimiento', requestCacheKey)
+        const cached = getCacheEntry(sectionConfig.screen, requestCacheKey)
         if (cacheHasPages(cached, targetPage)) {
           const merged = mergeCachedPages(cached, targetPage)
           if (merged) {
@@ -457,7 +586,7 @@ export default function SeguimientoPage() {
         }
         return
       }
-      setCachePage('seguimiento', requestCacheKey, targetPage, r)
+      setCachePage(sectionConfig.screen, requestCacheKey, targetPage, r)
       setData((prev) => ({
         ...r,
         resumen: includeAggregates ? r.resumen : prev.resumen,
@@ -488,7 +617,7 @@ export default function SeguimientoPage() {
       ) {
         return
       }
-      setError(e?.message || 'No se pudo cargar seguimiento')
+      setError(e?.message || `No se pudo cargar ${sectionConfig.title.toLowerCase()}`)
     } finally {
       pagesInFlightRef.current.delete(targetPage)
       if (requestSeq === requestSeqRef.current && epoch === listEpochRef.current) {
@@ -496,7 +625,7 @@ export default function SeguimientoPage() {
         setLoadingMore(false)
       }
     }
-  }, [filtros, getCacheEntry, cacheKey, setCachePage, clearCacheEntry])
+  }, [filtros, getCacheEntry, cacheKey, setCachePage, clearCacheEntry, sectionConfig.screen, sectionConfig.title])
 
   loadMoreStateRef.current = {
     loading,
@@ -512,22 +641,17 @@ export default function SeguimientoPage() {
     activeCacheKeyRef.current = ''
     maxLoadedPageRef.current = 0
     pagesInFlightRef.current = new Set()
-    clearScreenCache('seguimiento')
+    clearScreenCache(sectionConfig.screen)
     setData({ items: [], total: 0, totalPages: 1 })
     setPage(1)
     setLoading(true)
     setLoadingMore(false)
     setError('')
     void cargarPagina(1, false)
-  }, [cacheKey, notasVersion, rutasVersion, refreshKey, clearScreenCache, cargarPagina])
+  }, [cacheKey, notasVersion, rutasVersion, refreshKey, clearScreenCache, cargarPagina, sectionConfig.screen])
 
   useEffect(() => {
-    if (isVendedor) return undefined
-    setRutasInput(seguimientoFilters.rutas || '')
-  }, [isVendedor, seguimientoFilters.rutas])
-
-  useEffect(() => {
-    if (!isVendedor) return undefined
+    if (!showRutasFilter || !isVendedor) return undefined
     let cancel = false
     setRutasAsignadasError('')
     void profileApi
@@ -544,34 +668,83 @@ export default function SeguimientoPage() {
     return () => {
       cancel = true
     }
-  }, [isVendedor, rutasVersion])
+  }, [showRutasFilter, isVendedor, rutasVersion])
 
   useEffect(() => {
-    setQInput(seguimientoFilters.q || '')
-  }, [seguimientoFilters.q])
+    if (!showRutasFilter || isVendedor) return undefined
+    let cancel = false
+    setRutasCatalogoError('')
+    void fetchRutasCatalogo()
+      .then((rows) => {
+        if (!cancel) setRutasCatalogo(rows || [])
+      })
+      .catch((e) => {
+        if (!cancel) {
+          setRutasCatalogo([])
+          setRutasCatalogoError(e?.message || 'No se pudieron cargar las rutas')
+        }
+      })
+    return () => {
+      cancel = true
+    }
+  }, [showRutasFilter, isVendedor, rutasVersion])
 
   useEffect(() => {
-    if (isVendedor) return undefined
-    const next = formatRutasList(parseRutasList(rutasInput))
-    if (next === formatRutasList(parseRutasList(seguimientoFilters.rutas))) return
-    const t = setTimeout(() => setSeguimientoFilters({ rutas: next }), 400)
+    setQInput(listFilters.q || '')
+  }, [listFilters.q])
+
+  useEffect(() => {
+    if (antiguedadMode !== 'dias_min') return undefined
+    const n = Number.parseInt(String(listFilters.dias_min ?? ''), 10)
+    setDiasMinInput(String(Number.isFinite(n) && n > 0 ? n : defaultDiasMin))
+    const m = Number.parseInt(String(listFilters.dias_max ?? ''), 10)
+    setDiasMaxInput(Number.isFinite(m) && m > 0 ? String(m) : '')
+  }, [antiguedadMode, defaultDiasMin, listFilters.dias_min, listFilters.dias_max])
+
+  useEffect(() => {
+    if (antiguedadMode !== 'dias_min') return undefined
+    const parsedMin = Number.parseInt(String(diasMinInput || '').trim(), 10)
+    const nextMin = Number.isFinite(parsedMin) && parsedMin > 0 ? parsedMin : defaultDiasMin
+    const rawMax = String(diasMaxInput || '').trim()
+    const parsedMax = Number.parseInt(rawMax, 10)
+    const nextMax = rawMax === '' || !Number.isFinite(parsedMax) || parsedMax <= 0 ? '' : parsedMax
+
+    const currentMinRaw = Number.parseInt(String(listFilters.dias_min ?? ''), 10)
+    const currentMin =
+      Number.isFinite(currentMinRaw) && currentMinRaw > 0 ? currentMinRaw : defaultDiasMin
+    const currentMaxRaw = Number.parseInt(String(listFilters.dias_max ?? ''), 10)
+    const currentMax =
+      Number.isFinite(currentMaxRaw) && currentMaxRaw > 0 ? currentMaxRaw : ''
+
+    if (nextMin === currentMin && nextMax === currentMax) return undefined
+    const t = setTimeout(() => {
+      updateListFilters({ dias_min: nextMin, dias_max: nextMax, dias_bucket: '' })
+    }, 400)
     return () => clearTimeout(t)
-  }, [isVendedor, rutasInput, seguimientoFilters.rutas, setSeguimientoFilters])
+  }, [
+    antiguedadMode,
+    defaultDiasMin,
+    diasMinInput,
+    diasMaxInput,
+    listFilters.dias_min,
+    listFilters.dias_max,
+    updateListFilters,
+  ])
 
   useEffect(() => {
     const next = String(qInput || '').trim()
-    if (next === String(seguimientoFilters.q || '').trim()) return
+    if (next === String(listFilters.q || '').trim()) return
     const t = setTimeout(() => {
       if (import.meta.env.DEV || localStorage.getItem('DEBUG_SEGUIMIENTO') === '1') {
         console.log('[seguimiento:search] ui:debounce-apply', {
           q: next || '(vacío)',
-          prev: seguimientoFilters.q || '(vacío)',
+          prev: listFilters.q || '(vacío)',
         })
       }
-      updateSeguimientoFilters({ q: next })
+      updateListFilters({ q: next })
     }, 400)
     return () => clearTimeout(t)
-  }, [qInput, seguimientoFilters.q, updateSeguimientoFilters])
+  }, [qInput, listFilters.q, updateListFilters])
 
   useEffect(() => {
     const node = loadMoreRef.current
@@ -588,11 +761,31 @@ export default function SeguimientoPage() {
         if (pagesInFlightRef.current.has(nextPage)) return
         void s.cargarPagina?.(nextPage, true)
       },
-      { root: null, rootMargin: '200px 0px', threshold: 0.1 },
+      { root: null, rootMargin: infiniteScrollRootMargin, threshold: 0.01 },
     )
     obs.observe(node)
     return () => obs.disconnect()
-  }, [page, data.items.length, cacheKey])
+  }, [page, data.items.length, cacheKey, infiniteScrollRootMargin])
+
+  /** Conciliación: tras la 1.ª página, precarga la 2.ª en segundo plano. */
+  useEffect(() => {
+    if (!prefetchNextPage) return
+    if (loading || loadingMore || error) return
+    if (activeCacheKeyRef.current !== cacheKey) return
+    if (maxLoadedPageRef.current !== 1) return
+    if (page < 1 || !hasMore) return
+    if (pagesInFlightRef.current.has(2)) return
+    void cargarPagina(2, true)
+  }, [
+    prefetchNextPage,
+    loading,
+    loadingMore,
+    error,
+    page,
+    hasMore,
+    cacheKey,
+    cargarPagina,
+  ])
 
   async function handleCopySerieFolio(value) {
     try {
@@ -614,7 +807,7 @@ export default function SeguimientoPage() {
   }
 
   function handleTodasTramos() {
-    updateSeguimientoFilters({ dias_bucket: '' })
+    updateListFilters({ dias_bucket: '' })
   }
 
   function handleClickSaldoAntiguedad(bucketId) {
@@ -624,54 +817,202 @@ export default function SeguimientoPage() {
     }
     const rId = BUCKET_TO_R[bucketId]
     if (!rId) return
-    updateSeguimientoFilters({ dias_bucket: rId })
+    updateListFilters({ dias_bucket: rId })
   }
 
   function toggleTramo(bucketId) {
     const id = String(bucketId || '').trim().toLowerCase()
     if (!id) return
-    const selected = parseDiasBucketsList(seguimientoFilters.dias_bucket)
+    const selected = parseDiasBucketsList(listFilters.dias_bucket)
     if (selected.length === 0) {
-      updateSeguimientoFilters({ dias_bucket: id })
+      updateListFilters({ dias_bucket: id })
       return
     }
     const set = new Set(selected)
     if (set.has(id)) {
       set.delete(id)
-      updateSeguimientoFilters({ dias_bucket: formatDiasBucketsList([...set]) })
+      updateListFilters({ dias_bucket: formatDiasBucketsList([...set]) })
       return
     }
     set.add(id)
-    updateSeguimientoFilters({ dias_bucket: formatDiasBucketsList([...set]) })
+    updateListFilters({ dias_bucket: formatDiasBucketsList([...set]) })
   }
 
-  function handleTodasRutasVendedor() {
-    setSeguimientoFilters({ rutas: '' })
+  function toggleRutaGrupo(rutaKey) {
+    setRutasGrupoColapsadas((prev) => {
+      const next = new Set(prev)
+      if (next.has(rutaKey)) next.delete(rutaKey)
+      else next.add(rutaKey)
+      return next
+    })
   }
 
-  function toggleRutaVendedor(codigo) {
+  function handleTodasRutas() {
+    // Toggle: Todas ↔ ninguna. Desde una selección parcial, vuelve a Todas.
+    if (rutasFiltroMode === 'all') {
+      setListFilters({ rutas: RUTAS_FILTRO_NINGUNA })
+      return
+    }
+    setListFilters({ rutas: '' })
+  }
+
+  function codigosRutasDisponibles() {
+    return rutasChipList
+      .map((r) => String(r.codigo || '').trim().toUpperCase())
+      .filter(Boolean)
+  }
+
+  function toggleRuta(codigo) {
     const code = String(codigo || '').trim().toUpperCase()
     if (!code) return
-    const selected = parseRutasList(seguimientoFilters.rutas)
-    if (selected.length === 0) {
-      setSeguimientoFilters({ rutas: code })
+    const allCodes = codigosRutasDisponibles()
+
+    if (rutasFiltroMode === 'none') {
+      setListFilters({ rutas: code })
       return
     }
-    const set = new Set(selected)
+
+    // Con Todas activas: quitar solo esta ruta (quedan las demás).
+    if (rutasFiltroMode === 'all') {
+      const rest = allCodes.filter((c) => c !== code)
+      setListFilters({
+        rutas: rest.length === 0 ? RUTAS_FILTRO_NINGUNA : formatRutasList(rest),
+      })
+      return
+    }
+
+    const set = new Set(parseRutasList(listFilters.rutas))
     if (set.has(code)) {
       set.delete(code)
-      setSeguimientoFilters({ rutas: formatRutasList([...set]) })
+      setListFilters({
+        rutas: set.size === 0 ? RUTAS_FILTRO_NINGUNA : formatRutasList([...set]),
+      })
       return
     }
+
     set.add(code)
-    setSeguimientoFilters({ rutas: formatRutasList([...set]) })
+    // Si ya están todas las del catálogo, volver a modo Todas.
+    if (allCodes.length > 0 && allCodes.every((c) => set.has(c))) {
+      setListFilters({ rutas: '' })
+      return
+    }
+    setListFilters({ rutas: formatRutasList([...set]) })
+  }
+
+  const tableColCount = groupByRuta ? 12 : 13
+
+  function renderNotaRows(n) {
+    return (
+      <Fragment key={n.id}>
+        <tr
+          className={
+            listFilters.mostrarComentarios && n.aclaraciones?.length > 0 ? 'border-bottom-0' : ''
+          }
+        >
+          <td>{n.id}</td>
+          <td>
+            <div className="d-inline-flex align-items-center gap-1">
+              <span>{n.serie_folio || '—'}</span>
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary py-0 px-2"
+                aria-label="Copiar Serie/Folio"
+                title="Copiar Serie/Folio"
+                disabled={!n.serie_folio}
+                onClick={() => {
+                  void handleCopySerieFolio(n.serie_folio)
+                }}
+              >
+                <span aria-hidden="true">📋</span>
+              </button>
+            </div>
+          </td>
+          <td className="text-nowrap small">{formatFechaNotaDb(n.fecha_nota)}</td>
+          <td
+            className="text-end text-nowrap small"
+            title="Días desde la fecha de la nota hasta hoy"
+          >
+            {formatDiasNotaCorriente(n.fecha_nota, n.fecha_corriente)}
+          </td>
+          <td>{n.cliente || '—'}</td>
+          <td>{n.empresa || '—'}</td>
+          {groupByRuta ? null : <td>{n.ruta_codigo || '—'}</td>}
+          <td className="text-end small">{money(n.monto)}</td>
+          <td className="text-end small">{money(n.abono)}</td>
+          <td className="text-end small fw-medium">{money(n.saldo)}</td>
+          <td>
+            <span className={`badge ${estadoBadgeClass(n.estado)}`}>{n.estado || '—'}</span>
+          </td>
+          <td>{notaMuestraAtencion(n) ? 'Sí' : 'No'}</td>
+          <td>
+            <div className="d-inline-flex flex-row flex-wrap gap-1 align-items-center">
+              <Link
+                className="btn btn-sm btn-primary d-inline-flex align-items-center justify-content-center px-2"
+                to={sectionConfig.detalleRoute(String(n.id))}
+                title="Detalle"
+                aria-label="Ver detalle de la nota"
+              >
+                <FaEye className="fs-6" aria-hidden />
+              </Link>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center px-2"
+                title="Comentario"
+                aria-label="Agregar comentarios o aclaraciones"
+                onClick={() =>
+                  setComentarioNota({
+                    id: n.id,
+                    serie_folio: n.serie_folio,
+                    cliente: n.cliente,
+                  })
+                }
+              >
+                <FaComment className="fs-6" aria-hidden />
+              </button>
+            </div>
+          </td>
+        </tr>
+        {listFilters.mostrarComentarios && n.aclaraciones?.length > 0 ? (
+          <tr className="bg-transparent">
+            <td colSpan={tableColCount} className="p-0 border-top-0">
+              <div className="bg-body-secondary bg-opacity-25 p-2 small ms-4 me-4 mb-2 rounded border shadow-sm">
+                <div className="fw-bold mb-1 border-bottom pb-1 d-flex align-items-center gap-2 text-body">
+                  <span>Comentarios recientes:</span>
+                  <span className="badge rounded-pill text-bg-secondary opacity-75">
+                    {n.aclaraciones.length}
+                  </span>
+                </div>
+                {n.aclaraciones.map((c) => (
+                  <div key={c.id} className="mb-1 border-bottom border-secondary-subtle pb-1">
+                    <span
+                      className="badge text-bg-secondary me-1 opacity-75"
+                      style={{ fontSize: '0.65rem' }}
+                    >
+                      {c.tipo}
+                    </span>
+                    <span className="text-body-secondary me-1 fw-semibold">
+                      {c.usuarios?.username || '—'}{' '}
+                      <span className="fw-normal opacity-75" style={{ fontSize: '0.7rem' }}>
+                        ({formatFechaComentario(c.created_at)})
+                      </span>
+                      :
+                    </span>
+                    <span className="text-body">{c.comentario}</span>
+                  </div>
+                ))}
+              </div>
+            </td>
+          </tr>
+        ) : null}
+      </Fragment>
+    )
   }
 
   return (
     <section className="container-fluid px-0">
       <div className="d-flex align-items-center justify-content-between mb-3">
-        <h1 className="h3 mb-0">Seguimiento</h1>
-        {(fromReport || seguimientoFilters.dias_bucket) && (
+        <h1 className="h3 mb-0">{sectionConfig.title}</h1>
+        {(sectionConfig.showReportBack && (fromReport || listFilters.dias_bucket)) && (
           <Link to={ROUTES.reporte} className="btn btn-primary btn-sm px-3 shadow-sm">
             ← Regresar al Reporte
           </Link>
@@ -681,35 +1022,44 @@ export default function SeguimientoPage() {
         <div className="d-flex flex-wrap gap-x-4 gap-y-1">
           <span>
             <span className="text-body-secondary">Empresa:</span>{' '}
-            <strong>{seguimientoFilters.empresaActiva}</strong>
+            <strong>{listFilters.empresaActiva}</strong>
           </span>
+          {showRutasFilter ? (
+            <span>
+              <span className="text-body-secondary">Rutas:</span> <strong>{rutasActivasLabel}</strong>
+              {rutasFiltroMode === 'some' &&
+              rutasSeleccionadas.length > 0 &&
+              rutasChipList.length > 0 ? (
+                <span className="text-body-secondary">
+                  {' '}
+                  ({rutasSeleccionadas.length}/{rutasChipList.length})
+                </span>
+              ) : null}
+            </span>
+          ) : null}
           <span>
-            <span className="text-body-secondary">Rutas:</span> <strong>{rutasActivasLabel}</strong>
-            {isVendedor && rutasSeleccionadas.length > 0 && rutasAsignadas.length > 0 ? (
-              <span className="text-body-secondary">
-                {' '}
-                ({rutasSeleccionadas.length} de {rutasAsignadas.length} asignadas)
-              </span>
-            ) : null}
-          </span>
-          <span>
-            <span className="text-body-secondary">Tramos:</span> <strong>{tramoActivoLabel}</strong>
-            {tramosSeleccionados.length > 1 ? (
+            <span className="text-body-secondary">
+              {antiguedadMode === 'dias_min' ? 'Antigüedad:' : 'Tramos:'}
+            </span>{' '}
+            <strong>{tramoActivoLabel}</strong>
+            {antiguedadMode === 'chips' && tramosSeleccionados.length > 1 ? (
               <span className="text-body-secondary"> ({tramosSeleccionados.length} seleccionados)</span>
             ) : null}
           </span>
         </div>
-        {isVendedor && rutasAsignadas.length === 0 && !rutasAsignadasError ? (
+        {showRutasFilter && isVendedor && rutasAsignadas.length === 0 && !rutasAsignadasError ? (
           <div className="text-warning mt-1">Sin rutas asignadas. Contacta al administrador.</div>
         ) : null}
-        {rutasAsignadasError ? <div className="text-danger mt-1">{rutasAsignadasError}</div> : null}
+        {showRutasFilter && (rutasAsignadasError || rutasCatalogoError) ? (
+          <div className="text-danger mt-1">{rutasAsignadasError || rutasCatalogoError}</div>
+        ) : null}
       </div>
       <ul className="nav nav-tabs mb-3">
         <li className="nav-item">
           <button
             type="button"
-            className={`nav-link${seguimientoFilters.empresaActiva === 'DISTRIBUIDORA' ? ' active' : ''}`}
-            onClick={() => updateSeguimientoFilters({ empresaActiva: 'DISTRIBUIDORA' })}
+            className={`nav-link${listFilters.empresaActiva === 'DISTRIBUIDORA' ? ' active' : ''}`}
+            onClick={() => updateListFilters({ empresaActiva: 'DISTRIBUIDORA' })}
           >
             Distribuidora
           </button>
@@ -717,8 +1067,8 @@ export default function SeguimientoPage() {
         <li className="nav-item">
           <button
             type="button"
-            className={`nav-link${seguimientoFilters.empresaActiva === 'RODRIGO' ? ' active' : ''}`}
-            onClick={() => updateSeguimientoFilters({ empresaActiva: 'RODRIGO' })}
+            className={`nav-link${listFilters.empresaActiva === 'RODRIGO' ? ' active' : ''}`}
+            onClick={() => updateListFilters({ empresaActiva: 'RODRIGO' })}
           >
             Rodrigo
           </button>
@@ -727,84 +1077,153 @@ export default function SeguimientoPage() {
 
       <div className="card mb-3">
         <div className="card-body">
-          <div className="mb-2 small text-body-secondary">Antigüedad (días desde fecha de nota)</div>
-          <div className="d-flex flex-wrap gap-1 mb-3">
-            <button
-              type="button"
-              className={`btn btn-sm ${tramosSeleccionados.length === 0 ? 'btn-primary' : 'btn-outline-secondary'}`}
-              onClick={handleTodasTramos}
-            >
-              Todos
-            </button>
-            {DIAS_BUCKETS_FILTER.map((b) => {
-              const isTodas = tramosSeleccionados.length === 0
-              const isSelected = tramosSeleccionados.includes(b.id)
-              return (
-                <button
-                  key={b.id}
-                  type="button"
-                  className={`btn btn-sm ${isTodas ? 'btn-outline-secondary' : isSelected ? 'btn-primary' : 'btn-outline-secondary'}`}
-                  onClick={() => toggleTramo(b.id)}
-                >
-                  {b.label}
-                </button>
-              )
-            })}
-          </div>
-
-          {isVendedor ? (
+          {antiguedadMode === 'dias_min' ? (
             <div className="mb-3">
-              <div className="form-label mb-1">Tus rutas asignadas</div>
-              <div className="d-flex flex-wrap gap-1">
+              <div className="form-label mb-1">Antigüedad (días desde fecha de nota)</div>
+              <div className="d-flex flex-wrap align-items-center gap-2">
+                <span className="small text-body-secondary">Mayores a</span>
+                <input
+                  id="conciliacion-dias-min"
+                  type="number"
+                  min={1}
+                  step={1}
+                  className="form-control"
+                  style={{ maxWidth: '7rem' }}
+                  aria-label="Mayores a días"
+                  value={diasMinInput}
+                  onChange={(e) => setDiasMinInput(e.target.value)}
+                  onBlur={() => {
+                    const parsed = Number.parseInt(String(diasMinInput || '').trim(), 10)
+                    const next = Number.isFinite(parsed) && parsed > 0 ? parsed : defaultDiasMin
+                    setDiasMinInput(String(next))
+                    const rawMax = String(diasMaxInput || '').trim()
+                    const parsedMax = Number.parseInt(rawMax, 10)
+                    const nextMax =
+                      rawMax === '' || !Number.isFinite(parsedMax) || parsedMax <= 0
+                        ? ''
+                        : parsedMax
+                    updateListFilters({ dias_min: next, dias_max: nextMax, dias_bucket: '' })
+                  }}
+                />
+                <span className="small text-body-secondary">menores a</span>
+                <input
+                  id="conciliacion-dias-max"
+                  type="number"
+                  min={1}
+                  step={1}
+                  className="form-control"
+                  style={{ maxWidth: '7rem' }}
+                  placeholder="opcional"
+                  aria-label="Menores a días"
+                  value={diasMaxInput}
+                  onChange={(e) => setDiasMaxInput(e.target.value)}
+                  onBlur={() => {
+                    const parsedMin = Number.parseInt(String(diasMinInput || '').trim(), 10)
+                    const nextMin =
+                      Number.isFinite(parsedMin) && parsedMin > 0 ? parsedMin : defaultDiasMin
+                    setDiasMinInput(String(nextMin))
+                    const rawMax = String(diasMaxInput || '').trim()
+                    if (rawMax === '') {
+                      setDiasMaxInput('')
+                      updateListFilters({ dias_min: nextMin, dias_max: '', dias_bucket: '' })
+                      return
+                    }
+                    const parsedMax = Number.parseInt(rawMax, 10)
+                    if (!Number.isFinite(parsedMax) || parsedMax <= 0) {
+                      setDiasMaxInput('')
+                      updateListFilters({ dias_min: nextMin, dias_max: '', dias_bucket: '' })
+                      return
+                    }
+                    setDiasMaxInput(String(parsedMax))
+                    updateListFilters({
+                      dias_min: nextMin,
+                      dias_max: parsedMax,
+                      dias_bucket: '',
+                    })
+                  }}
+                />
+                <span className="small text-body-secondary">días</span>
+              </div>
+              {Number.parseInt(String(listFilters.dias_max ?? ''), 10) > 0 &&
+              Number.parseInt(String(listFilters.dias_max), 10) <=
+                (Number.parseInt(String(listFilters.dias_min ?? ''), 10) > 0
+                  ? Number.parseInt(String(listFilters.dias_min), 10)
+                  : defaultDiasMin) ? (
+                <div className="small text-warning mt-1">
+                  «Menores a» debe ser mayor que «Mayores a» para aplicar el tope.
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <>
+              <div className="mb-2 small text-body-secondary">Antigüedad (días desde fecha de nota)</div>
+              <div className="d-flex flex-wrap gap-1 mb-3">
                 <button
                   type="button"
-                  className={`btn btn-sm ${rutasSeleccionadas.length === 0 ? 'btn-primary' : 'btn-outline-secondary'}`}
-                  onClick={handleTodasRutasVendedor}
+                  className={`btn btn-sm ${tramosSeleccionados.length === 0 ? 'btn-primary' : 'btn-outline-secondary'}`}
+                  onClick={handleTodasTramos}
+                >
+                  Todos
+                </button>
+                {DIAS_BUCKETS_FILTER.map((b) => {
+                  const isTodas = tramosSeleccionados.length === 0
+                  const isSelected = tramosSeleccionados.includes(b.id)
+                  return (
+                    <button
+                      key={b.id}
+                      type="button"
+                      className={`btn btn-sm ${isTodas ? 'btn-outline-secondary' : isSelected ? 'btn-primary' : 'btn-outline-secondary'}`}
+                      onClick={() => toggleTramo(b.id)}
+                    >
+                      {b.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          )}
+
+          {showRutasFilter ? (
+            <div className="mb-3">
+              <div className="mb-2 small text-body-secondary">
+                {isVendedor ? 'Tus rutas asignadas' : 'Rutas'}
+              </div>
+              <div className="nc-rutas-chips">
+                <button
+                  type="button"
+                  className={`btn btn-sm nc-ruta-chip ${rutasFiltroMode === 'all' ? 'is-selected' : ''}`}
+                  onClick={handleTodasRutas}
                 >
                   Todas
                 </button>
-                {rutasAsignadas.map((r) => {
+                {rutasChipList.map((r) => {
                   const code = String(r.codigo || '').trim().toUpperCase()
-                  const isTodas = rutasSeleccionadas.length === 0
-                  const isSelected = rutasSeleccionadas.includes(code)
+                  const isSelected =
+                    rutasFiltroMode === 'all' || rutasSeleccionadas.includes(code)
+                  const inactiva = r.activa === false
                   return (
                     <button
-                      key={r.id}
+                      key={r.id ?? code}
                       type="button"
-                      title={r.nombre || code}
-                      className={`btn btn-sm ${isTodas ? 'btn-outline-secondary' : isSelected ? 'btn-primary' : 'btn-outline-secondary'}`}
-                      onClick={() => toggleRutaVendedor(code)}
+                      title={inactiva ? `${r.nombre || code} (inactiva)` : r.nombre || code}
+                      className={`btn btn-sm nc-ruta-chip${isSelected ? ' is-selected' : ''}${inactiva ? ' is-inactive' : ''}`}
+                      onClick={() => toggleRuta(code)}
                     >
-                      {code}
+                      <span className="nc-ruta-chip-label">{code}</span>
                     </button>
                   )
                 })}
               </div>
             </div>
-          ) : (
-            <div className="mb-3">
-              <label className="form-label mb-1">Rutas (códigos, separados por coma)</label>
-              <input
-                className="form-control"
-                placeholder="DR201, DR202"
-                title="Códigos de ruta separados por coma; vacío = todas las rutas"
-                value={rutasInput}
-                onChange={(e) => setRutasInput(e.target.value)}
-                onBlur={applyRutasInputNow}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') applyRutasInputNow()
-                }}
-              />
-            </div>
-          )}
+          ) : null}
 
           <div className="row g-2">
             <div className="col-12 col-md-6 col-lg-2">
               <label className="form-label mb-1">Estado</label>
               <select
                 className="form-select"
-                value={seguimientoFilters.estado}
-                onChange={(e) => updateSeguimientoFilters({ estado: e.target.value })}
+                value={listFilters.estado}
+                onChange={(e) => updateListFilters({ estado: e.target.value })}
               >
                 <option value="">Todos</option>
                 <option value="PENDIENTE">PENDIENTE</option>
@@ -816,19 +1235,19 @@ export default function SeguimientoPage() {
               <label className="form-label mb-1">Atención</label>
               <select
                 className="form-select"
-                value={seguimientoFilters.atencion}
+                value={listFilters.atencion}
                 onChange={(e) => {
                   const next = e.target.value
-                  const estadoActual = String(seguimientoFilters.estado || '').toUpperCase()
+                  const estadoActual = String(listFilters.estado || '').toUpperCase()
                   // Atención solo aplica a PENDIENTE; evita filtros que se anulan entre sí.
                   if (
                     next === 'si' &&
                     (estadoActual === 'RESUELTA' || estadoActual === 'CANCELADA')
                   ) {
-                    updateSeguimientoFilters({ atencion: next, estado: 'PENDIENTE' })
+                    updateListFilters({ atencion: next, estado: 'PENDIENTE' })
                     return
                   }
-                  updateSeguimientoFilters({ atencion: next })
+                  updateListFilters({ atencion: next })
                 }}
               >
                 <option value="">Todos</option>
@@ -851,8 +1270,8 @@ export default function SeguimientoPage() {
               <label className="form-label mb-1">Ordenar por</label>
               <select
                 className="form-select"
-                value={seguimientoFilters.orden}
-                onChange={(e) => updateSeguimientoFilters({ orden: e.target.value })}
+                value={listFilters.orden}
+                onChange={(e) => updateListFilters({ orden: e.target.value })}
               >
                 <option value="fecha_nota_asc">Fecha nota — más antigua (predeterminado)</option>
                 <option value="fecha_ultima_desc">Última actualización — más reciente</option>
@@ -869,8 +1288,8 @@ export default function SeguimientoPage() {
                   type="checkbox"
                   role="switch"
                   id="switchComentarios"
-                  checked={seguimientoFilters.mostrarComentarios}
-                  onChange={(e) => setSeguimientoFilters({ mostrarComentarios: e.target.checked })}
+                  checked={listFilters.mostrarComentarios}
+                  onChange={(e) => setListFilters({ mostrarComentarios: e.target.checked })}
                 />
                 <label className="form-check-label small" htmlFor="switchComentarios">
                   Ver comentarios
@@ -892,7 +1311,10 @@ export default function SeguimientoPage() {
                 onClick={async () => {
                   setExportandoExcel(true)
                   try {
-                    const r = await exportarSeguimientoExcelConFiltros(filtrosExportacion)
+                    const r = await exportarSeguimientoExcelConFiltros(
+                      filtrosExportacion,
+                      opcionesExportacion,
+                    )
                     if (r.truncated) {
                       window.alert(
                         `Se exportaron ${r.rowCount.toLocaleString('es-MX')} filas. El total filtrado es ${r.totalReported.toLocaleString('es-MX')}; el archivo se cortó por límite de seguridad (máx. 30000 filas).`,
@@ -914,7 +1336,10 @@ export default function SeguimientoPage() {
                 onClick={async () => {
                   setExportandoPdf(true)
                   try {
-                    const r = await exportarSeguimientoPdfConFiltros(filtrosExportacion)
+                    const r = await exportarSeguimientoPdfConFiltros(
+                      filtrosExportacion,
+                      opcionesExportacion,
+                    )
                     if (r.truncated) {
                       window.alert(
                         `Se exportaron ${r.rowCount.toLocaleString('es-MX')} filas al PDF. El total filtrado es ${r.totalReported.toLocaleString('es-MX')}; el archivo se cortó por límite de seguridad (máx. 5000 filas).`,
@@ -1111,130 +1536,78 @@ export default function SeguimientoPage() {
       {error ? <div className="alert alert-warning">{error}</div> : null}
 
       <div className="card">
+        <div className="card-header py-2 px-3">
+          <h2 className="h6 mb-0">{sectionConfig.tableTitle || 'Listado de notas'}</h2>
+        </div>
         <div className="d-none d-md-block table-responsive">
           <table className="table table-sm table-hover align-middle mb-0">
             <thead className="table-light">
               <tr>
-                <th>ID</th>
-                <th>Serie/Folio</th>
-                <th>Fecha nota</th>
-                <th className="text-end" title="Días desde la fecha de la nota hasta hoy">
+                <th className="text-nowrap">ID</th>
+                <th className="text-nowrap">Serie/Folio</th>
+                <th className="text-nowrap">Fecha nota</th>
+                <th className="text-end text-nowrap" title="Días desde la fecha de la nota hasta hoy">
                   Días
                 </th>
-                <th>Cliente</th>
-                <th>Empresa</th>
-                <th>Ruta</th>
-                <th className="text-end">Monto</th>
-                <th className="text-end">Abono</th>
-                <th className="text-end">Saldo</th>
-                <th>Estado</th>
-                <th>Atención</th>
-                <th>Acciones</th>
+                <th className="text-nowrap">Cliente</th>
+                <th className="text-nowrap">Empresa</th>
+                {groupByRuta ? null : <th className="text-nowrap">Ruta</th>}
+                <th className="text-end text-nowrap">Monto</th>
+                <th className="text-end text-nowrap">Abono</th>
+                <th className="text-end text-nowrap">Saldo</th>
+                <th className="text-nowrap">Estado</th>
+                <th className="text-nowrap">Atención</th>
+                <th className="text-nowrap">Acciones</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="13" className="text-center py-4">
+                  <td colSpan={tableColCount} className="text-center py-4">
                     Cargando...
                   </td>
                 </tr>
               ) : data.items?.length ? (
-                data.items.map((n) => (
-                  <Fragment key={n.id}>
-                    <tr className={seguimientoFilters.mostrarComentarios && n.aclaraciones?.length > 0 ? 'border-bottom-0' : ''}>
-                      <td>{n.id}</td>
-                      <td>
-                        <div className="d-inline-flex align-items-center gap-1">
-                          <span>{n.serie_folio || '—'}</span>
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-secondary py-0 px-2"
-                            aria-label="Copiar Serie/Folio"
-                            title="Copiar Serie/Folio"
-                            disabled={!n.serie_folio}
-                            onClick={() => {
-                              void handleCopySerieFolio(n.serie_folio)
-                            }}
-                          >
-                            <span aria-hidden="true">📋</span>
-                          </button>
-                        </div>
-                      </td>
-                      <td className="text-nowrap small">{formatFechaNotaDb(n.fecha_nota)}</td>
-                      <td className="text-end text-nowrap small" title="Días desde la fecha de la nota hasta hoy">
-                        {formatDiasNotaCorriente(n.fecha_nota, n.fecha_corriente)}
-                      </td>
-                      <td>{n.cliente || '—'}</td>
-                      <td>{n.empresa || '—'}</td>
-                      <td>{n.ruta_codigo || '—'}</td>
-                      <td className="text-end small">{money(n.monto)}</td>
-                      <td className="text-end small">{money(n.abono)}</td>
-                      <td className="text-end small fw-medium">{money(n.saldo)}</td>
-                      <td>
-                        <span className={`badge ${estadoBadgeClass(n.estado)}`}>{n.estado || '—'}</span>
-                      </td>
-                      <td>{notaMuestraAtencion(n) ? 'Sí' : 'No'}</td>
-                      <td>
-                        <div className="d-inline-flex flex-row flex-wrap gap-1 align-items-center">
-                          <Link
-                            className="btn btn-sm btn-primary d-inline-flex align-items-center justify-content-center px-2"
-                            to={ROUTES.detalleNota(String(n.id))}
-                            title="Detalle"
-                            aria-label="Ver detalle de la nota"
-                          >
-                            <FaEye className="fs-6" aria-hidden />
-                          </Link>
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center px-2"
-                            title="Comentario"
-                            aria-label="Agregar comentarios o aclaraciones"
-                            onClick={() =>
-                              setComentarioNota({
-                                id: n.id,
-                                serie_folio: n.serie_folio,
-                                cliente: n.cliente,
-                              })
-                            }
-                          >
-                            <FaComment className="fs-6" aria-hidden />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                    {seguimientoFilters.mostrarComentarios && n.aclaraciones?.length > 0 && (
-                      <tr className="bg-transparent">
-                        <td colSpan="13" className="p-0 border-top-0">
-                          <div className="bg-body-secondary bg-opacity-25 p-2 small ms-4 me-4 mb-2 rounded border shadow-sm">
-                            <div className="fw-bold mb-1 border-bottom pb-1 d-flex align-items-center gap-2 text-body">
-                              <span>Comentarios recientes:</span>
-                              <span className="badge rounded-pill text-bg-secondary opacity-75">{n.aclaraciones.length}</span>
-                            </div>
-                            {n.aclaraciones.map((c) => (
-                              <div key={c.id} className="mb-1 border-bottom border-secondary-subtle pb-1">
-                                <span className="badge text-bg-secondary me-1 opacity-75" style={{fontSize: '0.65rem'}}>
-                                  {c.tipo}
-                                </span>
-                                <span className="text-body-secondary me-1 fw-semibold">
-                                  {c.usuarios?.username || '—'}{' '}
-                                  <span className="fw-normal opacity-75" style={{fontSize: '0.7rem'}}>
-                                    ({formatFechaComentario(c.created_at)})
-                                  </span>
-                                  :
-                                </span>
-                                <span className="text-body">{c.comentario}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                ))
+                groupByRuta ? (
+                  gruposPorRuta.map((grupo) => {
+                    const collapsed = rutasGrupoColapsadas.has(grupo.key)
+                    return (
+                      <Fragment key={`ruta-${grupo.key}`}>
+                        <tr className="conciliacion-ruta-group">
+                          <td colSpan={tableColCount} className="p-0">
+                            <button
+                              type="button"
+                              className="conciliacion-ruta-group-btn btn w-100 text-start rounded-0 border-0 px-3 py-2 d-flex flex-wrap align-items-center gap-2"
+                              onClick={() => toggleRutaGrupo(grupo.key)}
+                              aria-expanded={!collapsed}
+                            >
+                              <span className="d-inline-flex align-items-center justify-content-center flex-shrink-0" aria-hidden>
+                                {collapsed ? <FaChevronRight size={14} /> : <FaChevronDown size={14} />}
+                              </span>
+                              <span className="fw-semibold text-nowrap">
+                                Ruta {grupo.key}
+                              </span>
+                              <span className="badge text-bg-secondary fw-normal">
+                                {grupo.items.length} nota{grupo.items.length === 1 ? '' : 's'}
+                              </span>
+                              <span className="small text-body-secondary ms-md-auto text-nowrap">
+                                Saldo {money(grupo.saldo)}
+                                <span className="mx-1">·</span>
+                                Monto {money(grupo.monto)}
+                              </span>
+                            </button>
+                          </td>
+                        </tr>
+                        {collapsed ? null : grupo.items.map((n) => renderNotaRows(n))}
+                      </Fragment>
+                    )
+                  })
+                ) : (
+                  data.items.map((n) => renderNotaRows(n))
+                )
               ) : (
                 <tr>
-                  <td colSpan="13" className="text-center py-4">
+                  <td colSpan={tableColCount} className="text-center py-4">
                     Sin resultados
                   </td>
                 </tr>
@@ -1243,15 +1616,18 @@ export default function SeguimientoPage() {
             {!loading && data.items?.length ? (
               <tfoot className="table-light">
                 <tr>
-                  <td colSpan={7} className="small fw-semibold">
+                  <td colSpan={groupByRuta ? 6 : 7} className="small fw-semibold">
                     Suma filtrada
                     <span className="fw-normal text-body-secondary ms-1">
-                      ({(data?.resumen?.total_filtrado ?? data?.total ?? 0).toLocaleString('es-MX')} notas)
+                      ({(data?.resumen?.total_filtrado ?? data?.total ?? 0).toLocaleString('es-MX')}{' '}
+                      notas)
                     </span>
                   </td>
                   <td className="text-end small fw-semibold">{money(data?.resumen?.monto_total)}</td>
                   <td className="text-end small fw-semibold">{money(data?.resumen?.abono_total)}</td>
-                  <td className="text-end small fw-semibold text-primary">{money(data?.resumen?.saldo_total)}</td>
+                  <td className="text-end small fw-semibold text-primary">
+                    {money(data?.resumen?.saldo_total)}
+                  </td>
                   <td colSpan={3} />
                 </tr>
               </tfoot>
@@ -1263,21 +1639,62 @@ export default function SeguimientoPage() {
             <p className="text-center text-body-secondary py-4 mb-0">Cargando...</p>
           ) : data.items?.length ? (
             <div className="d-flex flex-column gap-2">
-              {data.items.map((n) => (
-                <NotaSeguimientoCardMovil
-                  key={n.id}
-                  n={n}
-                  onCopySerieFolio={handleCopySerieFolio}
-                  onAbrirComentario={setComentarioNota}
-                  mostrarComentarios={seguimientoFilters.mostrarComentarios}
-                />
-              ))}
+              {groupByRuta
+                ? gruposPorRuta.map((grupo) => {
+                    const collapsed = rutasGrupoColapsadas.has(grupo.key)
+                    return (
+                      <div key={`m-ruta-${grupo.key}`} className="border rounded">
+                        <button
+                          type="button"
+                          className="conciliacion-ruta-group-btn btn btn-sm w-100 text-start d-flex align-items-center gap-2 py-2 px-3 rounded-0 border-0"
+                          onClick={() => toggleRutaGrupo(grupo.key)}
+                          aria-expanded={!collapsed}
+                        >
+                          {collapsed ? (
+                            <FaChevronRight size={14} aria-hidden />
+                          ) : (
+                            <FaChevronDown size={14} aria-hidden />
+                          )}
+                          <span className="fw-semibold">Ruta {grupo.key}</span>
+                          <span className="badge text-bg-secondary">
+                            {grupo.items.length}
+                          </span>
+                          <span className="small text-body-secondary ms-auto">{money(grupo.saldo)}</span>
+                        </button>
+                        {collapsed ? null : (
+                          <div className="d-flex flex-column gap-2 p-2">
+                            {grupo.items.map((n) => (
+                              <NotaSeguimientoCardMovil
+                                key={n.id}
+                                n={n}
+                                detalleTo={sectionConfig.detalleRoute(String(n.id))}
+                                onCopySerieFolio={handleCopySerieFolio}
+                                onAbrirComentario={setComentarioNota}
+                                mostrarComentarios={listFilters.mostrarComentarios}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })
+                : data.items.map((n) => (
+                    <NotaSeguimientoCardMovil
+                      key={n.id}
+                      n={n}
+                      detalleTo={sectionConfig.detalleRoute(String(n.id))}
+                      onCopySerieFolio={handleCopySerieFolio}
+                      onAbrirComentario={setComentarioNota}
+                      mostrarComentarios={listFilters.mostrarComentarios}
+                    />
+                  ))}
               <div className="card border shadow-sm bg-body-tertiary">
                 <div className="card-body py-3">
                   <div className="fw-semibold mb-2">
                     Suma filtrada
                     <span className="fw-normal text-body-secondary ms-1">
-                      ({(data?.resumen?.total_filtrado ?? data?.total ?? 0).toLocaleString('es-MX')} notas)
+                      ({(data?.resumen?.total_filtrado ?? data?.total ?? 0).toLocaleString('es-MX')}{' '}
+                      notas)
                     </span>
                   </div>
                   <div className="d-flex justify-content-between small mb-1 gap-2">
@@ -1307,7 +1724,7 @@ export default function SeguimientoPage() {
         </div>
       </div>
       <div ref={loadMoreRef} className="py-3 text-center small text-body-secondary">
-        {loadingMore ? 'Cargando más...' : hasMore ? 'Desplázate para cargar más' : 'Fin de resultados'}
+        {loadingMore ? 'Cargando más…' : hasMore ? 'Desplázate para cargar más' : 'Fin de resultados'}
       </div>
       {copyToast ? (
         <div className="toast-container position-fixed top-0 end-0 p-3" style={{ zIndex: 1080 }}>

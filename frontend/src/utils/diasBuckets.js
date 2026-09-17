@@ -51,6 +51,23 @@ function ymdDaysAgo(days) {
   return `${y}-${m}-${day}`
 }
 
+/** Fecha límite (exclusiva): notas con más de `dias` de antigüedad → fecha_nota < hoy−dias. */
+export function fechaNotaHastaPorDiasMayorQue(dias) {
+  const n = Number.parseInt(String(dias ?? ''), 10)
+  if (!Number.isFinite(n) || n <= 0) return null
+  return ymdDaysAgo(n)
+}
+
+/**
+ * Fecha límite (exclusiva inferior vía `.gt`): notas con menos de `dias` de antigüedad
+ * → fecha_nota > hoy−dias.
+ */
+export function fechaNotaDesdePorDiasMenorQue(dias) {
+  const n = Number.parseInt(String(dias ?? ''), 10)
+  if (!Number.isFinite(n) || n <= 0) return null
+  return ymdDaysAgo(n)
+}
+
 /** Rango de fecha_nota para un tramo (mismo criterio que el reporte: hoy − fecha_nota). */
 export function diasBucketToDateRange(bucket) {
   switch (bucket) {

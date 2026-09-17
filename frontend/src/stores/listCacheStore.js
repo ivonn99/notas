@@ -2,21 +2,22 @@ import { create } from 'zustand'
 
 const CACHE_TTL_MS = 5 * 60 * 1000
 
+const BUCKET_KEYS = new Set(['notas', 'seguimiento', 'conciliacion', 'reporte'])
+
 function ensureBucket(state, screen) {
-  if (screen === 'seguimiento') return state.seguimiento
-  if (screen === 'reporte') return state.reporte
+  if (BUCKET_KEYS.has(screen) && state[screen]) return state[screen]
   return state.notas
 }
 
 function withBucket(state, screen, nextBucket) {
-  if (screen === 'seguimiento') return { ...state, seguimiento: nextBucket }
-  if (screen === 'reporte') return { ...state, reporte: nextBucket }
+  if (BUCKET_KEYS.has(screen)) return { ...state, [screen]: nextBucket }
   return { ...state, notas: nextBucket }
 }
 
 export const useListCacheStore = create((set, get) => ({
   notas: {},
   seguimiento: {},
+  conciliacion: {},
   reporte: {},
 
   getEntry: (screen, key) => {

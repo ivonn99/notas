@@ -4,11 +4,13 @@ import { requiereAtencionFromComentariosRestantes } from '../../../shared/notasN
 import {
   buildDiasBucketsSupabaseOr,
   diasBucketToDateRange,
+  fechaNotaDesdePorDiasMenorQue,
+  fechaNotaHastaPorDiasMayorQue,
   formatDiasBucketsList,
   parseDiasBucketsList,
 } from '../utils/diasBuckets.js'
 import { buildNotasSearchOrClause, looksLikeFolioToken } from '../utils/notasSearchFilter.js'
-import { fetchRutaIdsByCodigos, formatRutasList, parseRutasList } from '../utils/seguimientoRutas.js'
+import { fetchRutaIdsByCodigos, formatRutasList, isRutasFiltroNinguna, parseRutasList } from '../utils/seguimientoRutas.js'
 
 const ROLES_CAMBIO_ESTADO = new Set(['ADMIN', 'CREDITO'])
 const ROLES_CAMBIO_RUTA = new Set(['ADMIN'])
@@ -104,7 +106,8 @@ async function attachAclaracionesToNotas(notas) {
   })
 }
 
-async function resolveAllowedRutaIds(meta) {
+async function resolveAllowedRutaIds(meta, { ignoreUsuarioRutasScope = false } = {}) {
+  if (ignoreUsuarioRutasScope) return null
   if (meta.isSuperuser || meta.rol !== 'VENDEDOR') return null
   if (meta.usuarioId == null) {
     throw new Error(
@@ -155,6 +158,7 @@ function applySeguimientoListFilters(
     allowedFinal,
     fechaNotaDesde,
     fechaNotaHasta,
+    fechaNotaDesdeExclusive,
     diasBucketOr,
     soloRequiereAtencion,
   },
@@ -183,7 +187,11 @@ function applySeguimientoListFilters(
   if (diasBucketOr) {
     orGroups.push(`or(${diasBucketOr})`)
   } else {
-    if (fechaNotaDesde) qy = qy.gte('fecha_nota', fechaNotaDesde)
+    if (fechaNotaDesde) {
+      qy = fechaNotaDesdeExclusive
+        ? qy.gt('fecha_nota', fechaNotaDesde)
+        : qy.gte('fecha_nota', fechaNotaDesde)
+    }
     if (fechaNotaHasta) qy = qy.lt('fecha_nota', fechaNotaHasta)
   }
 
@@ -199,6 +207,16 @@ function applySeguimientoListFilters(
 
 export async function fetchSeguimientoList(params = {}) {
   return fetchSeguimientoListSupabase(params)
+}
+
+/** Catálogo de rutas para chips de filtro (admin / crédito / conciliación). */
+export async function fetchRutasCatalogo() {
+  const { data, error } = await supabase
+    .from('rutas')
+    .select('id, codigo, nombre, activa')
+    .order('codigo', { ascending: true })
+  if (error) throw new Error(error.message || 'No se pudieron cargar las rutas')
+  return (data || []).filter((r) => String(r.codigo || '').trim())
 }
 
 export function fetchSeguimientoDetalle(id) {
@@ -389,12 +407,38 @@ async function fetchHistorialEstadosNotasSupabase(params = {}) {
 
 async function fetchSeguimientoListSupabase(params = {}) {
   const meta = await getCurrentAuthMeta()
-  const allowedRutaIds = await resolveAllowedRutaIds(meta)
+  const ignoreUsuarioRutasScope = Boolean(params.ignoreUsuarioRutasScope)
+  const allowedRutaIds = await resolveAllowedRutaIds(meta, { ignoreUsuarioRutasScope })
   const page = Math.max(1, Number.parseInt(String(params.page ?? 1), 10) || 1)
   const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(params.pageSize ?? 20), 10) || 20))
   const estado = String(params.estado ?? '').trim().toUpperCase()
   const empresa = String(params.empresa ?? '').trim().toUpperCase()
-  const rutasList = parseRutasList(params.rutas ?? params.ruta)
+  const rutasRaw = params.rutas ?? params.ruta
+  if (isRutasFiltroNinguna(rutasRaw)) {
+    return {
+      ok: true,
+      page,
+      pageSize,
+      total: 0,
+      totalPages: 1,
+      resumen: { total_filtrado: 0, requiere_atencion: 0, monto_total: 0, abono_total: 0, saldo_total: 0 },
+      porRuta: [],
+      porAntiguedad: [],
+      items: [],
+      filters: {
+        empresa: empresa || null,
+        estado: estado || null,
+        rutas: rutasRaw,
+        dias_bucket: null,
+        dias_min: null,
+        dias_max: null,
+        atencion: String(params.atencion ?? '').trim().toLowerCase() || null,
+        q: String(params.q ?? '').trim() || null,
+        sort: normalizeSort(params.sort),
+      },
+    }
+  }
+  const rutasList = parseRutasList(rutasRaw)
   const rutas = formatRutasList(rutasList)
   const atencion = String(params.atencion ?? '').trim().toLowerCase()
   const q = String(params.q ?? '').trim()
@@ -405,12 +449,25 @@ async function fetchSeguimientoListSupabase(params = {}) {
   const diasBucketsList = parseDiasBucketsList(params.dias_bucket)
   const hasBucket = diasBucketsList.length > 0
   const diasBucket = formatDiasBucketsList(diasBucketsList)
+  const diasMinRaw = Number.parseInt(String(params.dias_min ?? ''), 10)
+  const diasMin = Number.isFinite(diasMinRaw) && diasMinRaw > 0 ? diasMinRaw : null
+  const diasMaxRaw = Number.parseInt(String(params.dias_max ?? ''), 10)
+  const diasMax = Number.isFinite(diasMaxRaw) && diasMaxRaw > 0 ? diasMaxRaw : null
 
   let fechaNotaDesde = null
   let fechaNotaHasta = null
+  let fechaNotaDesdeExclusive = false
   let diasBucketOr = null
 
-  if (diasBucketsList.length === 1) {
+  if ((diasMin != null || diasMax != null) && !hasBucket) {
+    if (diasMin != null) {
+      fechaNotaHasta = fechaNotaHastaPorDiasMayorQue(diasMin)
+    }
+    if (diasMax != null && (diasMin == null || diasMax > diasMin)) {
+      fechaNotaDesde = fechaNotaDesdePorDiasMenorQue(diasMax)
+      fechaNotaDesdeExclusive = true
+    }
+  } else if (diasBucketsList.length === 1) {
     const range = diasBucketToDateRange(diasBucketsList[0])
     if (range) {
       fechaNotaDesde = range.desde
@@ -439,6 +496,8 @@ async function fetchSeguimientoListSupabase(params = {}) {
           estado: estado || null,
           rutas: rutas || null,
           dias_bucket: hasBucket ? diasBucket : null,
+      dias_min: diasMin,
+      dias_max: diasMax,
           atencion: atencion || null,
           q: q || null,
           sort,
@@ -467,6 +526,8 @@ async function fetchSeguimientoListSupabase(params = {}) {
           estado: estado || null,
           rutas: rutas || null,
           dias_bucket: hasBucket ? diasBucket : null,
+      dias_min: diasMin,
+      dias_max: diasMax,
           atencion: atencion || null,
           q: q || null,
           sort,
@@ -485,6 +546,7 @@ async function fetchSeguimientoListSupabase(params = {}) {
     allowedFinal,
     fechaNotaDesde,
     fechaNotaHasta,
+    fechaNotaDesdeExclusive,
     diasBucketOr,
   }
 
@@ -507,6 +569,8 @@ async function fetchSeguimientoListSupabase(params = {}) {
       atencion: atencion || null,
       rutas: rutas || null,
       dias_bucket: hasBucket ? diasBucket : null,
+      dias_min: diasMin,
+      dias_max: diasMax,
       rutaIdsCount: Array.isArray(allowedFinal) ? allowedFinal.length : null,
       rol: meta.rol,
     })
@@ -776,6 +840,8 @@ async function fetchSeguimientoListSupabase(params = {}) {
       estado: estado || null,
       rutas: rutas || null,
       dias_bucket: hasBucket ? diasBucket : null,
+      dias_min: diasMin,
+      dias_max: diasMax,
       atencion: atencion || null,
       q: q || null,
       sort,
