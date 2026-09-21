@@ -11,8 +11,8 @@ import {
   postWhatsappSendTest,
 } from '../../services/whatsappApi.js'
 
-const TAB_AUTOMATIZADA = 'automatizada'
-const TAB_MANUAL = 'manual'
+const TAB_CONEXION = 'conexion'
+const TAB_MENSAJES = 'mensajes'
 
 /** Enlace wa.me si hay teléfono guardado (heurística MX: 10 dígitos → prefijo 52). */
 function waMeUrl(telefono) {
@@ -57,9 +57,51 @@ function textoResumenLoteWhatsapp(r, totalEsperado) {
   return lines.join('\n')
 }
 
-function buildEmpresaSection(titulo, rutas = []) {
+function primerNombreDe(nombreCompleto, username) {
+  const nombre = String(nombreCompleto || username || 'colega').trim()
+  return nombre.split(/\s+/)[0] || nombre
+}
+
+function rangoAntiguedadTexto(diasMin, diasMax) {
+  const min = Number.isFinite(Number(diasMin)) ? Number(diasMin) : 30
+  if (Number.isFinite(Number(diasMax)) && Number(diasMax) > 0) {
+    return `mayores a ${min} días y hasta ${Number(diasMax)} días`
+  }
+  return `mayores a ${min} días`
+}
+
+/** “más de X días, pero menos de Y” (si no hay máximo, solo “más de X días”). */
+function rangoMasDeMenosDe(diasMin, diasMax) {
+  const min = Number.isFinite(Number(diasMin)) ? Number(diasMin) : 30
+  if (Number.isFinite(Number(diasMax)) && Number(diasMax) > 0) {
+    return `más de ${min} días, pero menos de ${Number(diasMax)} días`
+  }
+  return `más de ${min} días`
+}
+
+function buildPlantillaVars({ nombre, empresa, diasMin, diasMax }) {
+  const min = Number.isFinite(Number(diasMin)) ? Number(diasMin) : 30
+  const maxOk = Number.isFinite(Number(diasMax)) && Number(diasMax) > 0
+  return {
+    nombre: nombre || 'colega',
+    empresa: empresa || '',
+    diasMin: String(min),
+    diasMax: maxOk ? String(Number(diasMax)) : '',
+    rango: rangoAntiguedadTexto(diasMin, diasMax),
+    rangoMasMenos: rangoMasDeMenosDe(diasMin, diasMax),
+  }
+}
+
+function applyApertura(texto, vars = {}) {
+  let out = String(texto ?? '')
+  for (const [key, value] of Object.entries(vars)) {
+    out = out.replaceAll(`{${key}}`, value ?? '')
+  }
+  return out
+}
+
+function buildRutasLines(rutas = []) {
   const lines = []
-  lines.push(`${titulo}:`)
   if (!rutas.length) {
     lines.push('• Sin notas para este criterio')
     lines.push('')
@@ -77,30 +119,96 @@ function buildEmpresaSection(titulo, rutas = []) {
   return lines
 }
 
-const MENSAJES_BASE = [
+function buildEmpresaSection(titulo, rutas = []) {
+  const lines = []
+  lines.push(`${titulo}:`)
+  lines.push(...buildRutasLines(rutas))
+  return lines
+}
+
+/** Plantillas de apertura (después del saludo). El listado de notas se agrega después. */
+const PLANTILLAS_INICIO = [
   {
     id: 'recordatorio',
     titulo: 'Recordatorio cordial',
-    texto:
-      'Hola {vendedor}, te comparto recordatorio de cobranza de la ruta {ruta}. Saldo pendiente estimado: {saldo}. Por favor, priorizar gestión hoy. Gracias.',
+    textoEmpresa:
+      'Te recordamos que puedas acudir a resolver las siguientes notas de crédito de {empresa} con antigüedad {rango} (según fecha nota):',
+    textoConsolidado:
+      'Te recordamos que puedas acudir a resolver las siguientes notas de crédito por empresa con antigüedad {rango} (según fecha nota):',
   },
   {
     id: 'seguimiento',
     titulo: 'Seguimiento de pendientes',
-    texto:
-      'Hola {vendedor}, seguimos con notas pendientes en {ruta}. ¿Me apoyas con avance y compromiso de cobro para hoy? Total pendiente: {saldo}.',
+    textoEmpresa:
+      'Seguimos con notas pendientes de {empresa} con antigüedad {rango}. ¿Me apoyas con avance y compromiso de cobro? Detalle:',
+    textoConsolidado:
+      'Seguimos con notas pendientes por empresa con antigüedad {rango}. ¿Me apoyas con avance y compromiso de cobro? Detalle:',
   },
   {
     id: 'escalacion',
     titulo: 'Escalación amable',
-    texto:
-      'Hola {vendedor}, necesitamos reforzar la cobranza de {ruta}. El pendiente actual es {saldo}. Por favor comparte plan y fecha de regularización.',
+    textoEmpresa:
+      'Necesitamos reforzar la cobranza de {empresa} con antigüedad {rango}. Por favor revisa el detalle y comparte plan de regularización:',
+    textoConsolidado:
+      'Necesitamos reforzar la cobranza por empresa con antigüedad {rango}. Por favor revisa el detalle y comparte plan de regularización:',
+  },
+  {
+    id: 'conciliacion-1',
+    titulo: 'Conciliación 1',
+    textoEmpresa:
+      'Te escribimos con gusto para dar seguimiento al proceso de conciliación. Te compartimos estas notas de {empresa} que presentan {rangoMasMenos}:',
+    textoConsolidado:
+      'Te escribimos con gusto para dar seguimiento al proceso de conciliación. Te compartimos estas notas por empresa que presentan {rangoMasMenos}:',
+    cierre:
+      'Si esta situación continúa, lamentablemente tendríamos que descontarlas de comisiones. Te pedimos de favor nos apoyes a la brevedad; quedamos atentos para ayudarte.',
+  },
+  {
+    id: 'conciliacion-2',
+    titulo: 'Conciliación 2',
+    saludo: 'Hola, compañer@ vendedor,',
+    textoEmpresa:
+      'Nos preocupa informarte que tenemos estas notas de {empresa} mayores de {diasMin} días:',
+    textoConsolidado:
+      'Nos preocupa informarte que tenemos estas notas por empresa mayores de {diasMin} días:',
+    cierre:
+      'Como aún no hemos recibido aclaración o la aclaración ha sido insuficiente, en el siguiente corte de comisiones se verá reflejado un descuento equivalente al importe de estas notas. Te pedimos que te acerques antes del día de corte para revisarlas juntos. Gracias.',
   },
 ]
 
+function armarMensajeEmpresa({ plantilla, nombre, empresaEtiqueta, rutas, diasMin, diasMax }) {
+  const vars = buildPlantillaVars({
+    nombre,
+    empresa: empresaEtiqueta,
+    diasMin,
+    diasMax,
+  })
+  const lines = []
+  lines.push(applyApertura(plantilla.saludo || 'Hola {nombre},', vars))
+  lines.push('')
+  lines.push(applyApertura(plantilla.textoEmpresa, vars))
+  lines.push('')
+  lines.push(...buildRutasLines(rutas))
+  lines.push(applyApertura(plantilla.cierre || 'Gracias por tu atención.', vars))
+  return lines.join('\n').trim()
+}
+
+function armarMensajeConsolidado({ plantilla, nombre, distRutas, rodRutas, diasMin, diasMax }) {
+  const vars = buildPlantillaVars({ nombre, diasMin, diasMax })
+  const lines = []
+  lines.push(applyApertura(plantilla.saludo || 'Hola {nombre},', vars))
+  lines.push('')
+  lines.push(applyApertura(plantilla.textoConsolidado, vars))
+  lines.push('')
+  lines.push(...buildEmpresaSection('Distribuidora', distRutas))
+  lines.push(...buildEmpresaSection('Rodrigo', rodRutas))
+  lines.push(applyApertura(plantilla.cierre || 'Gracias por tu atención.', vars))
+  return lines.join('\n').trim()
+}
+
 export default function WhatsappCobranzaPage() {
-  const [tabActiva, setTabActiva] = useState(TAB_MANUAL)
+  const [tabActiva, setTabActiva] = useState(TAB_MENSAJES)
   const [copiadoId, setCopiadoId] = useState('')
+  const [plantillaId, setPlantillaId] = useState(PLANTILLAS_INICIO[0].id)
   const [bulkLoading, setBulkLoading] = useState(false)
   const [bulkError, setBulkError] = useState('')
   const [bulkEmpresa, setBulkEmpresa] = useState(null)
@@ -121,6 +229,11 @@ export default function WhatsappCobranzaPage() {
   const [selectedMap, setSelectedMap] = useState({})
   const [batchSending, setBatchSending] = useState(false)
   const [batchInfo, setBatchInfo] = useState('')
+
+  const plantillaActiva = useMemo(
+    () => PLANTILLAS_INICIO.find((p) => p.id === plantillaId) || PLANTILLAS_INICIO[0],
+    [plantillaId],
+  )
 
   const usuariosConsolidados = useMemo(() => {
     if (!Array.isArray(bulkConsolidado)) return []
@@ -153,25 +266,20 @@ export default function WhatsappCobranzaPage() {
     pushEmpresa(rod, 'RODRIGO')
 
     return [...byUser.values()].map((u) => {
-      const nombre = String(u.nombreCompleto || u.username || 'colega').trim()
-      const primerNombre = nombre.split(/\s+/)[0] || nombre
-      const lines = []
-      lines.push(`Hola ${primerNombre},`)
-      lines.push('')
-      lines.push(
-        'Te recordamos que puedas acudir a resolver las siguientes notas de crédito por empresa (según fecha nota):',
-      )
-      lines.push('')
-      lines.push(...buildEmpresaSection('Distribuidora', u.distRutas))
-      lines.push(...buildEmpresaSection('Rodrigo', u.rodRutas))
-      lines.push('Gracias por tu atención.')
-
+      const primerNombre = primerNombreDe(u.nombreCompleto, u.username)
       return {
         ...u,
-        mensaje: lines.join('\n').trim(),
+        mensaje: armarMensajeConsolidado({
+          plantilla: plantillaActiva,
+          nombre: primerNombre,
+          distRutas: u.distRutas,
+          rodRutas: u.rodRutas,
+          diasMin: u.diasMin,
+          diasMax: u.diasMax,
+        }),
       }
     })
-  }, [bulkConsolidado])
+  }, [bulkConsolidado, plantillaActiva])
 
   const usuariosVisibles = useMemo(() => {
     if (Array.isArray(bulkConsolidado)) {
@@ -185,17 +293,28 @@ export default function WhatsappCobranzaPage() {
       }))
     }
     if (bulkPayload?.ok) {
+      const empresaEtiqueta =
+        bulkPayload.empresa === 'RODRIGO' ? 'Rodrigo' : 'Distribuidora'
+      const diasMinPayload = bulkPayload.diasMin ?? 30
+      const diasMaxPayload = bulkPayload.diasMax ?? null
       return (bulkPayload.usuarios || []).map((u) => ({
         key: `usr-${u.usuarioId}`,
         usuarioId: u.usuarioId,
         username: u.username,
         nombre: u.nombreCompleto?.trim() || u.username,
         telefono: u.telefono || '',
-        mensaje: u.mensaje || '',
+        mensaje: armarMensajeEmpresa({
+          plantilla: plantillaActiva,
+          nombre: primerNombreDe(u.nombreCompleto, u.username),
+          empresaEtiqueta,
+          rutas: u.rutas || [],
+          diasMin: diasMinPayload,
+          diasMax: diasMaxPayload,
+        }),
       }))
     }
     return []
-  }, [bulkConsolidado, usuariosConsolidados, bulkPayload])
+  }, [bulkConsolidado, usuariosConsolidados, bulkPayload, plantillaActiva])
 
   const selectedCount = useMemo(
     () => usuariosVisibles.filter((u) => selectedMap[u.key]).length,
@@ -468,24 +587,24 @@ export default function WhatsappCobranzaPage() {
         <li className="nav-item">
           <button
             type="button"
-            className={`nav-link ${tabActiva === TAB_AUTOMATIZADA ? 'active' : ''}`}
-            onClick={() => setTabActiva(TAB_AUTOMATIZADA)}
+            className={`nav-link ${tabActiva === TAB_CONEXION ? 'active' : ''}`}
+            onClick={() => setTabActiva(TAB_CONEXION)}
           >
-            Automatizada
+            Conexión
           </button>
         </li>
         <li className="nav-item">
           <button
             type="button"
-            className={`nav-link ${tabActiva === TAB_MANUAL ? 'active' : ''}`}
-            onClick={() => setTabActiva(TAB_MANUAL)}
+            className={`nav-link ${tabActiva === TAB_MENSAJES ? 'active' : ''}`}
+            onClick={() => setTabActiva(TAB_MENSAJES)}
           >
-            Mensajes manuales
+            Mensajes de cobranza
           </button>
         </li>
       </ul>
 
-      {tabActiva === TAB_AUTOMATIZADA ? (
+      {tabActiva === TAB_CONEXION ? (
         <>
           <div className="card mb-3">
             <div className="card-header">Estado de conexión Baileys</div>
@@ -619,6 +738,57 @@ export default function WhatsappCobranzaPage() {
                   />
                 </div>
               </div>
+              <div className="mb-3">
+                <div className="form-label mb-2">Plantilla de inicio del mensaje</div>
+                <p className="text-body-secondary small mb-2">
+                  Elige el tono del mensaje. El listado de notas se agrega automáticamente. Si ya
+                  generaste mensajes, al cambiar la plantilla se actualizan al instante. En
+                  Conciliación 1 conviene llenar también días máximos.
+                </p>
+                <div className="d-grid gap-2">
+                  {PLANTILLAS_INICIO.map((p) => {
+                    const activa = p.id === plantillaActiva.id
+                    const previewVars = buildPlantillaVars({
+                      nombre: 'Juan',
+                      empresa: 'Distribuidora',
+                      diasMin: Number.isFinite(Number(diasMin)) ? Number(diasMin) : 30,
+                      diasMax: diasMax === '' ? null : Number(diasMax),
+                    })
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className={`text-start border rounded p-3 bg-body ${
+                          activa ? 'border-primary' : ''
+                        }`}
+                        style={{
+                          cursor: 'pointer',
+                          boxShadow: activa ? 'inset 0 0 0 1px var(--bs-primary)' : undefined,
+                        }}
+                        onClick={() => setPlantillaId(p.id)}
+                        aria-pressed={activa}
+                      >
+                        <div className="d-flex justify-content-between align-items-start gap-2 mb-1">
+                          <div className="fw-semibold">{p.titulo}</div>
+                          {activa ? (
+                            <span className="badge text-bg-primary">Activa</span>
+                          ) : null}
+                        </div>
+                        <div className="small text-body-secondary">
+                          {applyApertura(p.saludo || 'Hola {nombre},', previewVars)}{' '}
+                          {applyApertura(p.textoEmpresa, previewVars)}
+                          {p.cierre ? (
+                            <>
+                              {' '}
+                              […] {applyApertura(p.cierre, previewVars)}
+                            </>
+                          ) : null}
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
               <div className="d-flex flex-wrap gap-2 mb-2">
                 <button
                   type="button"
@@ -709,19 +879,19 @@ export default function WhatsappCobranzaPage() {
                         ? `${bulkPayload.diasMin ?? diasMin} a ${bulkPayload.diasMax} días`
                         : `>= ${bulkPayload.diasMin ?? diasMin} días`}
                     </strong>
-                    .
+                    . Plantilla: <strong>{plantillaActiva.titulo}</strong>.
                   </p>
-                  {bulkPayload.totalUsuarios === 0 ? (
+                  {usuariosVisibles.length === 0 ? (
                     <p className="text-body-secondary small mb-0">
                       No hay notas que cumplan el criterio para esta empresa.
                     </p>
                   ) : (
                     <div className="d-grid gap-3">
-                      {bulkPayload.usuarios.map((u) => {
-                        const copyId = `usr-${u.usuarioId}`
+                      {usuariosVisibles.map((u) => {
+                        const copyId = u.key
                         const wa = waMeUrl(u.telefono)
                         return (
-                          <div key={u.usuarioId} className="border rounded p-3">
+                          <div key={copyId} className="border rounded p-3">
                             <div className="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
                               <div>
                                 <div className="form-check mb-1">
@@ -738,12 +908,10 @@ export default function WhatsappCobranzaPage() {
                                     }
                                   />
                                   <label className="form-check-label small" htmlFor={`sel-${copyId}`}>
-                                    Seleccionar para envío automatizado
+                                    Seleccionar para envío
                                   </label>
                                 </div>
-                                <div className="fw-semibold">
-                                  {u.nombreCompleto?.trim() || u.username}
-                                </div>
+                                <div className="fw-semibold">{u.nombre}</div>
                                 <div className="small text-body-secondary">
                                   Usuario: @{u.username}
                                 </div>
@@ -787,7 +955,8 @@ export default function WhatsappCobranzaPage() {
                     <p className="small text-body-secondary mb-2">
                       Consolidado de empresas (orden: <strong>Distribuidora</strong> y luego{' '}
                       <strong>Rodrigo</strong>). Criterio:{' '}
-                      <strong>{criterioTexto(bulkConsolidado[0], diasMin)}</strong>.
+                      <strong>{criterioTexto(bulkConsolidado[0], diasMin)}</strong>. Plantilla:{' '}
+                      <strong>{plantillaActiva.titulo}</strong>.
                     </p>
                     {usuariosConsolidados.length === 0 ? (
                       <p className="text-body-secondary small mb-0">
@@ -816,7 +985,7 @@ export default function WhatsappCobranzaPage() {
                                       }
                                     />
                                     <label className="form-check-label small" htmlFor={`sel-${copyId}`}>
-                                      Seleccionar para envío automatizado
+                                      Seleccionar para envío
                                     </label>
                                   </div>
                                   <div className="fw-semibold">
@@ -860,32 +1029,6 @@ export default function WhatsappCobranzaPage() {
                   </div>
                 </div>
               ) : null}
-            </div>
-          </div>
-
-          <div className="card">
-            <div className="card-header">Plantillas rápidas (copiar y pegar)</div>
-            <div className="card-body">
-              <p className="text-body-secondary small">
-                Variables sugeridas: {'{vendedor}'}, {'{ruta}'}, {'{saldo}'}.
-              </p>
-              <div className="d-grid gap-3">
-                {MENSAJES_BASE.map((m) => (
-                  <div key={m.id} className="border rounded p-3">
-                    <div className="d-flex justify-content-between align-items-start gap-2 mb-2">
-                      <div className="fw-semibold">{m.titulo}</div>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-outline-primary"
-                        onClick={() => copyText(m.id, m.texto)}
-                      >
-                        {copiadoId === m.id ? 'Copiado' : 'Copiar'}
-                      </button>
-                    </div>
-                    <div className="small">{m.texto}</div>
-                  </div>
-                ))}
-              </div>
             </div>
           </div>
         </>

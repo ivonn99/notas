@@ -9,7 +9,7 @@ import {
   formatDiasBucketsList,
   parseDiasBucketsList,
 } from '../utils/diasBuckets.js'
-import { buildNotasSearchOrClause, looksLikeFolioToken } from '../utils/notasSearchFilter.js'
+import { buildNotasSearchOrClause } from '../utils/notasSearchFilter.js'
 import { fetchRutaIdsByCodigos, formatRutasList, isRutasFiltroNinguna, parseRutasList } from '../utils/seguimientoRutas.js'
 
 const ROLES_CAMBIO_ESTADO = new Set(['ADMIN', 'CREDITO'])
@@ -559,7 +559,6 @@ async function fetchSeguimientoListSupabase(params = {}) {
   if (logSearch) {
     logSeguimientoSearch('debug', 'start', {
       q: q || null,
-      folioLike: q ? looksLikeFolioToken(q) : false,
       searchOr,
       page,
       pageSize,

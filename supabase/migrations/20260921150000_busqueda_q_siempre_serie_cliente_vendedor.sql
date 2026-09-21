@@ -1,25 +1,5 @@
--- Script mínimo alineado al esquema real (ids bigint).
--- Pegar en SQL Editor de Supabase.
-
-SET statement_timeout = 0;
-
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-
-CREATE INDEX IF NOT EXISTS idx_notas_serie_folio_lower_pattern
-  ON public.notas_credito (lower(serie_folio) text_pattern_ops);
-
-CREATE INDEX IF NOT EXISTS idx_notas_serie_folio_trgm
-  ON public.notas_credito USING gin (serie_folio gin_trgm_ops);
-
--- (Opcional, más lento — ejecutar aparte si necesitas contains en cliente/vendedor)
--- CREATE INDEX IF NOT EXISTS idx_notas_cliente_trgm
---   ON public.notas_credito USING gin (cliente gin_trgm_ops);
--- CREATE INDEX IF NOT EXISTS idx_notas_usuario_vendedor_pv_trgm
---   ON public.notas_credito USING gin (usuario_vendedor_pv gin_trgm_ops);
-
--- Firma anterior usaba integer[]; el esquema real es bigint.
-DROP FUNCTION IF EXISTS public.seguimiento_list_aggregates(text, text, text, text, integer[], date, date, text[]);
-DROP FUNCTION IF EXISTS public.seguimiento_list_aggregates(text, text, text, text, bigint[], date, date, text[]);
+-- Búsqueda q siempre en serie_folio + cliente + usuario_vendedor_pv (contiene).
+-- Antes: tokens sin espacios se trataban solo como folio y no buscaban cliente/vendedor.
 
 CREATE OR REPLACE FUNCTION public.seguimiento_list_aggregates(
   p_empresa text DEFAULT NULL,
@@ -220,10 +200,4 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.seguimiento_list_aggregates IS
-  'Agregados de Seguimiento (resumen, por ruta, por antigüedad) con los mismos filtros del listado.';
-
-GRANT EXECUTE ON FUNCTION public.seguimiento_list_aggregates(
-  text, text, text, text, bigint[], date, date, text[]
-) TO authenticated;
-
-SET statement_timeout TO DEFAULT;
+  'Agregados de Seguimiento (resumen, por ruta, por antigüedad). q busca en serie, cliente y vendedor.';
