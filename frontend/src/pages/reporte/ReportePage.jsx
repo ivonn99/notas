@@ -73,8 +73,52 @@ const TAB_INDICADORES = 'indicadores'
 const TAB_ATRASO_ESTRUCTURAL = 'atraso_estructural'
 const TAB_PANEL_GENERAL = 'panel_general'
 const TAB_TABLAS = 'tablas'
+const TAB_GRAFICOS = 'graficos'
 
-const TABS_REPORTE = [TAB_INDICADORES, TAB_ATRASO_ESTRUCTURAL, TAB_PANEL_GENERAL, TAB_TABLAS]
+const TABS_REPORTE = [
+  TAB_INDICADORES,
+  TAB_ATRASO_ESTRUCTURAL,
+  TAB_PANEL_GENERAL,
+  TAB_TABLAS,
+  TAB_GRAFICOS,
+]
+
+/** Colores de barras por tramo de antigüedad (verde → rojo). */
+const BUCKET_BAR_COLORS = {
+  negativo: '#6c757d',
+  d0_30: '#2f7d32',
+  d31_45: '#3f8b43',
+  d46_60: '#6b8e23',
+  d61_90: '#c9a227',
+  d91_180: '#d97706',
+  d181_365: '#dc5a2c',
+  d366_plus: '#c62828',
+}
+
+function ReporteBarraHorizontal({ label, valueLabel, pctWidth, color, onClick, title }) {
+  const width = Math.max(0, Math.min(100, Number(pctWidth) || 0))
+  const interactive = typeof onClick === 'function'
+  const Tag = interactive ? 'button' : 'div'
+  return (
+    <Tag
+      type={interactive ? 'button' : undefined}
+      className={`reporte-barra-row${interactive ? ' reporte-barra-row--btn' : ''}`}
+      onClick={onClick}
+      title={title || (interactive ? `Ver en seguimiento: ${label}` : undefined)}
+    >
+      <div className="reporte-barra-meta">
+        <span className="reporte-barra-label text-truncate">{label}</span>
+        <span className="reporte-barra-value text-nowrap">{valueLabel}</span>
+      </div>
+      <div className="reporte-barra-track" aria-hidden>
+        <div
+          className="reporte-barra-fill"
+          style={{ width: `${width}%`, backgroundColor: color || 'var(--nc-green)' }}
+        />
+      </div>
+    </Tag>
+  )
+}
 
 function loadStoredReportFilters() {
   try {
@@ -481,6 +525,11 @@ export default function ReportePage() {
   const [umbralAtrasoPct, setUmbralAtrasoPct] = useState(() =>
     parseUmbralAtrasoPct(storedFilters?.umbralAtrasoPct ?? ATRASO_ESTRUCTURAL_UMBRAL_DEFAULT),
   )
+  const [graficoRutaBucket, setGraficoRutaBucket] = useState(() => {
+    const raw = String(storedFilters?.graficoRutaBucket || 'all').trim()
+    if (raw === 'all' || BUCKET_LABELS[raw]) return raw
+    return 'all'
+  })
   const navigate = useNavigate()
   const setSeguimientoFilters = useListFiltersStore((s) => s.setSeguimientoFilters)
   const getCacheEntry = useListCacheStore((s) => s.getEntry)
@@ -730,6 +779,7 @@ export default function ReportePage() {
           resumenSortKey,
           resumenSortDir,
           umbralAtrasoPct,
+          graficoRutaBucket,
         }),
       )
     } catch {
@@ -750,6 +800,7 @@ export default function ReportePage() {
     resumenSortKey,
     resumenSortDir,
     umbralAtrasoPct,
+    graficoRutaBucket,
   ])
 
   const kpisBase = payload?.kpis
@@ -823,6 +874,49 @@ export default function ReportePage() {
     if (aVal === bVal) return String(a).localeCompare(String(b))
     return resumenSortDir === 'asc' ? aVal - bVal : bVal - aVal
   })
+
+  const rutasGraficoSeries = (() => {
+    if (graficoRutaBucket === 'all') {
+      return porRuta.map((r) => ({
+        ruta_codigo: r.ruta_codigo,
+        saldo_total: Number(r.saldo_total) || 0,
+        notas: Number(r.notas) || 0,
+      }))
+    }
+    const matrixRow = resumenMatrix[resumenIdx[graficoRutaBucket]]
+    if (!matrixRow) return []
+    return Object.entries(matrixRow.byRuta)
+      .map(([ruta_codigo, cell]) => ({
+        ruta_codigo,
+        saldo_total: Number(cell?.saldo) || 0,
+        notas: Number(cell?.notas) || 0,
+      }))
+      .filter((r) => r.saldo_total > 0 || r.notas > 0)
+      .sort(
+        (a, b) =>
+          b.saldo_total - a.saldo_total ||
+          String(a.ruta_codigo).localeCompare(String(b.ruta_codigo)),
+      )
+  })()
+  const topRutasGrafico = rutasGraficoSeries.slice(0, 20)
+  const maxSaldoAntiguedad = Math.max(0, ...porAntiguedad.map((r) => Number(r.saldo_total) || 0))
+  const totalSaldoAntiguedad = porAntiguedad.reduce(
+    (sum, r) => sum + (Number(r.saldo_total) || 0),
+    0,
+  )
+  const maxSaldoRutaGrafico = Math.max(0, ...topRutasGrafico.map((r) => Number(r.saldo_total) || 0))
+  const totalSaldoRutaGrafico = rutasGraficoSeries.reduce(
+    (sum, r) => sum + (Number(r.saldo_total) || 0),
+    0,
+  )
+  const graficoRutaBarColor =
+    graficoRutaBucket === 'all'
+      ? 'var(--nc-green)'
+      : BUCKET_BAR_COLORS[graficoRutaBucket] || 'var(--nc-green)'
+  const graficoRutaBucketOptions = [
+    { id: 'all', label: 'Total (todas)' },
+    ...bucketOrder.map((id) => ({ id, label: BUCKET_LABELS[id] || id })),
+  ]
 
   return (
     <section className="container-fluid px-0">
@@ -902,6 +996,15 @@ export default function ReportePage() {
             onClick={() => setPestanaPrincipal(TAB_TABLAS)}
           >
             Panel general
+          </button>
+        </li>
+        <li className="nav-item">
+          <button
+            type="button"
+            className={`nav-link${pestanaPrincipal === TAB_GRAFICOS ? ' active' : ''}`}
+            onClick={() => setPestanaPrincipal(TAB_GRAFICOS)}
+          >
+            Gráficos
           </button>
         </li>
       </ul>
@@ -2115,6 +2218,115 @@ export default function ReportePage() {
         </div>
       ) : null}
         </>
+      ) : null}
+
+      {pestanaPrincipal === TAB_GRAFICOS ? (
+        <div className="row g-3">
+          <div className="col-12 col-xl-6">
+            <div className="card h-100">
+              <div className="card-header fw-semibold">Saldo por antigüedad</div>
+              <div className="card-body">
+                {loading ? (
+                  <p className="text-center text-body-secondary py-4 mb-0">Cargando…</p>
+                ) : porAntiguedad.length === 0 ? (
+                  <p className="text-center text-body-secondary py-4 mb-0">Sin datos.</p>
+                ) : (
+                  <div className="d-flex flex-column gap-3">
+                    {porAntiguedad.map((r) => {
+                      const saldo = Number(r.saldo_total) || 0
+                      const pctWidth = maxSaldoAntiguedad > 0 ? (saldo / maxSaldoAntiguedad) * 100 : 0
+                      const pctDelTotal =
+                        totalSaldoAntiguedad > 0 ? (saldo / totalSaldoAntiguedad) * 100 : 0
+                      return (
+                        <ReporteBarraHorizontal
+                          key={r.bucket_id}
+                          label={BUCKET_LABELS[r.bucket_id] || r.bucket_id}
+                          valueLabel={`${money(saldo)} · ${pct(pctDelTotal)} · ${(r.notas ?? 0).toLocaleString('es-MX')} notas`}
+                          pctWidth={pctWidth}
+                          color={BUCKET_BAR_COLORS[r.bucket_id] || 'var(--nc-green)'}
+                          onClick={() => handleClickResumen('', r.bucket_id, true)}
+                        />
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="col-12 col-xl-6">
+            <div className="card h-100">
+              <div className="card-header">
+                <div className="d-flex flex-wrap align-items-end justify-content-between gap-2">
+                  <span className="fw-semibold">Saldo por ruta</span>
+                  <div className="ms-md-auto" style={{ minWidth: '12rem', maxWidth: '100%' }}>
+                    <label className="form-label form-label-sm mb-1" htmlFor="grafico-ruta-bucket">
+                      Clasificar por antigüedad
+                    </label>
+                    <select
+                      id="grafico-ruta-bucket"
+                      className="form-select form-select-sm"
+                      value={graficoRutaBucket}
+                      onChange={(e) => setGraficoRutaBucket(e.target.value)}
+                    >
+                      {graficoRutaBucketOptions.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div className="card-body">
+                {loading ? (
+                  <p className="text-center text-body-secondary py-4 mb-0">Cargando…</p>
+                ) : topRutasGrafico.length === 0 ? (
+                  <p className="text-center text-body-secondary py-4 mb-0">Sin datos.</p>
+                ) : (
+                  <div className="d-flex flex-column gap-3">
+                    {topRutasGrafico.map((r) => {
+                      const saldo = Number(r.saldo_total) || 0
+                      const pctWidth = maxSaldoRutaGrafico > 0 ? (saldo / maxSaldoRutaGrafico) * 100 : 0
+                      const pctDelTotal =
+                        totalSaldoRutaGrafico > 0 ? (saldo / totalSaldoRutaGrafico) * 100 : 0
+                      const rutaLabel =
+                        r.ruta_codigo === '(sin ruta)' ? '(sin ruta)' : `Ruta ${r.ruta_codigo}`
+                      return (
+                        <ReporteBarraHorizontal
+                          key={r.ruta_codigo}
+                          label={rutaLabel}
+                          valueLabel={`${money(saldo)} · ${pct(pctDelTotal)} · ${(r.notas ?? 0).toLocaleString('es-MX')} notas`}
+                          pctWidth={pctWidth}
+                          color={graficoRutaBarColor}
+                          onClick={() =>
+                            handleClickResumen(
+                              r.ruta_codigo,
+                              graficoRutaBucket === 'all' ? 'all' : graficoRutaBucket,
+                            )
+                          }
+                        />
+                      )
+                    })}
+                    {rutasGraficoSeries.length > 20 ? (
+                      <p className="small text-body-secondary mb-0">
+                        Mostrando las 20 rutas con mayor saldo de {rutasGraficoSeries.length}
+                        {graficoRutaBucket === 'all'
+                          ? ''
+                          : ` en ${BUCKET_LABELS[graficoRutaBucket] || graficoRutaBucket}`}
+                        .
+                      </p>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="col-12">
+            <p className="small text-body-secondary mb-0">
+              Barras según los filtros activos. Clic en una barra para abrir Seguimiento con ese filtro.
+            </p>
+          </div>
+        </div>
       ) : null}
     </section>
   )

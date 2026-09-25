@@ -237,25 +237,121 @@ body,
   border-width: 2px;
 }
 
-/* Conciliación: encabezado de grupo por ruta (contraste claro/oscuro) */
+/* Conciliación: encabezado de grupo por ruta — franja de alto contraste */
 .conciliacion-ruta-group > td {
-  border-bottom-width: 1px;
+  border-top: 3px solid var(--nc-green-2, var(--bs-primary));
+  border-bottom: 2px solid rgba(var(--bs-primary-rgb), 0.55);
+  padding: 0;
+}
+
+.conciliacion-ruta-group:first-child > td {
+  border-top-width: 0;
 }
 
 .conciliacion-ruta-group-btn {
-  background-color: var(--bs-secondary-bg) !important;
-  color: var(--bs-body-color) !important;
-  box-shadow: inset 3px 0 0 var(--bs-primary);
+  background-color: var(--nc-green, var(--bs-primary)) !important;
+  color: #fff !important;
+  box-shadow: inset 8px 0 0 var(--nc-green-2, #1e5c22);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  min-height: 3rem;
 }
 
 .conciliacion-ruta-group-btn:hover,
 .conciliacion-ruta-group-btn:focus-visible {
-  background-color: var(--bs-tertiary-bg) !important;
-  color: var(--bs-body-color) !important;
+  background-color: var(--nc-green-2, #3f8b43) !important;
+  color: #fff !important;
+}
+
+.conciliacion-ruta-group-btn .text-body-secondary,
+.conciliacion-ruta-group-btn .small {
+  color: rgba(255, 255, 255, 0.88) !important;
 }
 
 .conciliacion-ruta-group-btn .badge {
   vertical-align: middle;
+  background-color: #fff !important;
+  color: var(--nc-green, var(--bs-primary)) !important;
+  font-weight: 700;
+}
+
+/* Misma franja en cards móviles (fuera de tabla) */
+.d-md-none .conciliacion-ruta-group-btn {
+  border-radius: 0.375rem 0.375rem 0 0 !important;
+  background-color: var(--nc-green, var(--bs-primary)) !important;
+  box-shadow: inset 8px 0 0 var(--nc-green-2, #1e5c22);
+}
+
+[data-theme='dark'] .conciliacion-ruta-group-btn,
+[data-bs-theme='dark'] .conciliacion-ruta-group-btn {
+  background-color: var(--nc-green, #2f7d32) !important;
+  color: #fff !important;
+}
+
+[data-theme='dark'] .conciliacion-ruta-group-btn:hover,
+[data-theme='dark'] .conciliacion-ruta-group-btn:focus-visible,
+[data-bs-theme='dark'] .conciliacion-ruta-group-btn:hover,
+[data-bs-theme='dark'] .conciliacion-ruta-group-btn:focus-visible {
+  background-color: var(--nc-green-2, #3f8b43) !important;
+}
+
+/* Reporte — Gráficos: barras horizontales */
+.reporte-barra-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: start;
+}
+
+.reporte-barra-row--btn {
+  cursor: pointer;
+  border-radius: 0.35rem;
+  padding: 0.25rem 0.35rem;
+  transition: background-color 0.15s ease;
+}
+
+.reporte-barra-row--btn:hover,
+.reporte-barra-row--btn:focus-visible {
+  background-color: rgba(var(--bs-primary-rgb), 0.08);
+  outline: none;
+}
+
+.reporte-barra-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.875rem;
+}
+
+.reporte-barra-label {
+  font-weight: 600;
+  min-width: 0;
+}
+
+.reporte-barra-value {
+  color: var(--bs-secondary-color);
+  font-size: 0.8125rem;
+}
+
+.reporte-barra-track {
+  height: 0.85rem;
+  border-radius: 999px;
+  background-color: var(--bs-secondary-bg);
+  overflow: hidden;
+}
+
+.reporte-barra-fill {
+  height: 100%;
+  border-radius: inherit;
+  min-width: 0;
+  transition: width 0.35s ease;
 }
 
 /* Chips de rutas: columnas fijas por breakpoint (no auto-fill → no saltan al aparecer el scroll) */

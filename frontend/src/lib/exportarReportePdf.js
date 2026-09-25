@@ -28,6 +28,7 @@ const TAB_LABELS = {
   atraso_estructural: 'Atraso estructural',
   panel_general: 'Detalle',
   tablas: 'Panel general',
+  graficos: 'Gráficos',
 }
 
 const SUBVISTA_LABELS = {
