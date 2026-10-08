@@ -16,7 +16,15 @@ export function fetchCarteraReporte(params = {}) {
 const EMPRESAS = new Set(['DISTRIBUIDORA', 'RODRIGO'])
 const ESTADOS = new Set(['PENDIENTE', 'RESUELTA', 'CANCELADA'])
 const DIAS_BUCKETS = new Set(['all', 'r1', 'r2', 'r2b', 'r3', 'r4', 'r5', 'r6'])
+/** Tope de filas en la tabla de detalle del reporte (UI). */
 const MAX_ROWS = 5000
+/**
+ * PostgREST/Supabase corta cada respuesta en ~1000 filas (`max_rows`).
+ * Hay que paginar; un solo `.limit(20000)` solo devolvía el primer millar.
+ */
+const FETCH_PAGE_SIZE = 1000
+/** Tope de seguridad para no saturar el navegador en carteras enormes. */
+const MAX_FETCH_ROWS = 50000
 
 function diasFromFechaNota(fechaNota) {
   if (!fechaNota) return null
@@ -105,7 +113,9 @@ function emptyCarteraResponse(empresa, estadoRaw, diasBucket, q, fechaDesde, fec
     },
     total: 0,
     truncated: false,
+    fetchTruncated: false,
     maxRows: MAX_ROWS,
+    maxFetchRows: MAX_FETCH_ROWS,
     porRuta: [],
     porAntiguedad: [],
     porCliente: [],
@@ -113,6 +123,67 @@ function emptyCarteraResponse(empresa, estadoRaw, diasBucket, q, fechaDesde, fec
     resumenPivot: [],
     items: [],
   }
+}
+
+/**
+ * Recorre todas las páginas de una query PostgREST.
+ * `buildQuery` debe devolver una query fresca en cada llamada (el builder es mutable).
+ * Orden estable por `id` para no saltar/duplicar filas entre páginas.
+ */
+async function fetchAllRowsPaged(buildQuery, { errorLabel = 'No se pudieron cargar datos' } = {}) {
+  const rows = []
+  let from = 0
+  let fetchTruncated = false
+
+  while (from < MAX_FETCH_ROWS) {
+    const to = Math.min(from + FETCH_PAGE_SIZE - 1, MAX_FETCH_ROWS - 1)
+    const { data, error } = await buildQuery()
+      .order('id', { ascending: true })
+      .range(from, to)
+    if (error) throw new Error(error.message || errorLabel)
+    const page = data || []
+    rows.push(...page)
+    if (page.length < FETCH_PAGE_SIZE) {
+      fetchTruncated = false
+      break
+    }
+    from += FETCH_PAGE_SIZE
+    if (from >= MAX_FETCH_ROWS) {
+      fetchTruncated = true
+      break
+    }
+  }
+
+  return { rows, fetchTruncated }
+}
+
+async function fetchComentariosNotaIds(notaIds) {
+  const comentariosSet = new Set()
+  if (!notaIds.length) return comentariosSet
+
+  const idChunkSize = 200
+  for (let i = 0; i < notaIds.length; i += idChunkSize) {
+    const chunk = notaIds.slice(i, i + idChunkSize)
+    let from = 0
+    while (true) {
+      const { data: aclRows, error: aclErr } = await supabase
+        .from('aclaraciones')
+        .select('id, nota_id')
+        .in('nota_id', chunk)
+        .order('id', { ascending: true })
+        .range(from, from + FETCH_PAGE_SIZE - 1)
+      if (aclErr) {
+        throw new Error(aclErr.message || 'No se pudieron cargar comentarios para el reporte')
+      }
+      const page = aclRows || []
+      for (const row of page) {
+        if (row?.nota_id != null) comentariosSet.add(row.nota_id)
+      }
+      if (page.length < FETCH_PAGE_SIZE) break
+      from += FETCH_PAGE_SIZE
+    }
+  }
+  return comentariosSet
 }
 
 function sinVendedor(row) {
@@ -208,28 +279,37 @@ async function fetchComposicionRowsSupabase({
   fechaHasta,
   allowedRutaIds,
 }) {
-  let query = supabase
-    .from('notas_credito')
-    .select('cliente, saldo, fecha_nota, rutas:ruta_id(codigo)')
-    .eq('empresa', empresa)
-    .eq('estado', 'PENDIENTE')
-    .gt('saldo', 0)
+  const { rows, fetchTruncated } = await fetchAllRowsPaged(
+    () => {
+      let query = supabase
+        .from('notas_credito')
+        .select('id, cliente, saldo, fecha_nota, rutas:ruta_id(codigo)')
+        .eq('empresa', empresa)
+        .eq('estado', 'PENDIENTE')
+        .gt('saldo', 0)
 
-  if (allowedRutaIds) query = query.in('ruta_id', allowedRutaIds)
-  if (q) {
-    query = query.or(`cliente.ilike.%${q}%,serie_folio.ilike.%${q}%,usuario_vendedor_pv.ilike.%${q}%`)
+      if (allowedRutaIds) query = query.in('ruta_id', allowedRutaIds)
+      if (q) {
+        query = query.or(
+          `cliente.ilike.%${q}%,serie_folio.ilike.%${q}%,usuario_vendedor_pv.ilike.%${q}%`,
+        )
+      }
+      if (fechaDesde) query = query.gte('fecha_nota', fechaDesde)
+      if (fechaHasta) query = query.lte('fecha_nota', fechaHasta)
+      return query
+    },
+    { errorLabel: 'No se pudo cargar composición de cartera' },
+  )
+
+  return {
+    fetchTruncated,
+    rows: rows.map((row) => ({
+      cliente: row.cliente,
+      ruta_codigo: row.rutas?.codigo || null,
+      saldo: row.saldo,
+      dias: diasFromFechaNota(row.fecha_nota),
+    })),
   }
-  if (fechaDesde) query = query.gte('fecha_nota', fechaDesde)
-  if (fechaHasta) query = query.lte('fecha_nota', fechaHasta)
-
-  const { data, error } = await query.limit(20000)
-  if (error) throw new Error(error.message || 'No se pudo cargar composición de cartera')
-  return (data || []).map((row) => ({
-    cliente: row.cliente,
-    ruta_codigo: row.rutas?.codigo || null,
-    saldo: row.saldo,
-    dias: diasFromFechaNota(row.fecha_nota),
-  }))
 }
 
 async function fetchCarteraReporteSupabase(params = {}) {
@@ -271,49 +351,38 @@ async function fetchCarteraReporteSupabase(params = {}) {
     }
   }
 
-  let query = supabase
-    .from('notas_credito')
-    .select(
-      `
+  const { rows: data, fetchTruncated: notasFetchTruncated } = await fetchAllRowsPaged(
+    () => {
+      let query = supabase
+        .from('notas_credito')
+        .select(
+          `
       id, serie_folio, cliente, empresa, estado, monto, abono, saldo, fecha_nota, fecha_corriente, created_at,
       usuario_vendedor_pv, ruta_id, usuario_id, requiere_atencion, resuelta_automaticamente,
       rutas:ruta_id(codigo),
       vendedor:usuario_id(username)
     `,
-    )
-    .eq('empresa', empresa)
+        )
+        .eq('empresa', empresa)
 
-  if (estadoRaw && estadoRaw !== 'TODOS') query = query.eq('estado', estadoRaw)
-  if (allowedRutaIds) query = query.in('ruta_id', allowedRutaIds)
-  if (q) {
-    query = query.or(
-      `cliente.ilike.%${q}%,serie_folio.ilike.%${q}%,usuario_vendedor_pv.ilike.%${q}%`,
-    )
-  }
-  if (fechaDesde) query = query.gte('fecha_nota', fechaDesde)
-  if (fechaHasta) query = query.lte('fecha_nota', fechaHasta)
-
-  const { data, error } = await query.limit(20000)
-  if (error) throw new Error(error.message || 'No se pudo cargar reporte desde Supabase')
-
-  const notaIds = (data || []).map((row) => row.id).filter((id) => id != null)
-  const comentariosSet = new Set()
-  if (notaIds.length > 0) {
-    const chunkSize = 500
-    for (let i = 0; i < notaIds.length; i += chunkSize) {
-      const chunk = notaIds.slice(i, i + chunkSize)
-      const { data: aclRows, error: aclErr } = await supabase
-        .from('aclaraciones')
-        .select('nota_id')
-        .in('nota_id', chunk)
-      if (aclErr) throw new Error(aclErr.message || 'No se pudieron cargar comentarios para el reporte')
-      for (const row of aclRows || []) {
-        if (row?.nota_id != null) comentariosSet.add(row.nota_id)
+      if (estadoRaw && estadoRaw !== 'TODOS') query = query.eq('estado', estadoRaw)
+      if (allowedRutaIds) query = query.in('ruta_id', allowedRutaIds)
+      if (q) {
+        query = query.or(
+          `cliente.ilike.%${q}%,serie_folio.ilike.%${q}%,usuario_vendedor_pv.ilike.%${q}%`,
+        )
       }
-    }
-  }
+      if (fechaDesde) query = query.gte('fecha_nota', fechaDesde)
+      if (fechaHasta) query = query.lte('fecha_nota', fechaHasta)
+      return query
+    },
+    { errorLabel: 'No se pudo cargar reporte desde Supabase' },
+  )
 
-  const allRows = (data || []).map((row) => ({
+  const notaIds = data.map((row) => row.id).filter((id) => id != null)
+  const comentariosSet = await fetchComentariosNotaIds(notaIds)
+
+  const allRows = data.map((row) => ({
     ...row,
     ruta_codigo: row.rutas?.codigo || null,
     vendedor_username: row.vendedor?.username || null,
@@ -408,14 +477,16 @@ async function fetchCarteraReporteSupabase(params = {}) {
     .slice(0, 15)
   const porSituacion = buildPorSituacion(filtered)
   const umbralAtrasoPct = await loadUmbralAtrasoSupabase()
-  const composicionRows = await fetchComposicionRowsSupabase({
-    empresa,
-    q,
-    fechaDesde,
-    fechaHasta,
-    allowedRutaIds,
-  })
+  const { rows: composicionRows, fetchTruncated: composicionFetchTruncated } =
+    await fetchComposicionRowsSupabase({
+      empresa,
+      q,
+      fechaDesde,
+      fechaHasta,
+      allowedRutaIds,
+    })
   const atrasoEstructural = buildAtrasoEstructuralPayload(composicionRows, umbralAtrasoPct)
+  const fetchTruncated = notasFetchTruncated || composicionFetchTruncated
   const resumenPivot = Array.from(pivotMap.values()).sort((a, b) => {
     const byBucket = bucketOrder.indexOf(a.bucket_id) - bucketOrder.indexOf(b.bucket_id)
     if (byBucket !== 0) return byBucket
@@ -459,7 +530,9 @@ async function fetchCarteraReporteSupabase(params = {}) {
     atrasoEstructural,
     total: totalFiltered,
     truncated: totalFiltered > MAX_ROWS,
+    fetchTruncated,
     maxRows: MAX_ROWS,
+    maxFetchRows: MAX_FETCH_ROWS,
     porRuta,
     porAntiguedad,
     porCliente,

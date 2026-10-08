@@ -708,7 +708,8 @@ export default function ReportePage() {
         q: qUse,
         rutas: rutasUse,
       }
-      const key = JSON.stringify(params)
+      // v2: invalidar caché previa al paginado (antes solo llegaban ~1000 filas).
+      const key = `v2:${JSON.stringify(params)}`
 
       if (force) {
         clearCacheEntry('reporte', key)
@@ -923,7 +924,8 @@ export default function ReportePage() {
       <h1 className="h3 mb-2">Reporte — Cartera</h1>
       <p className="text-body-secondary small mb-3">
         KPIs y detalle desde la base (notas pendientes por defecto). Mismos filtros para totales, resúmenes y
-        tabla. La tabla muestra hasta {payload?.maxRows ?? 5000} filas si el resultado es mayor.
+        tabla. La consulta pagina en bloques para cubrir toda la cartera; la tabla muestra hasta{' '}
+        {payload?.maxRows ?? 5000} filas si el resultado es mayor.
       </p>
 
       <ul className="nav nav-tabs mb-3">
@@ -950,6 +952,14 @@ export default function ReportePage() {
       {error ? (
         <div className="alert alert-danger" role="alert">
           {error}
+        </div>
+      ) : null}
+
+      {payload?.fetchTruncated ? (
+        <div className="alert alert-warning py-2" role="status">
+          Se alcanzó el tope de seguridad al leer la cartera (
+          {(payload.maxFetchRows ?? 50000).toLocaleString('es-MX')} notas). Los KPIs y resúmenes pueden
+          estar incompletos. Ajusta filtros (empresa, estado, rutas o fechas) o contacta a sistemas.
         </div>
       ) : null}
 
