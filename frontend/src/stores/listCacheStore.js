@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
-const CACHE_TTL_MS = 5 * 60 * 1000
+/** Caché temporal en memoria (sobrevive navegación SPA; se pierde al recargar el navegador). */
+const CACHE_TTL_MS = 15 * 60 * 1000
 
 const BUCKET_KEYS = new Set(['notas', 'seguimiento', 'conciliacion', 'reporte'])
 
@@ -14,6 +15,10 @@ function withBucket(state, screen, nextBucket) {
   return { ...state, notas: nextBucket }
 }
 
+function isFresh(entry) {
+  return Boolean(entry) && Date.now() - Number(entry.updatedAt || 0) <= CACHE_TTL_MS
+}
+
 export const useListCacheStore = create((set, get) => ({
   notas: {},
   seguimiento: {},
@@ -23,9 +28,7 @@ export const useListCacheStore = create((set, get) => ({
   getEntry: (screen, key) => {
     const bucket = ensureBucket(get(), screen)
     const entry = bucket[key]
-    if (!entry) return null
-    const isFresh = Date.now() - Number(entry.updatedAt || 0) <= CACHE_TTL_MS
-    if (!isFresh) return null
+    if (!isFresh(entry)) return null
     return entry
   },
 
@@ -37,6 +40,7 @@ export const useListCacheStore = create((set, get) => ({
         total: 0,
         totalPages: 1,
         updatedAt: 0,
+        ui: null,
       }
       const nextEntry = {
         ...prev,
@@ -48,6 +52,10 @@ export const useListCacheStore = create((set, get) => ({
         totalPages: Number(payload?.totalPages || prev.totalPages || 1),
         updatedAt: Date.now(),
       }
+      // Agregados de la 1.ª página (o cuando el API los manda).
+      if (payload?.resumen != null) nextEntry.resumen = payload.resumen
+      if (payload?.porRuta != null) nextEntry.porRuta = payload.porRuta
+      if (payload?.porAntiguedad != null) nextEntry.porAntiguedad = payload.porAntiguedad
       return withBucket(state, screen, { ...bucket, [key]: nextEntry })
     })
   },
@@ -64,6 +72,25 @@ export const useListCacheStore = create((set, get) => ({
     })
   },
 
+  /**
+   * Estado de UI (scroll, grupos colapsados). No renueva el TTL de los datos.
+   */
+  setUiState: (screen, key, ui) => {
+    if (!key) return
+    set((state) => {
+      const bucket = ensureBucket(state, screen)
+      const prev = bucket[key]
+      if (!prev) return state
+      return withBucket(state, screen, {
+        ...bucket,
+        [key]: {
+          ...prev,
+          ui: { ...(prev.ui || {}), ...(ui || {}) },
+        },
+      })
+    })
+  },
+
   clearEntry: (screen, key) => {
     set((state) => {
       const next = { ...ensureBucket(state, screen) }
@@ -76,3 +103,12 @@ export const useListCacheStore = create((set, get) => ({
     set((state) => withBucket(state, screen, {}))
   },
 }))
+
+export function maxConsecutiveCachedPage(entry) {
+  if (!entry?.pages) return 0
+  let page = 1
+  while (Array.isArray(entry.pages[page])) page += 1
+  return page - 1
+}
+
+export { CACHE_TTL_MS }

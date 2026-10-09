@@ -9,7 +9,7 @@ import { profileApi } from '../../services/profileApi.js'
 import { fetchRutasCatalogo, fetchSeguimientoList } from '../../services/seguimientoApi.js'
 import { exportarSeguimientoExcelConFiltros } from '../../utils/exportSeguimientoExcel.js'
 import { exportarSeguimientoPdfConFiltros } from '../../utils/exportSeguimientoPdf.js'
-import { useListCacheStore } from '../../stores/listCacheStore.js'
+import { maxConsecutiveCachedPage, useListCacheStore } from '../../stores/listCacheStore.js'
 import { useListFiltersStore } from '../../stores/listFiltersStore.js'
 import { estadoBadgeClass, notaMuestraAtencion } from '../../utils/estadoBadge.js'
 import { formatDiasNotaCorriente, formatFechaNotaDb } from '../../utils/diasCorriente.js'
@@ -313,10 +313,19 @@ export default function SeguimientoPage({ section = 'seguimiento' } = {}) {
   })
   const getCacheEntry = useListCacheStore((s) => s.getEntry)
   const setCachePage = useListCacheStore((s) => s.setPage)
+  const setCacheUiState = useListCacheStore((s) => s.setUiState)
   const clearCacheEntry = useListCacheStore((s) => s.clearEntry)
   const clearScreenCache = useListCacheStore((s) => s.clearScreen)
   const notasVersion = useDomainSyncStore((s) => s.notasVersion)
   const rutasVersion = useDomainSyncStore((s) => s.rutasVersion)
+  const invalidateRef = useRef({
+    cacheKey: '',
+    notasVersion: -1,
+    rutasVersion: -1,
+    refreshKey: -1,
+  })
+  const rutasGrupoColapsadasRef = useRef(rutasGrupoColapsadas)
+  rutasGrupoColapsadasRef.current = rutasGrupoColapsadas
 
   const rutasSeleccionadas = useMemo(
     () => parseRutasList(listFilters.rutas),
@@ -495,7 +504,8 @@ export default function SeguimientoPage({ section = 'seguimiento' } = {}) {
   const totalPages = data.totalPages || 1
   const hasMore = page < totalPages
 
-  const cargarPagina = useCallback(async (targetPage, append = false) => {
+  const cargarPagina = useCallback(async (targetPage, append = false, options = {}) => {
+    const force = Boolean(options.force)
     const includeAggregates = !append && targetPage === 1
     const requestSeq = ++requestSeqRef.current
     const epoch = listEpochRef.current
@@ -506,7 +516,7 @@ export default function SeguimientoPage({ section = 'seguimiento' } = {}) {
 
     try {
       const tUi = performance.now()
-      if (!append && targetPage === 1) {
+      if (force && !append && targetPage === 1) {
         clearCacheEntry(sectionConfig.screen, requestCacheKey)
       } else {
         const cached = getCacheEntry(sectionConfig.screen, requestCacheKey)
@@ -525,6 +535,10 @@ export default function SeguimientoPage({ section = 'seguimiento' } = {}) {
               items: merged,
               total: cached.total ?? prev.total ?? 0,
               totalPages: cached.totalPages ?? prev.totalPages ?? 1,
+              resumen: cached.resumen != null ? cached.resumen : prev.resumen,
+              porRuta: cached.porRuta != null ? cached.porRuta : prev.porRuta,
+              porAntiguedad:
+                cached.porAntiguedad != null ? cached.porAntiguedad : prev.porAntiguedad,
             }))
             setPage(targetPage)
             maxLoadedPageRef.current = Math.max(maxLoadedPageRef.current, targetPage)
@@ -637,18 +651,99 @@ export default function SeguimientoPage({ section = 'seguimiento' } = {}) {
   }
 
   useEffect(() => {
+    const prev = invalidateRef.current
+    const filtersChanged = prev.cacheKey !== cacheKey
+    const forced =
+      prev.notasVersion !== notasVersion ||
+      prev.rutasVersion !== rutasVersion ||
+      prev.refreshKey !== refreshKey
+    const isFirstPass = prev.cacheKey === '' && prev.refreshKey === -1
+    invalidateRef.current = { cacheKey, notasVersion, rutasVersion, refreshKey }
+
     listEpochRef.current += 1
+    pagesInFlightRef.current = new Set()
+
+    // Actualizar / cambio de notas o rutas: invalidar y recargar.
+    if (forced && !isFirstPass) {
+      clearScreenCache(sectionConfig.screen)
+      activeCacheKeyRef.current = ''
+      maxLoadedPageRef.current = 0
+      setData({ items: [], total: 0, totalPages: 1 })
+      setPage(1)
+      setLoading(true)
+      setLoadingMore(false)
+      setError('')
+      void cargarPagina(1, false, { force: true })
+      return
+    }
+
+    // Cambio de filtros: no borramos otras claves; pueden reutilizarse si el usuario vuelve a ellas.
+
+    const cached = getCacheEntry(sectionConfig.screen, cacheKey)
+    const maxCached = maxConsecutiveCachedPage(cached)
+    if (cached && maxCached >= 1) {
+      const merged = mergeCachedPages(cached, maxCached)
+      if (merged) {
+        activeCacheKeyRef.current = cacheKey
+        maxLoadedPageRef.current = maxCached
+        setData({
+          items: merged,
+          total: cached.total ?? 0,
+          totalPages: cached.totalPages ?? 1,
+          resumen: cached.resumen,
+          porRuta: cached.porRuta,
+          porAntiguedad: cached.porAntiguedad,
+        })
+        setPage(maxCached)
+        setLoading(false)
+        setLoadingMore(false)
+        setError('')
+        const ui = cached.ui || {}
+        if (groupByRuta && Array.isArray(ui.collapsedRutas)) {
+          setRutasGrupoColapsadas(new Set(ui.collapsedRutas))
+        }
+        const scrollY = Number(ui.scrollY)
+        if (Number.isFinite(scrollY) && scrollY > 0) {
+          requestAnimationFrame(() => {
+            window.scrollTo(0, scrollY)
+          })
+        }
+        return
+      }
+    }
+
     activeCacheKeyRef.current = ''
     maxLoadedPageRef.current = 0
-    pagesInFlightRef.current = new Set()
-    clearScreenCache(sectionConfig.screen)
     setData({ items: [], total: 0, totalPages: 1 })
     setPage(1)
     setLoading(true)
     setLoadingMore(false)
     setError('')
-    void cargarPagina(1, false)
-  }, [cacheKey, notasVersion, rutasVersion, refreshKey, clearScreenCache, cargarPagina, sectionConfig.screen])
+    void cargarPagina(1, false, { force: filtersChanged || isFirstPass })
+  }, [
+    cacheKey,
+    notasVersion,
+    rutasVersion,
+    refreshKey,
+    clearScreenCache,
+    getCacheEntry,
+    cargarPagina,
+    sectionConfig.screen,
+    groupByRuta,
+  ])
+
+  /** Al salir de la pantalla, guarda scroll y grupos colapsados para restaurar al volver. */
+  useEffect(() => {
+    const screen = sectionConfig.screen
+    return () => {
+      const key = activeCacheKeyRef.current
+      if (!key) return
+      setCacheUiState(screen, key, {
+        scrollY: window.scrollY || window.pageYOffset || 0,
+        collapsedRutas: [...rutasGrupoColapsadasRef.current],
+      })
+    }
+  }, [sectionConfig.screen, setCacheUiState])
 
   useEffect(() => {
     if (!showRutasFilter || !isVendedor) return undefined
