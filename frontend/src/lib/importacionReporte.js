@@ -538,7 +538,8 @@ export async function ejecutarImportacionSupabase({
     }
 
     // Descarte solo para la empresa elegida y solo si hubo al menos una fila válida (evita marcar todo si el archivo viene vacío).
-    // PostgREST limita filas por defecto (~1000): hay que paginar o el descarte queda incompleto vs el análisis previo.
+    // PostgREST limita filas por defecto (~1000). Se pagina por id (keyset): al marcar RESUELTA
+    // esas filas salen del filtro, y un offset se saltaría el bloque siguiente.
     if (errores.length === 0 && validRows.length > 0) {
       const foliosEnArchivo = new Set()
       for (const row of validRows) {
@@ -547,20 +548,26 @@ export async function ejecutarImportacionSupabase({
       foliosEnArchivo.delete('')
 
       const pageSize = 1000
-      let rangeFrom = 0
+      let lastId = null
       const now = new Date().toISOString()
 
       while (true) {
-        const { data: candidatos, error: cErr } = await supabase
+        let query = supabase
           .from('notas_credito')
           .select('id, serie_folio')
           .eq('empresa', scope)
           .neq('estado', 'RESUELTA')
           .order('id', { ascending: true })
-          .range(rangeFrom, rangeFrom + pageSize - 1)
+          .limit(pageSize)
+        if (lastId != null) query = query.gt('id', lastId)
+
+        const { data: candidatos, error: cErr } = await query
         if (cErr) throw new Error(cErr.message || 'No se pudo leer notas para descarte')
 
         const pageRows = candidatos || []
+        if (pageRows.length === 0) break
+        lastId = pageRows[pageRows.length - 1].id
+
         const idsToFix = pageRows
           .filter((c) => !foliosEnArchivo.has(String(c.serie_folio || '').trim()))
           .map((c) => c.id)
@@ -583,7 +590,6 @@ export async function ejecutarImportacionSupabase({
         }
 
         if (pageRows.length < pageSize) break
-        rangeFrom += pageSize
       }
     }
 
